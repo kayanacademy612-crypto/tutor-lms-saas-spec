@@ -1,0 +1,845 @@
+     1→     1→package main
+     2→     2→
+     3→     3→import (
+     4→     4→        "context"
+     5→     5→        "fmt"
+     6→     6→        "log/slog"
+     7→     7→        "net/http"
+     8→     8→        "os"
+     9→     9→        "os/signal"
+    10→    10→        "path/filepath"
+    11→    11→        "strings"
+    12→    12→        "syscall"
+    13→    13→        "time"
+    14→    14→
+    15→    15→        "lastsaas/internal/api/handlers"
+    16→    16→        "lastsaas/internal/auth"
+    17→    17→        "lastsaas/internal/config"
+    18→    18→        "lastsaas/internal/configstore"
+    19→    19→        "lastsaas/internal/db"
+    20→    20→        "lastsaas/internal/email"
+    21→    21→        "lastsaas/internal/events"
+    22→    22→        "lastsaas/internal/health"
+    23→    23→        "lastsaas/internal/metrics"
+    24→    24→        "lastsaas/internal/middleware"
+    25→    25→        "lastsaas/internal/models"
+    26→    26→        "lastsaas/internal/planstore"
+    27→    27→        stripeservice "lastsaas/internal/stripe"
+    28→    28→        "lastsaas/internal/syslog"
+    29→    29→        "lastsaas/internal/telemetry"
+    30→    30→        "lastsaas/internal/datadog"
+    31→    31→        "lastsaas/internal/version"
+    32→    32→        "lastsaas/internal/webhooks"
+    33→    33→
+    34→    34→        "github.com/gorilla/mux"
+    35→    35→        "github.com/rs/cors"
+    36→    36→        "go.mongodb.org/mongo-driver/bson"
+    37→    37→)
+    38→    38→
+    39→    39→// spaHandler serves a single-page application from a static directory.
+    40→    40→// For files that exist on disk, it serves them directly. For all other
+    41→    41→// paths it serves index.html so the SPA router can handle them.
+    42→    42→// When serving index.html, it replaces {{APP_NAME}} with the actual app name
+    43→    43→// to prevent a title flicker while JavaScript loads branding data.
+    44→    44→type spaHandler struct {
+    45→    45→        staticPath string
+    46→    46→        indexPath  string
+    47→    47→        getAppName func() string
+    48→    48→}
+    49→    49→
+    50→    50→func (h spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+    51→    51→        // Never serve the SPA for /api/ paths — those should be handled by API routes
+    52→    52→        if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api" {
+    53→    53→                http.NotFound(w, r)
+    54→    54→                return
+    55→    55→        }
+    56→    56→
+    57→    57→        path := filepath.Join(h.staticPath, filepath.Clean(r.URL.Path))
+    58→    58→
+    59→    59→        fi, err := os.Stat(path)
+    60→    60→        if os.IsNotExist(err) || (err == nil && fi.IsDir()) {
+    61→    61→                // Serve index.html with no-store so browsers always fetch the latest version.
+    62→    62→                // Replace the {{APP_NAME}} placeholder with the real app name so the
+    63→    63→                // browser tab shows the correct title immediately, before JS loads.
+    64→    64→                w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+    65→    65→                indexFile := filepath.Join(h.staticPath, h.indexPath)
+    66→    66→                data, readErr := os.ReadFile(indexFile)
+    67→    67→                if readErr != nil {
+    68→    68→                        http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+    69→    69→                        return
+    70→    70→                }
+    71→    71→                appName := "App"
+    72→    72→                if h.getAppName != nil {
+    73→    73→                        if name := h.getAppName(); name != "" {
+    74→    74→                                appName = name
+    75→    75→                        }
+    76→    76→                }
+    77→    77→                html := strings.Replace(string(data), "{{APP_NAME}}", appName, 1)
+    78→    78→                w.Header().Set("Content-Type", "text/html; charset=utf-8")
+    79→    79→                w.Write([]byte(html))
+    80→    80→                return
+    81→    81→        }
+    82→    82→        if err != nil {
+    83→    83→                http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+    84→    84→                return
+    85→    85→        }
+    86→    86→
+    87→    87→        http.FileServer(http.Dir(h.staticPath)).ServeHTTP(w, r)
+    88→    88→}
+    89→    89→
+    90→    90→func main() {
+    91→    91→        config.LoadEnvFile()
+    92→    92→
+    93→    93→        // Load config
+    94→    94→        env := config.GetEnv()
+    95→    95→        cfg, err := config.Load(env)
+    96→    96→        if err != nil {
+    97→    97→                slog.Error("Failed to load config", "error", err)
+    98→    98→                os.Exit(1)
+    99→    99→        }
+   100→   100→        slog.Info("Starting LastSaaS", "mode", cfg.Environment)
+   101→   101→
+   102→   102→        // Connect to MongoDB
+   103→   103→        database, err := db.NewMongoDB(cfg.Database.URI, cfg.Database.Name)
+   104→   104→        if err != nil {
+   105→   105→                slog.Error("Failed to connect to MongoDB", "error", err)
+   106→   106→                os.Exit(1)
+   107→   107→        }
+   108→   108→        defer func() {
+   109→   109→                ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+   110→   110→                defer cancel()
+   111→   111→                if err := database.Close(ctx); err != nil {
+   112→   112→                        slog.Error("Failed to close database connection", "error", err)
+   113→   113→                }
+   114→   114→        }()
+   115→   115→        slog.Info("Connected to MongoDB")
+   116→   116→
+   117→   117→        // Load and check version
+   118→   118→        version.Load()
+   119→   119→        version.CheckAndMigrate(database)
+   120→   120→
+   121→   121→        // Seed and load configuration store
+   122→   122→        if err := configstore.Seed(context.Background(), database); err != nil {
+   123→   123→                slog.Error("Failed to seed config variables", "error", err)
+   124→   124→                os.Exit(1)
+   125→   125→        }
+   126→   126→        cfgStore := configstore.New(database)
+   127→   127→        if err := cfgStore.Load(context.Background()); err != nil {
+   128→   128→                slog.Error("Failed to load config store", "error", err)
+   129→   129→                os.Exit(1)
+   130→   130→        }
+   131→   131→        appCtx, appCancel := context.WithCancel(context.Background())
+   132→   132→        defer appCancel()
+   133→   133→        cfgStore.StartAutoReload(appCtx, 60*time.Second)
+   134→   134→        slog.Info("Configuration store loaded", "reloadInterval", "60s")
+   135→   135→
+   136→   136→        // Seed plans
+   137→   137→        if err := planstore.Seed(context.Background(), database); err != nil {
+   138→   138→                slog.Error("Failed to seed plans", "error", err)
+   139→   139→                os.Exit(1)
+   140→   140→        }
+   141→   141→
+   142→   142→        // Initialize system logger
+   143→   143→        sysLogger := syslog.New(database, cfgStore.Get)
+   144→   144→
+   145→   145→        // Initialize DataDog integration (optional)
+   146→   146→        var ddClient *datadog.Client
+   147→   147→        if cfg.DataDog.APIKey != "" {
+   148→   148→                site := cfg.DataDog.Site
+   149→   149→                if site == "" {
+   150→   150→                        site = "us5.datadoghq.com"
+   151→   151→                }
+   152→   152→                ddClient = datadog.New(cfg.DataDog.APIKey, site, cfg.Environment, cfg.App.Name, cfg.DataDog.Hostname)
+   153→   153→                defer ddClient.Stop()
+   154→   154→                sysLogger.SetOnLog(ddClient.TrackSyslogEntry)
+   155→   155→
+   156→   156→                // Verify end-to-end: validate key, send startup event + heartbeat metric
+   157→   157→                if err := ddClient.Startup(context.Background(), version.Current); err != nil {
+   158→   158→                        slog.Warn("DataDog startup verification failed (integration will retry in background)", "error", err)
+   159→   159→                }
+   160→   160→        } else {
+   161→   161→                slog.Warn("DataDog integration not configured", "reason", "missing API key")
+   162→   162→        }
+   163→   163→
+   164→   164→        sysLogger.Critical(context.Background(), fmt.Sprintf("System startup: LastSaaS v%s", version.Current))
+   165→   165→
+   166→   166→        // Initialize services
+   167→   167→        jwtService := auth.NewJWTService(
+   168→   168→                cfg.JWT.AccessSecret,
+   169→   169→                cfg.JWT.RefreshSecret,
+   170→   170→                cfg.JWT.AccessTTLMin,
+   171→   171→                cfg.JWT.RefreshTTLDay,
+   172→   172→        )
+   173→   173→        passwordService := auth.NewPasswordService()
+   174→   174→
+   175→   175→        var googleOAuth *auth.GoogleOAuthService
+   176→   176→        if cfg.OAuth.GoogleClientID != "" && cfg.OAuth.GoogleClientSecret != "" {
+   177→   177→                googleOAuth = auth.NewGoogleOAuthService(
+   178→   178→                        cfg.OAuth.GoogleClientID,
+   179→   179→                        cfg.OAuth.GoogleClientSecret,
+   180→   180→                        cfg.OAuth.GoogleRedirectURL,
+   181→   181→                )
+   182→   182→                slog.Info("Google OAuth configured")
+   183→   183→        } else {
+   184→   184→                slog.Warn("Google OAuth not configured", "reason", "missing credentials")
+   185→   185→        }
+   186→   186→
+   187→   187→        var githubOAuth *auth.GitHubOAuthService
+   188→   188→        if cfg.OAuth.GitHubClientID != "" && cfg.OAuth.GitHubClientSecret != "" {
+   189→   189→                githubOAuth = auth.NewGitHubOAuthService(
+   190→   190→                        cfg.OAuth.GitHubClientID,
+   191→   191→                        cfg.OAuth.GitHubClientSecret,
+   192→   192→                        cfg.OAuth.GitHubRedirectURL,
+   193→   193→                )
+   194→   194→                slog.Info("GitHub OAuth configured")
+   195→   195→        } else {
+   196→   196→                slog.Warn("GitHub OAuth not configured", "reason", "missing credentials")
+   197→   197→        }
+   198→   198→
+   199→   199→        var microsoftOAuth *auth.MicrosoftOAuthService
+   200→   200→        if cfg.OAuth.MicrosoftClientID != "" && cfg.OAuth.MicrosoftClientSecret != "" {
+   201→   201→                microsoftOAuth = auth.NewMicrosoftOAuthService(
+   202→   202→                        cfg.OAuth.MicrosoftClientID,
+   203→   203→                        cfg.OAuth.MicrosoftClientSecret,
+   204→   204→                        cfg.OAuth.MicrosoftRedirectURL,
+   205→   205→                )
+   206→   206→                slog.Info("Microsoft OAuth configured")
+   207→   207→        } else {
+   208→   208→                slog.Warn("Microsoft OAuth not configured", "reason", "missing credentials")
+   209→   209→        }
+   210→   210→
+   211→   211→        var emailService *email.ResendService
+   212→   212→        if cfg.Email.ResendAPIKey != "" {
+   213→   213→                emailService = email.NewResendService(
+   214→   214→                        cfg.Email.ResendAPIKey,
+   215→   215→                        cfg.Email.FromEmail,
+   216→   216→                        cfg.Email.FromName,
+   217→   217→                        cfg.App.Name,
+   218→   218→                        cfg.Frontend.URL,
+   219→   219→                        cfgStore.Get,
+   220→   220→                )
+   221→   221→                slog.Info("Email service configured", "provider", "Resend")
+   222→   222→        } else {
+   223→   223→                slog.Warn("Email service not configured", "reason", "missing Resend API key")
+   224→   224→        }
+   225→   225→
+   226→   226→        // Initialize Stripe service (optional — billing works without it)
+   227→   227→        var stripeSvc *stripeservice.Service
+   228→   228→        if cfg.Stripe.SecretKey != "" {
+   229→   229→                stripeSvc = stripeservice.New(
+   230→   230→                        cfg.Stripe.SecretKey,
+   231→   231→                        cfg.Stripe.PublishableKey,
+   232→   232→                        cfg.Stripe.WebhookSecret,
+   233→   233→                        database,
+   234→   234→                        cfg.Frontend.URL,
+   235→   235→                )
+   236→   236→                slog.Info("Stripe billing configured")
+   237→   237→        } else {
+   238→   238→                slog.Warn("Stripe billing not configured", "reason", "missing secret key")
+   239→   239→        }
+   240→   240→
+   241→   241→        webhookEncKey, err := webhooks.ParseEncryptionKey(cfg.Webhooks.EncryptionKey)
+   242→   242→        if err != nil {
+   243→   243→                slog.Error("Invalid webhook encryption key", "error", err)
+   244→   244→                os.Exit(1)
+   245→   245→        }
+   246→   246→        if webhookEncKey != nil {
+   247→   247→                slog.Info("Webhook secret encryption enabled")
+   248→   248→        }
+   249→   249→        webhookDispatcher := webhooks.NewDispatcher(database, webhookEncKey)
+   250→   250→        defer webhookDispatcher.Stop()
+   251→   251→        var emitter events.Emitter = webhookDispatcher
+   252→   252→
+   253→   253→        // Initialize middleware
+   254→   254→        authMiddleware := middleware.NewAuthMiddleware(jwtService, database)
+   255→   255→        tenantMiddleware := middleware.NewTenantMiddleware(database)
+   256→   256→        rateLimiter := middleware.NewDistributedRateLimiter(database.Database)
+   257→   257→        defer rateLimiter.Stop()
+   258→   258→        metricsCollector := middleware.NewMetricsCollector()
+   259→   259→
+   260→   260→        // Initialize health monitoring
+   261→   261→        healthService := health.New(database, metricsCollector, cfgStore.Get)
+   262→   262→
+   263→   263→        // Register integration health checks
+   264→   264→        healthService.RegisterIntegration("mongodb", health.NewMongoChecker(database.Client))
+   265→   265→        if cfg.Stripe.SecretKey != "" {
+   266→   266→                healthService.RegisterIntegration("stripe", health.NewStripeChecker())
+   267→   267→        } else {
+   268→   268→                healthService.RegisterIntegration("stripe", nil)
+   269→   269→        }
+   270→   270→        if cfg.Email.ResendAPIKey != "" {
+   271→   271→                healthService.RegisterIntegration("resend", health.NewResendChecker(cfg.Email.ResendAPIKey))
+   272→   272→        } else {
+   273→   273→                healthService.RegisterIntegration("resend", nil)
+   274→   274→        }
+   275→   275→        if cfg.OAuth.GoogleClientID != "" && cfg.OAuth.GoogleClientSecret != "" {
+   276→   276→                healthService.RegisterIntegration("google_oauth", health.NewGoogleOAuthChecker())
+   277→   277→        } else {
+   278→   278→                healthService.RegisterIntegration("google_oauth", nil)
+   279→   279→        }
+   280→   280→        if cfg.OAuth.GitHubClientID != "" && cfg.OAuth.GitHubClientSecret != "" {
+   281→   281→                healthService.RegisterIntegration("github_oauth", health.NewGitHubOAuthChecker())
+   282→   282→        } else {
+   283→   283→                healthService.RegisterIntegration("github_oauth", nil)
+   284→   284→        }
+   285→   285→        if cfg.OAuth.MicrosoftClientID != "" && cfg.OAuth.MicrosoftClientSecret != "" {
+   286→   286→                healthService.RegisterIntegration("microsoft_oauth", health.NewMicrosoftOAuthChecker())
+   287→   287→        } else {
+   288→   288→                healthService.RegisterIntegration("microsoft_oauth", nil)
+   289→   289→        }
+   290→   290→        if cfgStore.Get("auth.passkeys.enabled") == "true" {
+   291→   291→                healthService.RegisterIntegration("webauthn", health.NewWebAuthnChecker())
+   292→   292→        } else {
+   293→   293→                healthService.RegisterIntegration("webauthn", nil)
+   294→   294→        }
+   295→   295→        if cfgStore.Get("auth.sso.enabled") == "true" {
+   296→   296→                healthService.RegisterIntegration("saml_sso", health.NewSAMLChecker())
+   297→   297→        } else {
+   298→   298→                healthService.RegisterIntegration("saml_sso", nil)
+   299→   299→        }
+   300→   300→        if ddClient != nil {
+   301→   301→                healthService.RegisterIntegration("datadog", health.NewDataDogChecker(ddClient))
+   302→   302→        } else {
+   303→   303→                healthService.RegisterIntegration("datadog", nil)
+   304→   304→        }
+   305→   305→
+   306→   306→        if ddClient != nil {
+   307→   307→                healthService.SetOnHealthSnapshot(ddClient.TrackHealthSnapshot)
+   308→   308→                healthService.SetOnIntegrationCheck(ddClient.TrackIntegrationChecks)
+   309→   309→        }
+   310→   310→
+   311→   311→        healthService.Start()
+   312→   312→        defer healthService.Stop()
+   313→   313→
+   314→   314→        // Initialize telemetry service
+   315→   315→        telemetrySvc := telemetry.New(database)
+   316→   316→        defer telemetrySvc.Stop()
+   317→   317→        if ddClient != nil {
+   318→   318→                telemetrySvc.SetOnTrack(ddClient.TrackTelemetryEvent)
+   319→   319→        }
+   320→   320→
+   321→   321→        // Initialize handlers
+   322→   322→        bootstrapHandler := handlers.NewBootstrapHandler(database)
+   323→   323→        authHandler := handlers.NewAuthHandler(database, jwtService, passwordService, googleOAuth, emailService, emitter, cfg.Frontend.URL, sysLogger)
+   324→   324→        authHandler.SetGetConfig(cfgStore.Get)
+   325→   325→        authHandler.SetRateLimiter(rateLimiter)
+   326→   326→        if webhookEncKey != nil {
+   327→   327→                authHandler.SetTOTPEncryptionKey(webhookEncKey)
+   328→   328→        }
+   329→   329→        authHandler.SetTelemetry(telemetrySvc)
+   330→   330→        if githubOAuth != nil {
+   331→   331→                authHandler.SetGitHubOAuth(githubOAuth)
+   332→   332→        }
+   333→   333→        if microsoftOAuth != nil {
+   334→   334→                authHandler.SetMicrosoftOAuth(microsoftOAuth)
+   335→   335→        }
+   336→   336→        tenantHandler := handlers.NewTenantHandler(database, emailService, emitter, sysLogger)
+   337→   337→        if stripeSvc != nil {
+   338→   338→                tenantHandler.SetStripe(stripeSvc)
+   339→   339→        }
+   340→   340→        adminHandler := handlers.NewAdminHandler(database, emitter, sysLogger)
+   341→   341→        adminHandler.SetHealthService(healthService, cfgStore.Get)
+   342→   342→        adminHandler.SetJWTService(jwtService)
+   343→   343→        adminHandler.SetEmailService(emailService)
+   344→   344→        messageHandler := handlers.NewMessageHandler(database)
+   345→   345→        logHandler := handlers.NewLogHandler(database)
+   346→   346→        configHandler := handlers.NewConfigHandler(database, cfgStore, sysLogger)
+   347→   347→        plansHandler := handlers.NewPlansHandler(database, sysLogger, cfgStore, stripeSvc)
+   348→   348→        bundlesHandler := handlers.NewBundlesHandler(database, sysLogger)
+   349→   349→        healthHandler := handlers.NewHealthHandler(healthService)
+   350→   350→        healthHandler.SetEmailService(emailService)
+   351→   351→        billingHandler := handlers.NewBillingHandler(stripeSvc, database, emitter, sysLogger, cfgStore)
+   352→   352→        billingHandler.SetTelemetry(telemetrySvc)
+   353→   353→        promotionsHandler := handlers.NewPromotionsHandler(database, stripeSvc, cfgStore)
+   354→   354→        webhookHandler := handlers.NewWebhookHandler(stripeSvc, database, emitter, sysLogger, cfgStore.Get)
+   355→   355→        webhookHandler.SetTelemetry(telemetrySvc)
+   356→   356→        pmHandler := handlers.NewPMHandler(database, telemetrySvc, sysLogger)
+   357→   357→        eventDefsHandler := handlers.NewEventDefinitionsHandler(database, sysLogger)
+   358→   358→        telemetryHandler := handlers.NewTelemetryHandler(telemetrySvc)
+   359→   359→        apiKeysHandler := handlers.NewAPIKeysHandler(database, emitter, sysLogger)
+   360→   360→        webhooksHandler := handlers.NewWebhooksHandler(database, sysLogger, webhookDispatcher)
+   361→   361→        brandingHandler := handlers.NewBrandingHandler(database, cfgStore, sysLogger)
+   362→   362→        announcementsHandler := handlers.NewAnnouncementsHandler(database, sysLogger)
+   363→   363→        usageHandler := handlers.NewUsageHandler(database)
+   364→   364→        brandingHandler.SetAuthProviders(map[string]bool{
+   365→   365→                "google":    googleOAuth != nil,
+   366→   366→                "github":    githubOAuth != nil,
+   367→   367→                "microsoft": microsoftOAuth != nil,
+   368→   368→        })
+   369→   369→
+   370→   370→        // Initialize daily metrics service
+   371→   371→        metricsService := metrics.New(database)
+   372→   372→        metricsService.Start()
+   373→   373→        defer metricsService.Stop()
+   374→   374→
+   375→   375→        // Setup router
+   376→   376→        router := mux.NewRouter()
+   377→   377→
+   378→   378→        // Health check — pings DB to verify actual readiness
+   379→   379→        router.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+   380→   380→                ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+   381→   381→                defer cancel()
+   382→   382→                w.Header().Set("Content-Type", "application/json")
+   383→   383→                if err := database.Client.Ping(ctx, nil); err != nil {
+   384→   384→                        w.WriteHeader(http.StatusServiceUnavailable)
+   385→   385→                        w.Write([]byte(`{"status":"unhealthy","error":"database unreachable"}`))
+   386→   386→                        return
+   387→   387→                }
+   388→   388→                w.WriteHeader(http.StatusOK)
+   389→   389→                w.Write([]byte(`{"status":"ok"}`))
+   390→   390→        }).Methods("GET")
+   391→   391→
+   392→   392→        api := router.PathPrefix("/api").Subrouter()
+   393→   393→        api.Use(middleware.RequestID)
+   394→   394→        api.Use(middleware.APIVersion)
+   395→   395→        // Note: BodySizeLimit is applied at the outermost handler layer — not here to avoid double-wrapping
+   396→   396→
+   397→   397→        // Version endpoint (public, no auth)
+   398→   398→        api.HandleFunc("/version", func(w http.ResponseWriter, r *http.Request) {
+   399→   399→                w.Header().Set("Content-Type", "application/json")
+   400→   400→                w.Write([]byte(fmt.Sprintf(`{"version":%q}`, version.Current)))
+   401→   401→        }).Methods("GET")
+   402→   402→
+   403→   403→        // --- Bootstrap status (always accessible, init is CLI-only) ---
+   404→   404→        api.HandleFunc("/bootstrap/status", bootstrapHandler.Status).Methods("GET")
+   405→   405→
+   406→   406→        // API documentation (public, no auth)
+   407→   407→        api.HandleFunc("/docs", handlers.DocsHTML).Methods("GET")
+   408→   408→        api.HandleFunc("/docs/markdown", handlers.DocsMarkdown).Methods("GET")
+   409→   409→        api.HandleFunc("/docs/openapi.json", handlers.DocsOpenAPI).Methods("GET")
+   410→   410→
+   411→   411→        // --- Public branding routes (no auth, no bootstrap guard) ---
+   412→   412→        api.HandleFunc("/branding", brandingHandler.GetBranding).Methods("GET")
+   413→   413→        api.HandleFunc("/branding/asset/{key}", brandingHandler.ServeAsset).Methods("GET")
+   414→   414→        api.HandleFunc("/branding/media/{id}", brandingHandler.ServeMedia).Methods("GET")
+   415→   415→        api.HandleFunc("/branding/page/{slug}", brandingHandler.GetPublicPage).Methods("GET")
+   416→   416→        api.HandleFunc("/branding/pages", brandingHandler.ListPublicPages).Methods("GET")
+   417→   417→
+   418→   418→        // --- Guarded routes (require system to be initialized) ---
+   419→   419→        guarded := api.PathPrefix("").Subrouter()
+   420→   420→        guarded.Use(bootstrapHandler.BootstrapGuard)
+   421→   421→
+   422→   422→        // Public auth routes
+   423→   423→        guarded.HandleFunc("/auth/register", rateLimiter.RateLimitHandler(
+   424→   424→                middleware.AccountCreationLimit,
+   425→   425→                func(r *http.Request) string { return middleware.GetClientIP(r) },
+   426→   426→                authHandler.Register,
+   427→   427→        )).Methods("POST")
+   428→   428→
+   429→   429→        guarded.HandleFunc("/auth/login", rateLimiter.RateLimitHandler(
+   430→   430→                middleware.LoginAttemptLimit,
+   431→   431→                func(r *http.Request) string { return middleware.GetClientIP(r) },
+   432→   432→                authHandler.Login,
+   433→   433→        )).Methods("POST")
+   434→   434→
+   435→   435→        guarded.HandleFunc("/auth/refresh", rateLimiter.RateLimitHandler(
+   436→   436→                middleware.TokenRefreshLimit,
+   437→   437→                func(r *http.Request) string { return middleware.GetClientIP(r) },
+   438→   438→                authHandler.Refresh,
+   439→   439→        )).Methods("POST")
+   440→   440→
+   441→   441→        guarded.HandleFunc("/auth/verify-email", rateLimiter.RateLimitHandler(
+   442→   442→                middleware.EmailVerificationLimit,
+   443→   443→                func(r *http.Request) string { return middleware.GetClientIP(r) },
+   444→   444→                authHandler.VerifyEmail,
+   445→   445→        )).Methods("POST")
+   446→   446→
+   447→   447→        guarded.HandleFunc("/auth/resend-verification", rateLimiter.RateLimitHandler(
+   448→   448→                middleware.ResendVerificationLimit,
+   449→   449→                func(r *http.Request) string { return middleware.GetClientIP(r) },
+   450→   450→                authHandler.ResendVerification,
+   451→   451→        )).Methods("POST")
+   452→   452→
+   453→   453→        guarded.HandleFunc("/auth/forgot-password", rateLimiter.RateLimitHandler(
+   454→   454→                middleware.PasswordResetLimit,
+   455→   455→                func(r *http.Request) string { return middleware.GetClientIP(r) },
+   456→   456→                authHandler.ForgotPassword,
+   457→   457→        )).Methods("POST")
+   458→   458→
+   459→   459→        guarded.HandleFunc("/auth/reset-password", rateLimiter.RateLimitHandler(
+   460→   460→                middleware.ResetTokenVerifyLimit,
+   461→   461→                func(r *http.Request) string { return middleware.GetClientIP(r) },
+   462→   462→                authHandler.ResetPassword,
+   463→   463→        )).Methods("POST")
+   464→   464→
+   465→   465→        // OAuth code exchange (public — exchanges one-time code for tokens)
+   466→   466→        guarded.HandleFunc("/auth/exchange-code", authHandler.ExchangeCode).Methods("POST")
+   467→   467→
+   468→   468→        // Auth providers discovery (public)
+   469→   469→        guarded.HandleFunc("/auth/providers", authHandler.GetProviders).Methods("GET")
+   470→   470→
+   471→   471→        // MFA challenge (public — uses special mfa token)
+   472→   472→        guarded.HandleFunc("/auth/mfa/challenge", rateLimiter.RateLimitHandler(
+   473→   473→                middleware.MFAChallengeLimit,
+   474→   474→                func(r *http.Request) string { return middleware.GetClientIP(r) },
+   475→   475→                authHandler.MFAChallenge,
+   476→   476→        )).Methods("POST")
+   477→   477→
+   478→   478→        // Magic link (public)
+   479→   479→        guarded.HandleFunc("/auth/magic-link", rateLimiter.RateLimitHandler(
+   480→   480→                middleware.MagicLinkLimit,
+   481→   481→                func(r *http.Request) string { return middleware.GetClientIP(r) },
+   482→   482→                authHandler.MagicLinkRequest,
+   483→   483→        )).Methods("POST")
+   484→   484→        guarded.HandleFunc("/auth/magic-link/verify", rateLimiter.RateLimitHandler(
+   485→   485→                middleware.MagicLinkVerifyLimit,
+   486→   486→                func(r *http.Request) string { return middleware.GetClientIP(r) },
+   487→   487→                authHandler.MagicLinkVerify,
+   488→   488→        )).Methods("POST")
+   489→   489→
+   490→   490→        // Google OAuth routes
+   491→   491→        if googleOAuth != nil {
+   492→   492→                guarded.HandleFunc("/auth/google", rateLimiter.RateLimitHandler(
+   493→   493→                        middleware.OAuthInitLimit,
+   494→   494→                        func(r *http.Request) string { return middleware.GetClientIP(r) },
+   495→   495→                        authHandler.GoogleOAuth,
+   496→   496→                )).Methods("GET")
+   497→   497→                guarded.HandleFunc("/auth/google/callback", authHandler.GoogleOAuthCallback).Methods("GET")
+   498→   498→        }
+   499→   499→
+   500→   500→        // GitHub OAuth routes
+   501→   501→        if githubOAuth != nil {
+   502→   502→                guarded.HandleFunc("/auth/github", rateLimiter.RateLimitHandler(
+   503→   503→                        middleware.OAuthInitLimit,
+   504→   504→                        func(r *http.Request) string { return middleware.GetClientIP(r) },
+   505→   505→                        authHandler.GitHubOAuth,
+   506→   506→                )).Methods("GET")
+   507→   507→                guarded.HandleFunc("/auth/github/callback", authHandler.GitHubOAuthCallback).Methods("GET")
+   508→   508→        }
+   509→   509→
+   510→   510→        // Microsoft OAuth routes
+   511→   511→        if microsoftOAuth != nil {
+   512→   512→                guarded.HandleFunc("/auth/microsoft", rateLimiter.RateLimitHandler(
+   513→   513→                        middleware.OAuthInitLimit,
+   514→   514→                        func(r *http.Request) string { return middleware.GetClientIP(r) },
+   515→   515→                        authHandler.MicrosoftOAuth,
+   516→   516→                )).Methods("GET")
+   517→   517→                guarded.HandleFunc("/auth/microsoft/callback", authHandler.MicrosoftOAuthCallback).Methods("GET")
+   518→   518→        }
+   519→   519→
+   520→   520→        // Protected auth routes (require JWT)
+   521→   521→        protectedAuth := guarded.PathPrefix("/auth").Subrouter()
+   522→   522→        protectedAuth.Use(authMiddleware.RequireAuth)
+   523→   523→        protectedAuth.HandleFunc("/me", authHandler.GetMe).Methods("GET")
+   524→   524→        protectedAuth.HandleFunc("/logout", authHandler.Logout).Methods("POST")
+   525→   525→        protectedAuth.HandleFunc("/change-password", authHandler.ChangePassword).Methods("POST")
+   526→   526→        protectedAuth.HandleFunc("/accept-invitation", authHandler.AcceptInvitation).Methods("POST")
+   527→   527→        protectedAuth.HandleFunc("/mfa/setup", authHandler.MFASetup).Methods("POST")
+   528→   528→        protectedAuth.HandleFunc("/mfa/verify-setup", authHandler.MFAVerifySetup).Methods("POST")
+   529→   529→        protectedAuth.HandleFunc("/mfa/disable", authHandler.MFADisable).Methods("POST")
+   530→   530→        protectedAuth.HandleFunc("/mfa/regenerate-codes", authHandler.MFARegenerateRecoveryCodes).Methods("POST")
+   531→   531→        protectedAuth.HandleFunc("/sessions", authHandler.ListSessions).Methods("GET")
+   532→   532→        protectedAuth.HandleFunc("/sessions/{id}", authHandler.RevokeSession).Methods("DELETE")
+   533→   533→        protectedAuth.HandleFunc("/sessions", authHandler.RevokeAllSessions).Methods("DELETE")
+   534→   534→        protectedAuth.HandleFunc("/preferences", authHandler.UpdatePreferences).Methods("PATCH")
+   535→   535→        protectedAuth.HandleFunc("/complete-onboarding", authHandler.CompleteOnboarding).Methods("POST")
+   536→   536→        protectedAuth.HandleFunc("/delete-account", authHandler.DeleteAccount).Methods("POST")
+   537→   537→        protectedAuth.HandleFunc("/export-data", authHandler.ExportData).Methods("GET")
+   538→   538→
+   539→   539→        // Tenant-scoped routes (require JWT + tenant context)
+   540→   540→        tenantAPI := guarded.PathPrefix("/tenant").Subrouter()
+   541→   541→        tenantAPI.Use(authMiddleware.RequireAuth)
+   542→   542→        tenantAPI.Use(tenantMiddleware.RequireTenant)
+   543→   543→
+   544→   544→        tenantAPI.HandleFunc("/members", tenantHandler.ListMembers).Methods("GET")
+   545→   545→        tenantAPI.HandleFunc("/activity", tenantHandler.GetActivity).Methods("GET")
+   546→   546→
+   547→   547→        // Tenant settings (owner only)
+   548→   548→        tenantSettingsRouter := tenantAPI.PathPrefix("/settings").Subrouter()
+   549→   549→        tenantSettingsRouter.Use(middleware.RequireRole(models.RoleOwner))
+   550→   550→        tenantSettingsRouter.HandleFunc("", tenantHandler.UpdateTenantSettings).Methods("PATCH")
+   551→   551→
+   552→   552→        // Invite requires admin+
+   553→   553→        inviteRouter := tenantAPI.PathPrefix("/members/invite").Subrouter()
+   554→   554→        inviteRouter.Use(middleware.RequireRole(models.RoleAdmin))
+   555→   555→        inviteRouter.HandleFunc("", rateLimiter.RateLimitHandler(
+   556→   556→                middleware.InvitationLimit,
+   557→   557→                func(r *http.Request) string { return middleware.GetClientIP(r) },
+   558→   558→                tenantHandler.InviteMember,
+   559→   559→        )).Methods("POST")
+   560→   560→
+   561→   561→        // Remove requires admin+
+   562→   562→        removeRouter := tenantAPI.PathPrefix("/members/{userId}").Subrouter()
+   563→   563→        removeRouter.Use(middleware.RequireRole(models.RoleAdmin))
+   564→   564→        removeRouter.HandleFunc("", tenantHandler.RemoveMember).Methods("DELETE")
+   565→   565→
+   566→   566→        // Role change + ownership transfer require owner
+   567→   567→        ownerRouter := tenantAPI.PathPrefix("/members/{userId}").Subrouter()
+   568→   568→        ownerRouter.Use(middleware.RequireRole(models.RoleOwner))
+   569→   569→        ownerRouter.HandleFunc("/role", tenantHandler.ChangeRole).Methods("PATCH")
+   570→   570→        ownerRouter.HandleFunc("/transfer-ownership", tenantHandler.TransferOwnership).Methods("POST")
+   571→   571→
+   572→   572→        // Message routes (require JWT, user-scoped)
+   573→   573→        messageAPI := guarded.PathPrefix("/messages").Subrouter()
+   574→   574→        messageAPI.Use(authMiddleware.RequireAuth)
+   575→   575→        messageAPI.HandleFunc("", messageHandler.ListMessages).Methods("GET")
+   576→   576→        messageAPI.HandleFunc("/unread-count", messageHandler.UnreadCount).Methods("GET")
+   577→   577→        messageAPI.HandleFunc("/{messageId}/read", messageHandler.MarkRead).Methods("PATCH")
+   578→   578→
+   579→   579→        // Public plans route (require JWT, not admin)
+   580→   580→        guarded.Handle("/plans", authMiddleware.RequireAuth(http.HandlerFunc(plansHandler.ListPlansPublic))).Methods("GET")
+   581→   581→
+   582→   582→        // Public credit bundles route (require JWT, not admin)
+   583→   583→        guarded.Handle("/credit-bundles", authMiddleware.RequireAuth(http.HandlerFunc(bundlesHandler.ListBundlesPublic))).Methods("GET")
+   584→   584→
+   585→   585→        // Public announcements route (require JWT)
+   586→   586→        guarded.Handle("/announcements", authMiddleware.RequireAuth(http.HandlerFunc(announcementsHandler.ListPublic))).Methods("GET")
+   587→   587→
+   588→   588→        // Usage metering routes (require JWT + tenant + active billing)
+   589→   589→        usageAPI := guarded.PathPrefix("/usage").Subrouter()
+   590→   590→        usageAPI.Use(authMiddleware.RequireAuth)
+   591→   591→        usageAPI.Use(tenantMiddleware.RequireTenant)
+   592→   592→        usageAPI.Use(middleware.RequireActiveBilling())
+   593→   593→        usageAPI.HandleFunc("/record", rateLimiter.RateLimitHandler(
+   594→   594→                middleware.UsageRecordLimit,
+   595→   595→                func(r *http.Request) string { return "usage:" + middleware.GetClientIP(r) },
+   596→   596→                usageHandler.RecordUsage,
+   597→   597→        )).Methods("POST")
+   598→   598→        usageAPI.HandleFunc("/summary", usageHandler.GetSummary).Methods("GET")
+   599→   599→
+   600→   600→        // Anonymous telemetry route (rate-limited by IP, no auth)
+   601→   601→        guarded.HandleFunc("/telemetry/track", rateLimiter.RateLimitHandler(
+   602→   602→                middleware.TelemetryAnonymousLimit,
+   603→   603→                func(r *http.Request) string { return "telemetry:" + middleware.GetClientIP(r) },
+   604→   604→                telemetryHandler.TrackAnonymous,
+   605→   605→        )).Methods("POST")
+   606→   606→
+   607→   607→        // Authenticated telemetry routes (require JWT + tenant)
+   608→   608→        telemetryAPI := guarded.PathPrefix("/telemetry").Subrouter()
+   609→   609→        telemetryAPI.Use(authMiddleware.RequireAuth)
+   610→   610→        telemetryAPI.Use(tenantMiddleware.RequireTenant)
+   611→   611→        telemetryAPI.HandleFunc("/events", rateLimiter.RateLimitHandler(
+   612→   612→                middleware.TelemetryAuthenticatedLimit,
+   613→   613→                func(r *http.Request) string {
+   614→   614→                        user, _ := middleware.GetUserFromContext(r.Context())
+   615→   615→                        if user != nil {
+   616→   616→                                return "telemetry:" + user.ID.Hex()
+   617→   617→                        }
+   618→   618→                        return "telemetry:" + middleware.GetClientIP(r)
+   619→   619→                },
+   620→   620→                telemetryHandler.TrackAuthenticated,
+   621→   621→        )).Methods("POST")
+   622→   622→        telemetryAPI.HandleFunc("/events/batch", rateLimiter.RateLimitHandler(
+   623→   623→                middleware.TelemetryAuthenticatedLimit,
+   624→   624→                func(r *http.Request) string {
+   625→   625→                        user, _ := middleware.GetUserFromContext(r.Context())
+   626→   626→                        if user != nil {
+   627→   627→                                return "telemetry:" + user.ID.Hex()
+   628→   628→                        }
+   629→   629→                        return "telemetry:" + middleware.GetClientIP(r)
+   630→   630→                },
+   631→   631→                telemetryHandler.TrackBatch,
+   632→   632→        )).Methods("POST")
+   633→   633→
+   634→   634→        // Webhook route (no auth — uses Stripe signature verification)
+   635→   635→        api.HandleFunc("/billing/webhook", webhookHandler.HandleWebhook).Methods("POST")
+   636→   636→
+   637→   637→        // Billing routes (require JWT + tenant)
+   638→   638→        billingAPI := guarded.PathPrefix("/billing").Subrouter()
+   639→   639→        billingAPI.Use(authMiddleware.RequireAuth)
+   640→   640→        billingAPI.Use(tenantMiddleware.RequireTenant)
+   641→   641→        billingAPI.HandleFunc("/transactions", billingHandler.ListTransactions).Methods("GET")
+   642→   642→        billingAPI.HandleFunc("/transactions/{id}/invoice", billingHandler.GetInvoice).Methods("GET")
+   643→   643→        billingAPI.HandleFunc("/transactions/{id}/invoice/pdf", billingHandler.GetInvoicePDF).Methods("GET")
+   644→   644→        billingAPI.HandleFunc("/config", billingHandler.GetConfig).Methods("GET")
+   645→   645→
+   646→   646→        // Billing actions that modify the subscription (owner only)
+   647→   647→        billingOwner := billingAPI.PathPrefix("").Subrouter()
+   648→   648→        billingOwner.Use(middleware.RequireRole(models.RoleOwner))
+   649→   649→        billingOwner.HandleFunc("/checkout", billingHandler.Checkout).Methods("POST")
+   650→   650→        billingOwner.HandleFunc("/portal", billingHandler.Portal).Methods("POST")
+   651→   651→        billingOwner.HandleFunc("/cancel", billingHandler.CancelSubscription).Methods("POST")
+   652→   652→
+   653→   653→        // Admin routes — three tiers:
+   654→   654→        //   adminAPI   = root tenant + user role  (read-only access to all admin data)
+   655→   655→        //   adminWrite = root tenant + admin role (read-write: manage users, tenants, config, etc.)
+   656→   656→        //   adminOwner = root tenant + owner role (destructive/sensitive: delete users, impersonate, branding, billing)
+   657→   657→        adminAPI := guarded.PathPrefix("/admin").Subrouter()
+   658→   658→        adminAPI.Use(authMiddleware.RequireAuth)
+   659→   659→        adminAPI.Use(tenantMiddleware.RequireTenant)
+   660→   660→        adminAPI.Use(middleware.RequireRootTenant())
+   661→   661→        adminAPI.Use(middleware.RequireRole(models.RoleUser))
+   662→   662→
+   663→   663→        // Read-only routes (user+ role)
+   664→   664→        adminAPI.HandleFunc("/about", adminHandler.GetAbout).Methods("GET")
+   665→   665→        adminAPI.HandleFunc("/dashboard", adminHandler.GetDashboard).Methods("GET")
+   666→   666→        adminAPI.HandleFunc("/logs", logHandler.ListLogs).Methods("GET")
+   667→   667→        adminAPI.HandleFunc("/logs/severity-counts", logHandler.SeverityCounts).Methods("GET")
+   668→   668→        adminAPI.HandleFunc("/logs/export", rateLimiter.RateLimitHandler(
+   669→   669→                middleware.CSVExportLimit,
+   670→   670→                func(r *http.Request) string { return middleware.GetClientIP(r) },
+   671→   671→                logHandler.ExportCSV,
+   672→   672→        )).Methods("GET")
+   673→   673→        adminAPI.HandleFunc("/config", configHandler.ListConfig).Methods("GET")
+   674→   674→        adminAPI.HandleFunc("/config/{name}", configHandler.GetConfig).Methods("GET")
+   675→   675→        adminAPI.HandleFunc("/tenants", adminHandler.ListTenants).Methods("GET")
+   676→   676→        adminAPI.HandleFunc("/tenants/export", rateLimiter.RateLimitHandler(
+   677→   677→                middleware.CSVExportLimit,
+   678→   678→                func(r *http.Request) string { return middleware.GetClientIP(r) },
+   679→   679→                adminHandler.ExportTenantsCSV,
+   680→   680→        )).Methods("GET")
+   681→   681→        adminAPI.HandleFunc("/tenants/{tenantId}", adminHandler.GetTenant).Methods("GET")
+   682→   682→        adminAPI.HandleFunc("/plans", plansHandler.ListPlans).Methods("GET")
+   683→   683→        adminAPI.HandleFunc("/plans/{planId}", plansHandler.GetPlan).Methods("GET")
+   684→   684→        adminAPI.HandleFunc("/entitlement-keys", plansHandler.ListEntitlementKeys).Methods("GET")
+   685→   685→        adminAPI.HandleFunc("/credit-bundles", bundlesHandler.ListBundles).Methods("GET")
+   686→   686→        adminAPI.HandleFunc("/health/nodes", healthHandler.ListNodes).Methods("GET")
+   687→   687→        adminAPI.HandleFunc("/health/metrics", healthHandler.GetMetrics).Methods("GET")
+   688→   688→        adminAPI.HandleFunc("/health/current", healthHandler.GetCurrent).Methods("GET")
+   689→   689→        adminAPI.HandleFunc("/health/integrations", healthHandler.GetIntegrations).Methods("GET")
+   690→   690→        adminAPI.HandleFunc("/health/test-email", healthHandler.SendTestEmail).Methods("POST")
+   691→   691→        adminAPI.HandleFunc("/promotions", promotionsHandler.ListPromotions).Methods("GET")
+   692→   692→        adminAPI.HandleFunc("/promotions/eligible-products", promotionsHandler.ListEligibleProducts).Methods("GET")
+   693→   693→        adminAPI.HandleFunc("/announcements", announcementsHandler.ListAll).Methods("GET")
+   694→   694→        adminAPI.HandleFunc("/financial/transactions", billingHandler.AdminListTransactions).Methods("GET")
+   695→   695→        adminAPI.HandleFunc("/financial/metrics", billingHandler.AdminGetMetrics).Methods("GET")
+   696→   696→        adminAPI.HandleFunc("/api-keys", apiKeysHandler.ListAPIKeys).Methods("GET")
+   697→   697→        adminAPI.HandleFunc("/members", adminHandler.ListRootMembers).Methods("GET")
+   698→   698→        adminAPI.HandleFunc("/users", adminHandler.ListUsers).Methods("GET")
+   699→   699→        adminAPI.HandleFunc("/users/export", rateLimiter.RateLimitHandler(
+   700→   700→                middleware.CSVExportLimit,
+   701→   701→                func(r *http.Request) string { return middleware.GetClientIP(r) },
+   702→   702→                adminHandler.ExportUsersCSV,
+   703→   703→        )).Methods("GET")
+   704→   704→        adminAPI.HandleFunc("/users/{userId}", adminHandler.GetUser).Methods("GET")
+   705→   705→        adminAPI.HandleFunc("/webhooks", webhooksHandler.ListWebhooks).Methods("GET")
+   706→   706→        adminAPI.HandleFunc("/webhooks/event-types", webhooksHandler.ListEventTypes).Methods("GET")
+   707→   707→        adminAPI.HandleFunc("/webhooks/{webhookId}", webhooksHandler.GetWebhook).Methods("GET")
+   708→   708→        adminAPI.HandleFunc("/branding/media", brandingHandler.ListMedia).Methods("GET")
+   709→   709→        adminAPI.HandleFunc("/branding/pages", brandingHandler.AdminListPages).Methods("GET")
+   710→   710→        adminAPI.HandleFunc("/pm/funnel", pmHandler.GetFunnel).Methods("GET")
+   711→   711→        adminAPI.HandleFunc("/pm/retention", pmHandler.GetRetention).Methods("GET")
+   712→   712→        adminAPI.HandleFunc("/pm/engagement", pmHandler.GetEngagement).Methods("GET")
+   713→   713→        adminAPI.HandleFunc("/pm/kpis", pmHandler.GetKPIs).Methods("GET")
+   714→   714→        adminAPI.HandleFunc("/pm/events", pmHandler.GetCustomEvents).Methods("GET")
+   715→   715→        adminAPI.HandleFunc("/pm/events/types", pmHandler.ListEventTypes).Methods("GET")
+   716→   716→        adminAPI.HandleFunc("/pm/event-definitions", eventDefsHandler.ListEventDefinitions).Methods("GET")
+   717→   717→        adminAPI.HandleFunc("/pm/event-definitions/sankey", eventDefsHandler.GetSankeyData).Methods("GET")
+   718→   718→
+   719→   719→        // Admin-level write routes (admin+ role)
+   720→   720→        adminWrite := adminAPI.PathPrefix("").Subrouter()
+   721→   721→        adminWrite.Use(middleware.RequireRole(models.RoleAdmin))
+   722→   722→        adminWrite.HandleFunc("/config", configHandler.CreateConfig).Methods("POST")
+   723→   723→        adminWrite.HandleFunc("/config/{name}", configHandler.UpdateConfig).Methods("PUT")
+   724→   724→        adminWrite.HandleFunc("/config/{name}", configHandler.DeleteConfig).Methods("DELETE")
+   725→   725→        adminWrite.HandleFunc("/users/{userId}", adminHandler.UpdateUser).Methods("PUT")
+   726→   726→        adminWrite.HandleFunc("/users/{userId}/status", adminHandler.UpdateUserStatus).Methods("PATCH")
+   727→   727→        adminWrite.HandleFunc("/users/{userId}/role/{tenantId}", adminHandler.UpdateUserRole).Methods("PATCH")
+   728→   728→        adminWrite.HandleFunc("/tenants/{tenantId}", adminHandler.UpdateTenant).Methods("PUT")
+   729→   729→        adminWrite.HandleFunc("/tenants/{tenantId}/status", adminHandler.UpdateTenantStatus).Methods("PATCH")
+   730→   730→        adminWrite.HandleFunc("/plans", plansHandler.CreatePlan).Methods("POST")
+   731→   731→        adminWrite.HandleFunc("/plans/{planId}", plansHandler.UpdatePlan).Methods("PUT")
+   732→   732→        adminWrite.HandleFunc("/plans/{planId}", plansHandler.DeletePlan).Methods("DELETE")
+   733→   733→        adminWrite.HandleFunc("/plans/{planId}/archive", plansHandler.ArchivePlan).Methods("POST")
+   734→   734→        adminWrite.HandleFunc("/plans/{planId}/unarchive", plansHandler.UnarchivePlan).Methods("POST")
+   735→   735→        adminWrite.HandleFunc("/tenants/{tenantId}/plan", plansHandler.AssignPlan).Methods("PATCH")
+   736→   736→        adminWrite.HandleFunc("/credit-bundles", bundlesHandler.CreateBundle).Methods("POST")
+   737→   737→        adminWrite.HandleFunc("/credit-bundles/{bundleId}", bundlesHandler.UpdateBundle).Methods("PUT")
+   738→   738→        adminWrite.HandleFunc("/credit-bundles/{bundleId}", bundlesHandler.DeleteBundle).Methods("DELETE")
+   739→   739→        adminWrite.HandleFunc("/promotions", promotionsHandler.CreatePromotion).Methods("POST")
+   740→   740→        adminWrite.HandleFunc("/promotions/update", promotionsHandler.UpdatePromotion).Methods("POST")
+   741→   741→        adminWrite.HandleFunc("/promotions/deactivate", promotionsHandler.DeactivatePromotion).Methods("POST")
+   742→   742→        adminWrite.HandleFunc("/announcements", announcementsHandler.Create).Methods("POST")
+   743→   743→        adminWrite.HandleFunc("/announcements/{id}", announcementsHandler.Update).Methods("PUT")
+   744→   744→        adminWrite.HandleFunc("/announcements/{id}", announcementsHandler.Delete).Methods("DELETE")
+   745→   745→        adminWrite.HandleFunc("/api-keys", apiKeysHandler.CreateAPIKey).Methods("POST")
+   746→   746→        adminWrite.HandleFunc("/api-keys/{keyId}", apiKeysHandler.DeleteAPIKey).Methods("DELETE")
+   747→   747→        adminWrite.HandleFunc("/members/invite", adminHandler.InviteRootMember).Methods("POST")
+   748→   748→        adminWrite.HandleFunc("/members/invitations/{invitationId}", adminHandler.CancelRootInvitation).Methods("DELETE")
+   749→   749→        adminWrite.HandleFunc("/members/{userId}", adminHandler.RemoveRootMember).Methods("DELETE")
+   750→   750→        adminWrite.HandleFunc("/webhooks", webhooksHandler.CreateWebhook).Methods("POST")
+   751→   751→        adminWrite.HandleFunc("/webhooks/{webhookId}", webhooksHandler.UpdateWebhook).Methods("PUT")
+   752→   752→        adminWrite.HandleFunc("/webhooks/{webhookId}", webhooksHandler.DeleteWebhook).Methods("DELETE")
+   753→   753→        adminWrite.HandleFunc("/webhooks/{webhookId}/test", webhooksHandler.TestWebhook).Methods("POST")
+   754→   754→        adminWrite.HandleFunc("/webhooks/{webhookId}/regenerate-secret", webhooksHandler.RegenerateSecret).Methods("POST")
+   755→   755→        adminWrite.HandleFunc("/pm/event-definitions", eventDefsHandler.CreateEventDefinition).Methods("POST")
+   756→   756→        adminWrite.HandleFunc("/pm/event-definitions/{defId}", eventDefsHandler.UpdateEventDefinition).Methods("PUT")
+   757→   757→        adminWrite.HandleFunc("/pm/event-definitions/{defId}", eventDefsHandler.DeleteEventDefinition).Methods("DELETE")
+   758→   758→
+   759→   759→        // Owner-only admin actions (impersonate, delete users, branding, billing management)
+   760→   760→        adminOwner := adminAPI.PathPrefix("").Subrouter()
+   761→   761→        adminOwner.Use(middleware.RequireRole(models.RoleOwner))
+   762→   762→        adminOwner.HandleFunc("/members/{userId}/role", adminHandler.ChangeRootMemberRole).Methods("PATCH")
+   763→   763→        adminOwner.HandleFunc("/users/{userId}/preflight-delete", adminHandler.PreflightDeleteUser).Methods("GET")
+   764→   764→        adminOwner.HandleFunc("/users/{userId}/impersonate", adminHandler.ImpersonateUser).Methods("POST")
+   765→   765→        adminOwner.HandleFunc("/users/{userId}", adminHandler.DeleteUser).Methods("DELETE")
+   766→   766→        adminOwner.HandleFunc("/tenants/{tenantId}/cancel-subscription", billingHandler.AdminCancelSubscription).Methods("POST")
+   767→   767→        adminOwner.HandleFunc("/tenants/{tenantId}/subscription", billingHandler.AdminUpdateSubscription).Methods("PATCH")
+   768→   768→        adminOwner.HandleFunc("/branding", brandingHandler.UpdateBranding).Methods("PUT")
+   769→   769→        adminOwner.HandleFunc("/branding/asset", brandingHandler.UploadAsset).Methods("POST")
+   770→   770→        adminOwner.HandleFunc("/branding/asset/{key}", brandingHandler.DeleteAsset).Methods("DELETE")
+   771→   771→        adminOwner.HandleFunc("/branding/media", brandingHandler.UploadMedia).Methods("POST")
+   772→   772→        adminOwner.HandleFunc("/branding/media/{id}", brandingHandler.DeleteMedia).Methods("DELETE")
+   773→   773→        adminOwner.HandleFunc("/branding/pages", brandingHandler.CreatePage).Methods("POST")
+   774→   774→        adminOwner.HandleFunc("/branding/pages/{id}", brandingHandler.UpdatePage).Methods("PUT")
+   775→   775→        adminOwner.HandleFunc("/branding/pages/{id}", brandingHandler.DeletePage).Methods("DELETE")
+   776→   776→
+   777→   777→        // Serve frontend static files in production
+   778→   778→        if cfg.Frontend.StaticDir != "" {
+   779→   779→                slog.Info("Serving frontend", "staticDir", cfg.Frontend.StaticDir)
+   780→   780→                spa := spaHandler{
+   781→   781→                        staticPath: cfg.Frontend.StaticDir,
+   782→   782→                        indexPath:  "index.html",
+   783→   783→                        getAppName: func() string {
+   784→   784→                                // Check branding config in DB first, fall back to configstore app.name.
+   785→   785→                                var bc models.BrandingConfig
+   786→   786→                                if err := database.BrandingConfig().FindOne(context.Background(), bson.M{}).Decode(&bc); err == nil && bc.AppName != "" {
+   787→   787→                                        return bc.AppName
+   788→   788→                                }
+   789→   789→                                return cfgStore.Get("app.name")
+   790→   790→                        },
+   791→   791→                }
+   792→   792→                router.PathPrefix("/").Handler(spa)
+   793→   793→        }
+   794→   794→
+   795→   795→        // CORS
+   796→   796→        c := cors.New(cors.Options{
+   797→   797→                AllowedOrigins:   []string{cfg.Frontend.URL},
+   798→   798→                AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+   799→   799→                AllowedHeaders:   []string{"Authorization", "Content-Type", "X-Tenant-ID"},
+   800→   800→                ExposedHeaders:   []string{"X-Request-ID", "X-API-Version"},
+   801→   801→                AllowCredentials: true,
+   802→   802→                MaxAge:           86400,
+   803→   803→        })
+   804→   804→
+   805→   805→        // Wrap with recovery + body size limit + security headers + CORS + metrics
+   806→   806→        handler := middleware.Recovery(middleware.BodySizeLimit(middleware.SecurityHeaders(c.Handler(metricsCollector.Middleware(router)))))
+   807→   807→
+   808→   808→        // Start server
+   809→   809→        addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
+   810→   810→        srv := &http.Server{
+   811→   811→                Addr:              addr,
+   812→   812→                Handler:           handler,
+   813→   813→                ReadHeaderTimeout: 5 * time.Second,
+   814→   814→                ReadTimeout:       15 * time.Second,
+   815→   815→                WriteTimeout:      15 * time.Second,
+   816→   816→                IdleTimeout:       60 * time.Second,
+   817→   817→        }
+   818→   818→
+   819→   819→        // Graceful shutdown
+   820→   820→        go func() {
+   821→   821→                slog.Info("Server listening", "addr", addr)
+   822→   822→                if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+   823→   823→                        slog.Error("Server failed", "error", err)
+   824→   824→                        os.Exit(1)
+   825→   825→                }
+   826→   826→        }()
+   827→   827→
+   828→   828→        quit := make(chan os.Signal, 1)
+   829→   829→        signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+   830→   830→        <-quit
+   831→   831→
+   832→   832→        slog.Info("Shutting down server")
+   833→   833→        // Cancel app-wide context to signal background services (config reload, etc.)
+   834→   834→        appCancel()
+   835→   835→
+   836→   836→        shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+   837→   837→        defer shutdownCancel()
+   838→   838→
+   839→   839→        if err := srv.Shutdown(shutdownCtx); err != nil {
+   840→   840→                slog.Error("Server forced shutdown", "error", err)
+   841→   841→                os.Exit(1)
+   842→   842→        }
+   843→   843→        slog.Info("Server stopped")
+   844→   844→}
+   845→   845→

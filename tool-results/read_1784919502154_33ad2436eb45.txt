@@ -1,0 +1,582 @@
+    85→                }
+    86→        }
+    87→
+    88→        /**
+    89→         * Get available endpoints
+    90→         *
+    91→         * @since 2.6.0
+    92→         *
+    93→         * @return array
+    94→         */
+    95→        public static function endpoints() {
+    96→                $course_controller        = new CourseController();
+    97→                $topic_controller         = new TopicController();
+    98→                $lesson_controller        = new LessonController();
+    99→                $assignment_controller    = new AssignmentController();
+   100→                $quiz_controller          = new QuizController();
+   101→                $quiz_question_controller = new QuizQuestionController();
+   102→                $enrollment_controller    = new EnrollmentController();
+   103→                $quiz_attempt_controller  = new QuizAttemptController();
+   104→                $q_and_a_controller       = new QAndAController();
+   105→                $review_controller        = new ReviewController();
+   106→                $wishlist_controller      = new WishlistController();
+   107→                $user_profile_controller  = new UserProfileController();
+   108→                $student_controller       = new StudentController();
+   109→
+   110→                return array(
+   111→                        array(
+   112→                                'endpoint'            => 'courses',
+   113→                                'url_params'          => '',
+   114→                                'method'              => WP_REST_Server::CREATABLE,
+   115→                                'callback'            => array( $course_controller, 'create' ),
+   116→                                'permission_callback' => array( $course_controller, 'validate_write_request' ),
+   117→                        ),
+   118→                        array(
+   119→                                'endpoint'            => 'courses',
+   120→                                'url_params'          => '/(?P<id>\d+)',
+   121→                                'args'                => array(
+   122→                                        'id' => array(
+   123→                                                'validate_callback' => function ( $param ) {
+   124→                                                        return is_numeric( $param ) && absint( $param ) > 0;
+   125→                                                },
+   126→                                        ),
+   127→                                ),
+   128→                                'method'              => WP_REST_Server::EDITABLE,
+   129→                                'callback'            => array( $course_controller, 'update' ),
+   130→                                'permission_callback' => array( $course_controller, 'validate_write_request' ),
+   131→                        ),
+   132→                        array(
+   133→                                'endpoint'            => 'courses',
+   134→                                'url_params'          => '/(?P<id>\d+)',
+   135→                                'args'                => array(
+   136→                                        'id' => array(
+   137→                                                'validate_callback' => function ( $param ) {
+   138→                                                        return is_numeric( $param ) && absint( $param ) > 0;
+   139→                                                },
+   140→                                        ),
+   141→                                ),
+   142→                                'method'              => WP_REST_Server::DELETABLE,
+   143→                                'callback'            => array( $course_controller, 'delete' ),
+   144→                                'permission_callback' => array( $course_controller, 'validate_delete_request' ),
+   145→                        ),
+   146→                        array(
+   147→                                'endpoint'            => 'course-mark-complete',
+   148→                                'url_params'          => '',
+   149→                                'method'              => WP_REST_Server::CREATABLE,
+   150→                                'callback'            => array( $course_controller, 'course_mark_complete' ),
+   151→                                'permission_callback' => array( $course_controller, 'validate_write_request' ),
+   152→                        ),
+   153→                        // Topic routes.
+   154→                        array(
+   155→                                'endpoint'            => 'topics',
+   156→                                'url_params'          => '',
+   157→                                'method'              => WP_REST_Server::CREATABLE,
+   158→                                'callback'            => array( $topic_controller, 'create' ),
+   159→                                'permission_callback' => array( $topic_controller, 'validate_write_request' ),
+   160→                        ),
+   161→                        array(
+   162→                                'endpoint'            => 'topics',
+   163→                                'url_params'          => '/(?P<id>\d+)',
+   164→                                'args'                => array(
+   165→                                        'id' => array(
+   166→                                                'validate_callback' => function ( $param ) {
+   167→                                                        return is_numeric( $param ) && absint( $param ) > 0;
+   168→                                                },
+   169→                                        ),
+   170→                                ),
+   171→                                'method'              => WP_REST_Server::EDITABLE,
+   172→                                'callback'            => array( $topic_controller, 'update' ),
+   173→                                'permission_callback' => array( $topic_controller, 'validate_write_request' ),
+   174→                        ),
+   175→                        array(
+   176→                                'endpoint'            => 'topics',
+   177→                                'url_params'          => '/(?P<id>\d+)',
+   178→                                'args'                => array(
+   179→                                        'id' => array(
+   180→                                                'validate_callback' => function ( $param ) {
+   181→                                                        return is_numeric( $param ) && absint( $param ) > 0;
+   182→                                                },
+   183→                                        ),
+   184→                                ),
+   185→                                'method'              => WP_REST_Server::DELETABLE,
+   186→                                'callback'            => array( $topic_controller, 'delete' ),
+   187→                                'permission_callback' => array( $topic_controller, 'validate_delete_request' ),
+   188→                        ),
+   189→                        // Lesson routes.
+   190→                        array(
+   191→                                'endpoint'            => 'lessons',
+   192→                                'url_params'          => '',
+   193→                                'method'              => WP_REST_Server::CREATABLE,
+   194→                                'callback'            => array( $lesson_controller, 'create' ),
+   195→                                'permission_callback' => array( $lesson_controller, 'validate_write_request' ),
+   196→                        ),
+   197→                        array(
+   198→                                'endpoint'            => 'lessons',
+   199→                                'url_params'          => '/(?P<id>\d+)',
+   200→                                'args'                => array(
+   201→                                        'id' => array(
+   202→                                                'validate_callback' => function ( $param ) {
+   203→                                                        return is_numeric( $param ) && absint( $param ) > 0;
+   204→                                                },
+   205→                                        ),
+   206→                                ),
+   207→                                'method'              => WP_REST_Server::EDITABLE,
+   208→                                'callback'            => array( $lesson_controller, 'update' ),
+   209→                                'permission_callback' => array( $lesson_controller, 'validate_write_request' ),
+   210→                        ),
+   211→                        array(
+   212→                                'endpoint'            => 'lessons',
+   213→                                'url_params'          => '/(?P<id>\d+)',
+   214→                                'args'                => array(
+   215→                                        'id' => array(
+   216→                                                'validate_callback' => function ( $param ) {
+   217→                                                        return is_numeric( $param ) && absint( $param ) > 0;
+   218→                                                },
+   219→                                        ),
+   220→                                ),
+   221→                                'method'              => WP_REST_Server::DELETABLE,
+   222→                                'callback'            => array( $lesson_controller, 'delete' ),
+   223→                                'permission_callback' => array( $lesson_controller, 'validate_delete_request' ),
+   224→                        ),
+   225→                        array(
+   226→                                'endpoint'            => 'lesson-mark-complete',
+   227→                                'method'              => WP_REST_Server::CREATABLE,
+   228→                                'callback'            => array( $lesson_controller, 'lesson_mark_complete' ),
+   229→                                'permission_callback' => array( $lesson_controller, 'validate_write_request' ),
+   230→                        ),
+   231→                        // Assignment routes.
+   232→                        array(
+   233→                                'endpoint'            => 'assignments',
+   234→                                'url_params'          => '',
+   235→                                'method'              => WP_REST_Server::CREATABLE,
+   236→                                'callback'            => array( $assignment_controller, 'create' ),
+   237→                                'permission_callback' => array( $assignment_controller, 'validate_write_request' ),
+   238→                        ),
+   239→                        array(
+   240→                                'endpoint'            => 'assignments',
+   241→                                'url_params'          => '/(?P<id>\d+)',
+   242→                                'args'                => array(
+   243→                                        'id' => array(
+   244→                                                'validate_callback' => function ( $param ) {
+   245→                                                        return is_numeric( $param ) && absint( $param ) > 0;
+   246→                                                },
+   247→                                        ),
+   248→                                ),
+   249→                                'method'              => WP_REST_Server::EDITABLE,
+   250→                                'callback'            => array( $assignment_controller, 'update' ),
+   251→                                'permission_callback' => array( $assignment_controller, 'validate_write_request' ),
+   252→                        ),
+   253→                        array(
+   254→                                'endpoint'            => 'assignments',
+   255→                                'url_params'          => '/(?P<id>\d+)',
+   256→                                'args'                => array(
+   257→                                        'id' => array(
+   258→                                                'validate_callback' => function ( $param ) {
+   259→                                                        return is_numeric( $param ) && absint( $param ) > 0;
+   260→                                                },
+   261→                                        ),
+   262→                                ),
+   263→                                'method'              => WP_REST_Server::DELETABLE,
+   264→                                'callback'            => array( $assignment_controller, 'delete' ),
+   265→                                'permission_callback' => array( $assignment_controller, 'validate_delete_request' ),
+   266→                        ),
+   267→                        array(
+   268→                                'endpoint'            => 'assignments',
+   269→                                'url_params'          => '',
+   270→                                'method'              => WP_REST_Server::READABLE,
+   271→                                'callback'            => array( $assignment_controller, 'get_student_assignment' ),
+   272→                                'permission_callback' => array( $assignment_controller, 'validate_read_request' ),
+   273→                        ),
+   274→                        array(
+   275→                                'endpoint'            => 'assignment-submit',
+   276→                                'url_params'          => '',
+   277→                                'method'              => WP_REST_Server::CREATABLE,
+   278→                                'callback'            => array( $assignment_controller, 'student_assignment_submit' ),
+   279→                                'permission_callback' => array( $assignment_controller, 'validate_write_request' ),
+   280→                        ),
+   281→                        array(
+   282→                                'endpoint'            => 'assignment-submit',
+   283→                                'url_params'          => '/(?P<submission_id>\d+)',
+   284→                                'args'                => array(
+   285→                                        'submission_id' => array(
+   286→                                                'validate_callback' => function ( $param ) {
+   287→                                                        return is_numeric( $param ) && absint( $param ) > 0;
+   288→                                                },
+   289→                                        ),
+   290→                                ),
+   291→                                'method'              => WP_REST_Server::EDITABLE,
+   292→                                'callback'            => array( $assignment_controller, 'student_assignment_update' ),
+   293→                                'permission_callback' => array( $assignment_controller, 'validate_write_request' ),
+   294→                        ),
+   295→                        array(
+   296→                                'endpoint'            => 'assignment-attachment',
+   297→                                'url_params'          => '/(?P<submission_id>\d+)',
+   298→                                'args'                => array(
+   299→                                        'submission_id' => array(
+   300→                                                'validate_callback' => function ( $param ) {
+   301→                                                        return is_numeric( $param ) && absint( $param ) > 0;
+   302→                                                },
+   303→                                        ),
+   304→                                ),
+   305→                                'method'              => WP_REST_Server::DELETABLE,
+   306→                                'callback'            => array( $assignment_controller, 'delete_attachment' ),
+   307→                                'permission_callback' => array( $assignment_controller, 'validate_delete_request' ),
+   308→                        ),
+   309→                        // Quiz routes.
+   310→                        array(
+   311→                                'endpoint'            => 'quizzes',
+   312→                                'url_params'          => '',
+   313→                                'method'              => WP_REST_Server::CREATABLE,
+   314→                                'callback'            => array( $quiz_controller, 'create' ),
+   315→                                'permission_callback' => array( $quiz_controller, 'validate_write_request' ),
+   316→                        ),
+   317→                        array(
+   318→                                'endpoint'            => 'quizzes',
+   319→                                'url_params'          => '/(?P<id>\d+)',
+   320→                                'args'                => array(
+   321→                                        'id' => array(
+   322→                                                'validate_callback' => function ( $param ) {
+   323→                                                        return is_numeric( $param ) && absint( $param ) > 0;
+   324→                                                },
+   325→                                        ),
+   326→                                ),
+   327→                                'method'              => WP_REST_Server::EDITABLE,
+   328→                                'callback'            => array( $quiz_controller, 'update' ),
+   329→                                'permission_callback' => array( $quiz_controller, 'validate_write_request' ),
+   330→                        ),
+   331→                        array(
+   332→                                'endpoint'            => 'quizzes',
+   333→                                'url_params'          => '/(?P<id>\d+)',
+   334→                                'args'                => array(
+   335→                                        'id' => array(
+   336→                                                'validate_callback' => function ( $param ) {
+   337→                                                        return is_numeric( $param ) && absint( $param ) > 0;
+   338→                                                },
+   339→                                        ),
+   340→                                ),
+   341→                                'method'              => WP_REST_Server::DELETABLE,
+   342→                                'callback'            => array( $quiz_controller, 'delete' ),
+   343→                                'permission_callback' => array( $quiz_controller, 'validate_delete_request' ),
+   344→                        ),
+   345→                        array(
+   346→                                'endpoint'            => 'quiz-questions',
+   347→                                'url_params'          => '',
+   348→                                'method'              => WP_REST_Server::CREATABLE,
+   349→                                'callback'            => array( $quiz_question_controller, 'create' ),
+   350→                                'permission_callback' => array( $quiz_question_controller, 'validate_write_request' ),
+   351→                        ),
+   352→                        array(
+   353→                                'endpoint'            => 'quiz-questions',
+   354→                                'url_params'          => '/(?P<id>\d+)',
+   355→                                'args'                => array(
+   356→                                        'id' => array(
+   357→                                                'validate_callback' => function ( $param ) {
+   358→                                                        return is_numeric( $param ) && absint( $param ) > 0;
+   359→                                                },
+   360→                                        ),
+   361→                                ),
+   362→                                'method'              => WP_REST_Server::EDITABLE,
+   363→                                'callback'            => array( $quiz_question_controller, 'update' ),
+   364→                                'permission_callback' => array( $quiz_question_controller, 'validate_write_request' ),
+   365→                        ),
+   366→                        array(
+   367→                                'endpoint'            => 'quiz-questions',
+   368→                                'url_params'          => '/(?P<id>\d+)',
+   369→                                'args'                => array(
+   370→                                        'id' => array(
+   371→                                                'validate_callback' => function ( $param ) {
+   372→                                                        return is_numeric( $param ) && absint( $param ) > 0;
+   373→                                                },
+   374→                                        ),
+   375→                                ),
+   376→                                'method'              => WP_REST_Server::DELETABLE,
+   377→                                'callback'            => array( $quiz_question_controller, 'delete' ),
+   378→                                'permission_callback' => array( $quiz_question_controller, 'validate_delete_request' ),
+   379→                        ),
+   380→                        array(
+   381→                                'endpoint'            => 'quiz-attempts',
+   382→                                'method'              => WP_REST_Server::CREATABLE,
+   383→                                'callback'            => array( $quiz_attempt_controller, 'create' ),
+   384→                                'permission_callback' => array( $quiz_attempt_controller, 'validate_write_request' ),
+   385→                        ),
+   386→                        array(
+   387→                                'endpoint'            => 'quiz-attempts',
+   388→                                'args'                => array(
+   389→                                        'quiz_id'    => array(
+   390→                                                'validate_callback' => function ( $param ) {
+   391→                                                        return is_numeric( $param ) && absint( $param ) > 0;
+   392→                                                },
+   393→                                        ),
+   394→                                        'student_id' => array(
+   395→                                                'validate_callback' => function ( $param ) {
+   396→                                                        return is_numeric( $param ) && absint( $param ) > 0;
+   397→                                                },
+   398→                                        ),
+   399→                                ),
+   400→                                'method'              => WP_REST_Server::READABLE,
+   401→                                'callback'            => array( $quiz_attempt_controller, 'read' ),
+   402→                                'permission_callback' => array( $quiz_attempt_controller, 'validate_write_request' ),
+   403→                        ),
+   404→                        array(
+   405→                                'endpoint'            => 'quiz-attempts',
+   406→                                'url_params'          => '/(?P<attempt_id>\d+)',
+   407→                                'args'                => array(
+   408→                                        'attempt_id' => array(
+   409→                                                'validate_callback' => function ( $param ) {
+   410→                                                        return is_numeric( $param ) && absint( $param ) > 0;
+   411→                                                },
+   412→                                        ),
+   413→                                ),
+   414→                                'method'              => WP_REST_Server::READABLE,
+   415→                                'callback'            => array( $quiz_attempt_controller, 'read_one' ),
+   416→                                'permission_callback' => array( $quiz_attempt_controller, 'validate_write_request' ),
+   417→                        ),
+   418→                        // Enrollments.
+   419→                        array(
+   420→                                'endpoint'            => 'enrollments',
+   421→                                'method'              => WP_REST_Server::CREATABLE,
+   422→                                'callback'            => array( $enrollment_controller, 'do_enrollment' ),
+   423→                                'permission_callback' => array( $enrollment_controller, 'validate_write_request' ),
+   424→                        ),
+   425→                        array(
+   426→                                'endpoint'            => 'enrollments',
+   427→                                'url_params'          => '/(?P<status>[a-zA-Z]+)',
+   428→                                'method'              => WP_REST_Server::EDITABLE,
+   429→                                'callback'            => array( $enrollment_controller, 'update_enrollment' ),
+   430→                                'permission_callback' => array( $enrollment_controller, 'validate_write_request' ),
+   431→                        ),
+   432→                        array(
+   433→                                'endpoint'            => 'enrollments',
+   434→                                'method'              => WP_REST_Server::READABLE,
+   435→                                'args'                => array(
+   436→                                        'course_id' => array(
+   437→                                                'validate_callback' => function ( $param ) {
+   438→                                                        return is_numeric( $param ) && absint( $param ) > 0;
+   439→                                                },
+   440→                                        ),
+   441→                                ),
+   442→                                'callback'            => array( $enrollment_controller, 'get_enrollment_list' ),
+   443→                                'permission_callback' => array( $enrollment_controller, 'validate_read_request' ),
+   444→                        ),
+   445→                        // Q&A.
+   446→                        array(
+   447→                                'endpoint'            => 'qna',
+   448→                                'method'              => WP_REST_Server::READABLE,
+   449→                                'callback'            => array( $q_and_a_controller, 'list' ),
+   450→                                'permission_callback' => array( $q_and_a_controller, 'validate_write_request' ),
+   451→                        ),
+   452→                        array(
+   453→                                'endpoint'            => 'qna',
+   454→                                'method'              => WP_REST_Server::CREATABLE,
+   455→                                'callback'            => array( $q_and_a_controller, 'create' ),
+   456→                                'permission_callback' => array( $q_and_a_controller, 'validate_write_request' ),
+   457→                        ),
+   458→                        array(
+   459→                                'endpoint'            => 'qna',
+   460→                                'url_params'          => '/(?P<id>\d+)',
+   461→                                'args'                => array(
+   462→                                        'id' => array(
+   463→                                                'validate_callback' => function ( $param ) {
+   464→                                                        return is_numeric( $param ) && absint( $param ) > 0;
+   465→                                                },
+   466→                                        ),
+   467→                                ),
+   468→                                'method'              => WP_REST_Server::DELETABLE,
+   469→                                'callback'            => array( $q_and_a_controller, 'delete' ),
+   470→                                'permission_callback' => array( $q_and_a_controller, 'validate_delete_request' ),
+   471→
+   472→                        ),
+   473→                        // Reviews.
+   474→                        array(
+   475→                                'endpoint'            => 'reviews',
+   476→                                'url_params'          => '',
+   477→                                'method'              => WP_REST_Server::READABLE,
+   478→                                'callback'            => array( $review_controller, 'list' ),
+   479→                                'permission_callback' => array( $review_controller, 'validate_read_request' ),
+   480→                        ),
+   481→                        array(
+   482→                                'endpoint'            => 'reviews',
+   483→                                'url_params'          => '',
+   484→                                'method'              => WP_REST_Server::CREATABLE,
+   485→                                'callback'            => array( $review_controller, 'create' ),
+   486→                                'permission_callback' => array( $review_controller, 'validate_write_request' ),
+   487→                        ),
+   488→                        array(
+   489→                                'endpoint'            => 'reviews',
+   490→                                'url_params'          => '/(?P<review_id>\d+)',
+   491→                                'args'                => array(
+   492→                                        'review_id' => array(
+   493→                                                'validate_callback' => function ( $param ) {
+   494→                                                        return is_numeric( $param ) && absint( $param ) > 0;
+   495→                                                },
+   496→                                        ),
+   497→                                ),
+   498→                                'method'              => WP_REST_Server::EDITABLE,
+   499→                                'callback'            => array( $review_controller, 'update' ),
+   500→                                'permission_callback' => array( $review_controller, 'validate_write_request' ),
+   501→                        ),
+   502→                        array(
+   503→                                'endpoint'            => 'reviews',
+   504→                                'url_params'          => '/(?P<review_id>\d+)',
+   505→                                'args'                => array(
+   506→                                        'review_id' => array(
+   507→                                                'validate_callback' => function ( $param ) {
+   508→                                                        return is_numeric( $param ) && absint( $param ) > 0;
+   509→                                                },
+   510→                                        ),
+   511→                                ),
+   512→                                'method'              => WP_REST_Server::DELETABLE,
+   513→                                'callback'            => array( $review_controller, 'delete' ),
+   514→                                'permission_callback' => array( $review_controller, 'validate_delete_request' ),
+   515→                        ),
+   516→                        array(
+   517→                                'endpoint'            => 'qna-mark-read-unread',
+   518→                                'url_params'          => '/(?P<id>\d+)',
+   519→                                'args'                => array(
+   520→                                        'id' => array(
+   521→                                                'validate_callback' => function ( $param ) {
+   522→                                                        return is_numeric( $param ) && absint( $param ) > 0;
+   523→                                                },
+   524→                                        ),
+   525→                                ),
+   526→                                'method'              => WP_REST_Server::EDITABLE,
+   527→                                'callback'            => array( $q_and_a_controller, 'mark_read_unread' ),
+   528→                                'permission_callback' => array( $q_and_a_controller, 'validate_write_request' ),
+   529→
+   530→                        ),
+   531→                        // Wishlist.
+   532→                        array(
+   533→                                'endpoint'            => 'wishlists',
+   534→                                'url_params'          => '',
+   535→                                'method'              => WP_REST_Server::READABLE,
+   536→                                'callback'            => array( $wishlist_controller, 'get_wishlist' ),
+   537→                                'permission_callback' => array( $wishlist_controller, 'validate_read_request' ),
+   538→                        ),
+   539→                        array(
+   540→                                'endpoint'            => 'wishlists',
+   541→                                'url_params'          => '',
+   542→                                'method'              => WP_REST_Server::CREATABLE,
+   543→                                'callback'            => array( $wishlist_controller, 'create' ),
+   544→                                'permission_callback' => array( $wishlist_controller, 'validate_write_request' ),
+   545→                        ),
+   546→                        array(
+   547→                                'endpoint'            => 'wishlists',
+   548→                                'url_params'          => '',
+   549→                                'method'              => WP_REST_Server::DELETABLE,
+   550→                                'callback'            => array( $wishlist_controller, 'delete' ),
+   551→                                'permission_callback' => array( $wishlist_controller, 'validate_delete_request' ),
+   552→                        ),
+   553→                        // Student.
+   554→                        array(
+   555→                                'endpoint'            => 'students',
+   556→                                'url_params'          => '/(?P<user_id>\d+)/(?P<sub_resource>[a-zA-Z-]+)',
+   557→                                'args'                => array(
+   558→                                        'user_id'      => array(
+   559→                                                'validate_callback' => function ( $param ) {
+   560→                                                        return is_numeric( $param ) && absint( $param ) > 0;
+   561→                                                },
+   562→                                        ),
+   563→                                        'sub_resource' => array(
+   564→                                                'validate_callback' => function ( $param ) {
+   565→                                                        return is_string( $param );
+   566→                                                },
+   567→                                        ),
+   568→                                ),
+   569→
+   570→                                'method'              => WP_REST_Server::READABLE,
+   571→                                'callback'            => array( $student_controller, 'get' ),
+   572→                                'permission_callback' => array( $student_controller, 'validate_read_request' ),
+   573→
+   574→                        ),
+   575→                        // User Profile.
+   576→                        array(
+   577→                                'endpoint'            => 'profile',
+   578→                                'url_params'          => '/(?P<user_id>\d+)',
+   579→                                'method'              => WP_REST_Server::READABLE,
+   580→                                'args'                => array(
+   581→                                        'user_id' => array(
+   582→                                                'validate_callback' => function ( $param ) {
+   583→                                                        return is_numeric( $param ) && absint( $param ) > 0;
+   584→                                                },
+   585→                                        ),
+   586→                                ),
+   587→                                'callback'            => array( $user_profile_controller, 'get_user_profile' ),
+   588→                                'permission_callback' => array( $user_profile_controller, 'validate_read_request' ),
+   589→                        ),
+   590→                        array(
+   591→                                'endpoint'            => 'update-profile',
+   592→                                'url_params'          => '',
+   593→                                'method'              => WP_REST_Server::EDITABLE,
+   594→                                'callback'            => array( $user_profile_controller, 'update_user_profile' ),
+   595→                                'permission_callback' => array( $user_profile_controller, 'validate_write_request' ),
+   596→                        ),
+   597→                        array(
+   598→                                'endpoint'            => 'upload-photo',
+   599→                                'url_params'          => '/(?P<photo_type>[a-z-A-Z]+)',
+   600→                                'args'                => array(
+   601→                                        'photo_type' => array(
+   602→                                                'validate_callback' => function ( $param ) {
+   603→                                                        return is_string( $param );
+   604→                                                },
+   605→                                        ),
+   606→                                ),
+   607→                                'method'              => WP_REST_Server::CREATABLE,
+   608→                                'callback'            => array( $user_profile_controller, 'set_profile_photo' ),
+   609→                                'permission_callback' => array( $user_profile_controller, 'validate_write_request' ),
+   610→                        ),
+   611→                        array(
+   612→                                'endpoint'            => 'update-password',
+   613→                                'url_params'          => '',
+   614→                                'method'              => WP_REST_Server::EDITABLE,
+   615→                                'callback'            => array( $user_profile_controller, 'update_user_password' ),
+   616→                                'permission_callback' => array( $user_profile_controller, 'validate_write_request' ),
+   617→                        ),
+   618→                        array(
+   619→                                'endpoint'            => 'delete-photo',
+   620→                                'url_params'          => '/(?P<photo_type>[a-z-A-Z]+)/(?P<user_id>\d+)',
+   621→                                'args'                => array(
+   622→                                        'photo_type' => array(
+   623→                                                'validate_callback' => function ( $param ) {
+   624→                                                        return is_string( $param );
+   625→                                                },
+   626→                                        ),
+   627→                                        'user_id'    => array(
+   628→                                                'validate_callback' => function ( $param ) {
+   629→                                                        return is_numeric( $param ) && absint( $param ) > 0;
+   630→                                                },
+   631→                                        ),
+   632→
+   633→                                ),
+   634→                                'method'              => WP_REST_Server::DELETABLE,
+   635→                                'callback'            => array( $user_profile_controller, 'remove_profile_photo' ),
+   636→                                'permission_callback' => array( $user_profile_controller, 'validate_delete_request' ),
+   637→                        ),
+   638→                        // Become Instructor.
+   639→                        array(
+   640→                                'endpoint'            => 'become-instructor',
+   641→                                'url_params'          => '/(?P<user_id>\d+)',
+   642→                                'args'                => array(
+   643→                                        'user_id' => array(
+   644→                                                'validate_callback' => function ( $param ) {
+   645→                                                        return is_numeric( $param ) && absint( $param ) > 0;
+   646→                                                },
+   647→                                        ),
+   648→
+   649→                                ),
+   650→                                'method'              => WP_REST_Server::EDITABLE,
+   651→                                'callback'            => array( $student_controller, 'apply_for_instructor' ),
+   652→                                'permission_callback' => array( $student_controller, 'validate_write_request' ),
+   653→                        ),
+   654→                );
+   655→        }
+   656→
+   657→        /**
+   658→         * Add pro permission for the REST API
+   659→         *
+   660→         * @since 2.6.0
+   661→         *
+   662→         * @param array $default_permissions default permissions.
+   663→         *
+   664→         * @return array
+
+[showing lines 85-664 of 689; use offset=665 with limit to continue reading]

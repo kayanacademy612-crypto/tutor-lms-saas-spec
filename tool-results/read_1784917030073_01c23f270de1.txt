@@ -1,0 +1,907 @@
+     1→# LastSaaS
+     2→
+     3→[![CI](https://github.com/jonradoff/lastsaas/actions/workflows/ci.yml/badge.svg)](https://github.com/jonradoff/lastsaas/actions/workflows/ci.yml)
+     4→[![codecov](https://codecov.io/gh/jonradoff/lastsaas/branch/master/graph/badge.svg)](https://codecov.io/gh/jonradoff/lastsaas)
+     5→[![Go Report Card](https://goreportcard.com/badge/github.com/jonradoff/lastsaas)](https://goreportcard.com/report/github.com/jonradoff/lastsaas)
+     6→
+     7→**The last SaaS boilerplate you'll ever need.**
+     8→
+     9→LastSaaS is a complete, production-ready SaaS foundation built entirely through conversation with [Claude Code](https://claude.ai/claude-code). It gives you multi-tenant account management, authentication, role-based access control, white-label branding, Stripe billing, API keys, outgoing webhooks, a full admin interface, system health monitoring, credit-based usage tracking, and product analytics with telemetry — everything you need to launch a SaaS business, ready to customize for your specific product.
+    10→
+    11→The bottleneck for building software isn't engineering capacity anymore — it's imagination. LastSaaS proves it: a single person with a clear vision and an AI agent can stand up what used to require a team and months of work. And because it was built with [Claude Code](https://claude.ai/claude-code), the codebase is fork-ready for agentic engineering — point an AI agent at it and keep building your product through conversation.
+    12→
+    13→**[Project Page](https://metavert.io/lastsaas)**
+    14→
+    15→---
+    16→
+    17→## Why LastSaaS Exists
+    18→
+    19→Every SaaS product needs the same boring foundation: user accounts, teams, roles, authentication, admin dashboards, billing, usage limits, branding, webhooks, API keys. Historically, building that foundation meant weeks of plumbing before you could write a single line of your actual product.
+    20→
+    21→LastSaaS eliminates that. Fork it, point an AI agent at it, and start building your product on top of a foundation that already handles:
+    22→
+    23→- Multi-tenant isolation with role-based access
+    24→- JWT authentication with refresh token rotation
+    25→- Google, GitHub, and Microsoft OAuth integration
+    26→- Magic link passwordless authentication
+    27→- MFA/TOTP with recovery codes
+    28→- Email verification and password resets
+    29→- Team invitations and member management
+    30→- Stripe billing with subscriptions, per-seat pricing, trials, and credit bundles
+    31→- Plan entitlements and billing enforcement middleware
+    32→- White-label branding with custom themes, logos, landing pages, and custom pages
+    33→- API key authentication (admin and user scopes)
+    34→- Outgoing webhooks with 19 event types and HMAC-SHA256 signing
+    35→- Credit-based usage tracking (subscription + purchased buckets)
+    36→- Promotion codes and coupon management via Stripe
+    37→- Product analytics dashboard (conversion funnel, KPIs, retention cohorts, engagement metrics)
+    38→- Telemetry event system with Go SDK and REST API for custom event tracking
+    39→- A full admin interface for managing everything
+    40→- Built-in API documentation (HTML and Markdown)
+    41→- Real-time system health monitoring
+    42→- Financial metrics dashboard (revenue, ARR, DAU, MAU)
+    43→- MCP (Model Context Protocol) server for AI-powered admin access
+    44→- CLI tools for server administration
+    45→- Auto-versioning with database migrations
+    46→- Production deployment on Fly.io
+    47→
+    48→This is open-source infrastructure for the agentic era of software — where the person with the idea is also the person who ships it. The codebase follows consistent patterns that AI agents navigate fluently, so you can keep evolving it the same way it was built.
+    49→
+    50→---
+    51→
+    52→## How It Compares
+    53→
+    54→If you're evaluating SaaS boilerplates, you've probably looked at ShipFast, Supastarter, MakerKit, SaaS Pegasus, and Gravity. Here's why technical founders choose LastSaaS instead.
+    55→
+    56→**Free and open-source.** ShipFast costs $169, MakerKit runs $199–599, Supastarter starts at $299, SaaS Pegasus charges $249/year, and Gravity is under $1K. LastSaaS is MIT-licensed — fork it, ship it, never pay a license fee. You own the code completely.
+    57→
+    58→**Go backend, not another Next.js project.** ShipFast, Supastarter, MakerKit, and Gravity are all JavaScript/TypeScript stacks. SaaS Pegasus uses Django. LastSaaS pairs a Go backend with a React + TypeScript frontend — giving you compiled-binary deployment, low memory footprint (a 14MB Alpine container), and the concurrency model that Go is known for. If your SaaS will handle real traffic or you want a backend that isn't a Node.js monolith, this matters.
+    59→
+    60→**Genuine multi-tenancy.** ShipFast has no multi-tenancy at all. SaaS Pegasus and Gravity offer basic team features but not true tenant isolation. LastSaaS gives you full multi-tenant architecture: tenant-scoped data isolation, three-tier RBAC (owner/admin/user), team invitations, ownership transfer, per-tenant activity logs, and per-tenant billing. This is the difference between "users can collaborate" and "each customer gets their own isolated workspace."
+    61→
+    62→**White-label branding built in.** Most boilerplates give you a theme toggle at best. LastSaaS includes a full white-label system: custom app name, logo, colors, fonts, landing page, custom pages, CSS injection, favicon, configurable navigation with entitlement gating, and auth page customization. If you're building a platform where customers see your brand (not yours-plus-a-framework), this saves weeks.
+    63→
+    64→**Outgoing webhooks, not just Stripe webhooks.** None of the alternatives — ShipFast, Supastarter, MakerKit, SaaS Pegasus, or Gravity — include an outgoing webhook system. LastSaaS ships with 19 event types across billing, team lifecycle, user lifecycle, credits, and security events, with HMAC-SHA256 signing, delivery tracking, and test events. Your customers can integrate with your platform from day one.
+    65→
+    66→**API keys with scoped access.** ShipFast, Supastarter, and MakerKit don't include API key management. LastSaaS provides `lsk_`-prefixed API keys with admin and user authority scopes, SHA-256 hashed storage, and last-used tracking — ready for your customers to build integrations.
+    67→
+    68→**Health monitoring and financial dashboards.** No competing boilerplate includes system health monitoring. LastSaaS collects CPU, memory, disk, HTTP, and MongoDB metrics every 60 seconds across all nodes, with 8 real-time charts, threshold alerting, and 30-day retention. The financial dashboard gives you revenue, ARR, DAU, and MAU time-series out of the box.
+    69→
+    70→**Product analytics with telemetry.** No competing boilerplate includes product analytics. LastSaaS auto-instruments the customer journey — visitor → signup → plan page → checkout → paid conversion → upgrade — and visualizes it as a conversion funnel. The PM dashboard includes SaaS KPIs (MRR, ARR, ARPU, LTV, churn rate, trial conversion), retention cohort analysis, engagement metrics (DAU/WAU/MAU for paying subscribers), and a custom event explorer. A Go SDK and REST API let you track your own events with zero configuration.
+    71→
+    72→**MCP server for AI-native operations.** This is unique to LastSaaS. A built-in Model Context Protocol server with 32 read-only tools lets you connect Claude (or any MCP-compatible AI) directly to your running application. Query your ARR trend, investigate error spikes, audit API keys, or review system health — all in natural language. No other SaaS boilerplate offers agentic admin access.
+    73→
+    74→**Built for AI-assisted development.** LastSaaS was built entirely through conversation with Claude Code, and the codebase is designed to keep being built that way. Consistent patterns, clear naming, and a structure AI agents navigate fluently. Fork it, point an agent at it, describe your product, and keep going. The competing boilerplates were built for manual development — LastSaaS is built for the way software is made now.
+    75→
+    76→| | LastSaaS | ShipFast | Supastarter | MakerKit | Pegasus | Gravity |
+    77→|---|---|---|---|---|---|---|
+    78→| **Price** | **Free (MIT)** | $169 | $299+ | $199–599 | $249/yr | <$1K |
+    79→| **Stack** | Go + React | Next.js | Next.js / Nuxt | Next.js | Django | Node + React |
+    80→| **Multi-Tenancy** | Full RBAC | — | ✓ | ✓ | Teams only | Teams only |
+    81→| **White-Label** | Full | — | Partial | Partial | — | — |
+    82→| **Webhooks** | 19 events | — | — | — | — | — |
+    83→| **API Keys** | Scoped | — | — | — | Basic | — |
+    84→| **Health Monitoring** | 8 charts | — | — | — | — | — |
+    85→| **Product Analytics** | 5-tab PM dashboard | — | — | — | — | — |
+    86→| **Credit System** | Dual buckets | — | — | Basic | — | — |
+    87→| **MCP Server** | 26 tools | — | — | — | — | — |
+    88→| **Admin Dashboard** | Full | — | ✓ | ✓ | ✓ | Basic |
+    89→| **Stripe Billing** | Full | ✓ | ✓ | ✓ | ✓ | ✓ |
+    90→
+    91→---
+    92→
+    93→## Features
+    94→
+    95→### Authentication & Identity
+    96→- Email/password registration with bcrypt hashing
+    97→- Email verification via [Resend](https://resend.com)
+    98→- Google, GitHub, and Microsoft OAuth with automatic account linking
+    99→- Magic link passwordless login via email
+   100→- MFA/TOTP two-factor authentication with setup wizard
+   101→- Recovery codes for MFA backup access
+   102→- JWT access tokens (30min) + refresh tokens (7 days) with rotation
+   103→- Account lockout after failed login attempts
+   104→- Password reset flow with secure tokens
+   105→- Password strength enforcement
+   106→- Session management — list active sessions, revoke individual or all sessions
+   107→- Session revocation on password change
+   108→
+   109→### Multi-Tenancy
+   110→- Root tenant (system admin) + customer tenants
+   111→- Users belong to tenants via memberships
+   112→- Roles: **owner**, **admin**, **user** with hierarchical permissions
+   113→- Team invitations with email notifications
+   114→- Ownership transfer between members
+   115→- Per-tenant activity log
+   116→- Tenant settings self-service
+   117→
+   118→### Billing & Credits (Stripe)
+   119→- **Subscription plans** with monthly and annual billing (configurable annual discount %)
+   120→- **Pricing models**: flat-rate or per-seat (with included seats, min/max seat limits)
+   121→- **Free trials** with configurable trial days per plan and trial abuse prevention
+   122→- **Credit bundles** for one-time purchases
+   123→- **Dual credit buckets**: subscription credits (reset or accrue) + purchased credits
+   124→- **Stripe Checkout** (redirect-based) for payment collection
+   125→- **Stripe Billing Portal** for customer self-service (payment methods, invoices)
+   126→- **Multi-currency support** with configurable default currency
+   127→- **Stripe Tax** automatic tax calculation
+   128→- **Promotion codes and coupons** — create and manage via admin UI, linked to Stripe
+   129→- **Invoice generation** — sequential invoice numbers, PDF download, tax breakdown
+   130→- **Transaction history** — per-tenant and admin-wide with search and filtering
+   131→- **Financial metrics** — revenue, ARR, DAU, MAU time-series with charting
+   132→- **Billing enforcement middleware** — blocks expired subscriptions from paid features
+   133→- **Entitlement middleware** — gate features based on plan (boolean and numeric entitlements)
+   134→- **Billing waiver** for special accounts (root tenant, demo accounts)
+   135→- **Admin subscription management** — cancel, modify, reassign plans
+   136→- **Refund and dispute handling** — webhook handlers for `charge.refunded`, `charge.dispute.created`, `charge.dispute.closed`
+   137→
+   138→### White-Label Branding
+   139→- Custom app name, tagline, and logo (text, image, or both modes)
+   140→- Theme colors (primary, accent, background, surface, text) with auto-generated shade palettes
+   141→- Custom fonts (body and heading)
+   142→- Custom landing page with configurable HTML
+   143→- Custom pages served at `/p/{slug}` with SEO metadata
+   144→- Custom CSS injection
+   145→- Custom head HTML injection (analytics, meta tags)
+   146→- Favicon upload
+   147→- Media library for image/asset management
+   148→- Configurable navigation sidebar with entitlement-gated items
+   149→- Auth page customization (login/signup headings and subtext)
+   150→- Dashboard HTML customization
+   151→- Open Graph image support
+   152→
+   153→### API Keys
+   154→- Create API keys with `lsk_` prefix
+   155→- Two authority levels: **admin** (auto-resolves root tenant) and **user** (requires X-Tenant-ID)
+   156→- SHA-256 hashed storage — raw key shown only at creation
+   157→- Last-used timestamp tracking
+   158→- Admin UI for key management
+   159→- Supports both JWT and API key authentication on all endpoints
+   160→
+   161→### Outgoing Webhooks
+   162→- 19 event types across 5 tiers:
+   163→  - **Billing**: subscription.activated, subscription.canceled, payment.received, payment.failed
+   164→  - **Team lifecycle**: member.invited, member.joined, member.removed, member.role_changed, ownership.transferred
+   165→  - **User lifecycle**: user.registered, user.verified, user.deactivated
+   166→  - **Credits & billing**: credits.purchased, plan.changed, tenant.created, tenant.deactivated
+   167→  - **Audit & security**: user.deleted, tenant.deleted, api_key.created, api_key.revoked
+   168→- HMAC-SHA256 payload signing with `whsec_`-prefixed secrets
+   169→- Delivery tracking with response codes, response bodies, and duration
+   170→- Test event delivery
+   171→- Secret regeneration
+   172→- Event type filtering per webhook
+   173→
+   174→### Admin Interface
+   175→- **Dashboard** with user/tenant counts, health overview, and business metrics
+   176→- **User management** — list, search, view profiles, edit, suspend, impersonate, delete with ownership preflight
+   177→- **Tenant management** — list, view, edit, plan assignment, status control, subscription management
+   178→- **Financial overview** — transaction history across all tenants, revenue/ARR/DAU/MAU charts
+   179→- **Product analytics** — conversion funnel, SaaS KPIs, retention cohorts, engagement metrics, custom event explorer
+   180→- **Plan management** — create, edit, archive, entitlements, per-seat configuration, trial days
+   181→- **Credit bundle management** — create, edit, sort, activate/deactivate
+   182→- **Promotions** — create and manage Stripe promotion codes and coupons
+   183→- **Branding editor** — theme colors, logos, fonts, landing page, custom pages, CSS, navigation
+   184→- **API key management** — create, view, revoke
+   185→- **Webhook management** — create, edit, delete, test, view delivery history
+   186→- **Announcements** — publish system-wide announcements
+   187→- **System log viewer** with severity filtering, search, and user filtering
+   188→- **Configuration variable editor** (strings, numbers, enums, templates)
+   189→- **In-app messaging** — send messages to individual users
+   190→- **Root members** — manage the admin team with invitations and role changes
+   191→- **CSV export** for users and tenants
+   192→- **Admin impersonation** — log in as any user for debugging
+   193→- **System health monitoring** (see below)
+   194→- **Integration health checks** — MongoDB, Stripe, Resend, Google OAuth status
+   195→- Three-tier admin access: **user** (read-only), **admin** (read-write), **owner** (destructive operations)
+   196→
+   197→### System Health Monitoring
+   198→- Automatic node registration with heartbeat (30s interval)
+   199→- Metrics collection every 60s: CPU, memory, disk, network, HTTP request stats, MongoDB stats, Go runtime
+   200→- HTTP metrics middleware with percentile latency tracking (p50/p95/p99)
+   201→- Threshold-based alerting (configurable warning/critical levels)
+   202→- 30-day automatic data retention via MongoDB TTL indexes
+   203→- Real-time dashboard with 8 time-series charts (Recharts)
+   204→- Aggregate, all-nodes overlay, and single-node filter modes
+   205→- Time range selection: 1h, 6h, 24h, 7d, 30d
+   206→- Integration health panel (MongoDB, Stripe, Resend, Google OAuth connectivity)
+   207→
+   208→### Product Analytics & Telemetry
+   209→- **Conversion funnel** — Visitors → Signups → Plan Page Views → Checkouts → Paid Conversions → Upgrades, with conversion rates at each step
+   210→- **SaaS KPIs** — MRR, ARR, ARPU, LTV, churn rate, trial-to-paid conversion rate, median time to first purchase, active subscriber count
+   211→- **Retention cohorts** — weekly or monthly cohort retention table with color-coded heatmap (tracks `lastLoginAt` over time)
+   212→- **Engagement metrics** — DAU/WAU/MAU for paying subscribers, average sessions per user, top features by usage, credit consumption trend
+   213→- **Custom event explorer** — browse all event types, view trend charts, filter by name and time range
+   214→- **Telemetry Go SDK** — `telemetry.Track()` / `TrackBatch()` / `TrackPageView()` / `TrackCheckoutStarted()` / `TrackLogin()` for direct in-process event recording (no HTTP overhead)
+   215→- **Telemetry REST API** — `POST /telemetry/track` (anonymous, rate-limited) for page views; `POST /telemetry/events` and `/telemetry/events/batch` (authenticated) for custom events
+   216→- **Auto-instrumentation** — registration, email verification, login, checkout, subscription activation/cancellation, and plan changes are tracked automatically
+   217→- **365-day retention** — telemetry events auto-expire via MongoDB TTL index
+   218→- **Rate limiting** — 60 req/min per IP for anonymous tracking, 120 req/min per user for authenticated events
+   219→
+   220→### User Self-Service
+   221→- Profile editing (display name, email)
+   222→- Theme preference (light/dark)
+   223→- Password management
+   224→- MFA setup and management
+   225→- Session viewer with remote revocation
+   226→- Account deletion with data cleanup
+   227→- Data export (GDPR-friendly)
+   228→- Billing management (plan selection, credit purchases, invoice history, PDF download)
+   229→- Onboarding flow
+   230→
+   231→### Built-in API Documentation
+   232→- Interactive HTML API reference at `/api/docs` with expandable endpoint details
+   233→- Markdown API reference at `/api/docs/markdown` for integration in external docs
+   234→- Comprehensive webhook event reference with payload descriptions
+   235→- Auto-versioned from the VERSION file
+   236→
+   237→### CLI Administration
+   238→- `lastsaas setup` — Initialize the system (create root tenant + owner)
+   239→- `lastsaas start` / `stop` / `restart` — Server process management
+   240→- `lastsaas change-password` — Reset any user's password
+   241→- `lastsaas send-message` — Send system messages to users
+   242→- `lastsaas transfer-root-owner` — Transfer root tenant ownership
+   243→- `lastsaas config list|get|set` — Manage configuration variables
+   244→- `lastsaas version` — Show binary and database versions
+   245→- `lastsaas status` — Check system health
+   246→- `lastsaas mcp` — Start the MCP server (see [MCP Server](#mcp-server-ai-admin-access) below)
+   247→
+   248→### MCP Server (AI Admin Access)
+   249→
+   250→A built-in [Model Context Protocol](https://modelcontextprotocol.io) server gives AI assistants like Claude read-only access to your admin data — dashboards, users, tenants, financials, logs, health, and more. Useful for asking questions like "what's our ARR trend?" or "show me critical logs from the last hour" in natural language.
+   251→
+   252→- **32 read-only tools** across 14 categories — no write operations, safe by design
+   253→- **2 resources** — `lastsaas://dashboard` and `lastsaas://health` for automatic context
+   254→- **API key authentication** — requires a root-tenant API key, same auth as the admin API
+   255→- **Stdio transport** — runs locally, compatible with Claude Desktop and Claude Code
+   256→
+   257→**Tool categories:**
+   258→- **About** — software version and environment
+   259→- **Dashboard** — user/tenant counts, health overview
+   260→- **Tenants** — list with filtering, detailed view with members
+   261→- **Users** — list with search, detailed view with auth methods and memberships
+   262→- **Financial** — transaction history, revenue/ARR/DAU/MAU time-series metrics
+   263→- **Logs** — full-text search with severity/category/date filters, severity counts
+   264→- **Health** — current system metrics, time-series health data, node list, integration status
+   265→- **Config** — list and inspect runtime configuration variables
+   266→- **Plans** — plan details, entitlement keys, credit bundles
+   267→- **Announcements** — list published and draft announcements
+   268→- **Promotions** — Stripe promotion codes with coupon details
+   269→- **Security** — API key inventory (previews only), root tenant members
+   270→- **Webhooks** — webhook configs, event type reference, delivery history
+   271→
+   272→### Security
+   273→- Security headers (CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy)
+   274→- Rate limiting on authentication endpoints
+   275→- Request body size limits
+   276→- NoSQL injection protection (regex input escaping)
+   277→- XSS protection via DOMPurify for injected HTML
+   278→- Trusted proxy IP resolution (Fly-Client-IP)
+   279→- Webhook signature verification (Stripe inbound, HMAC-SHA256 outbound)
+   280→- Idempotent webhook processing via unique event ID index
+   281→- System log injection detection with automatic critical alerts
+   282→- Refresh token rotation with family-based revocation
+   283→
+   284→### Production Ready
+   285→- Dockerized multi-stage build (Go + Node + Alpine)
+   286→- Fly.io deployment with auto-stop/auto-start machines
+   287→- SPA serving from the Go binary (no separate web server needed)
+   288→- CORS, security headers, rate limiting
+   289→- Graceful shutdown with connection draining
+   290→- Auto-versioning with database migration on startup
+   291→- Version notification messages to admin users after upgrades
+   292→
+   293→---
+   294→
+   295→## Tech Stack
+   296→
+   297→| Layer | Technology |
+   298→|-------|-----------|
+   299→| Backend | Go 1.25, gorilla/mux |
+   300→| Frontend | React 19, TypeScript, Vite 7, Tailwind CSS 4 |
+   301→| Database | MongoDB (Atlas or local) |
+   302→| Auth | JWT (access + refresh), bcrypt, Google/GitHub/Microsoft OAuth, Magic Links, TOTP MFA |
+   303→| Billing | Stripe (stripe-go v82) — Checkout, Billing Portal, Webhooks, Tax |
+   304→| Email | Resend |
+   305→| Charts | Recharts |
+   306→| Metrics | gopsutil v4 |
+   307→| PDF | gofpdf (invoice generation) |
+   308→| Security | DOMPurify (frontend), HMAC-SHA256 (webhooks) |
+   309→| Deployment | Docker, Fly.io |
+   310→
+   311→---
+   312→
+   313→## Prerequisites
+   314→
+   315→- **Go 1.25+** — [install](https://go.dev/doc/install)
+   316→- **Node.js 22+** — [install](https://nodejs.org)
+   317→- **MongoDB** — either:
+   318→  - [MongoDB Atlas](https://www.mongodb.com/atlas) (free M0 tier works fine)
+   319→  - Local MongoDB Community Edition
+   320→- **Git**
+   321→
+   322→### Optional
+   323→- [Resend](https://resend.com) API key — for email verification, password resets, and invitations
+   324→- Google OAuth credentials — for Google sign-in
+   325→- GitHub OAuth credentials — for GitHub sign-in
+   326→- Microsoft OAuth credentials — for Microsoft sign-in
+   327→- [Stripe](https://stripe.com) account — for billing (subscriptions, credit purchases, invoices)
+   328→- [Fly.io](https://fly.io) account — for production deployment
+   329→
+   330→---
+   331→
+   332→## Quick Start
+   333→
+   334→### 1. Clone the repository
+   335→
+   336→```bash
+   337→git clone https://github.com/jonradoff/lastsaas.git
+   338→cd lastsaas
+   339→```
+   340→
+   341→### 2. Run the setup script
+   342→
+   343→```bash
+   344→./scripts/setup.sh
+   345→```
+   346→
+   347→This will prompt you for:
+   348→- **Database name** — the project identity (two projects sharing a name share the same user base)
+   349→- **MongoDB URI** — your Atlas connection string or `mongodb://localhost:27017`
+   350→- **JWT secrets** — auto-generated
+   351→- **Google OAuth credentials** — optional, press Enter to skip
+   352→- **Resend API key** — optional, press Enter to skip
+   353→- **App name and email settings**
+   354→
+   355→It writes a `.env` file and copies the config template.
+   356→
+   357→### 3. Start the backend
+   358→
+   359→```bash
+   360→set -a && source .env && set +a
+   361→cd backend
+   362→go run ./cmd/server
+   363→```
+   364→
+   365→The server starts on `http://localhost:4290`.
+   366→
+   367→### 4. Start the frontend
+   368→
+   369→In a separate terminal:
+   370→
+   371→```bash
+   372→set -a && source .env && set +a
+   373→cd frontend
+   374→npm install
+   375→npm run dev
+   376→```
+   377→
+   378→The frontend starts on `http://localhost:4280`.
+   379→
+   380→### 5. Initialize the system
+   381→
+   382→Run the CLI setup to create the root tenant and admin account:
+   383→
+   384→```bash
+   385→cd backend
+   386→go run ./cmd/lastsaas setup
+   387→```
+   388→
+   389→This creates the root tenant (your admin organization) and the owner account. You can now log in at `http://localhost:4280`.
+   390→
+   391→---
+   392→
+   393→## Setting Up Stripe Billing
+   394→
+   395→Stripe integration is optional but required for paid subscriptions, credit bundle purchases, and invoice generation. If you skip this section, LastSaaS works as a free-tier-only platform.
+   396→
+   397→### 1. Create a Stripe account
+   398→
+   399→Sign up at [stripe.com](https://stripe.com) and complete onboarding. You can use **test mode** during development.
+   400→
+   401→### 2. Get your API keys
+   402→
+   403→Go to **Stripe Dashboard → Developers → API keys** and copy:
+   404→- **Publishable key** (starts with `pk_test_` or `pk_live_`)
+   405→- **Secret key** (starts with `sk_test_` or `sk_live_`)
+   406→
+   407→### 3. Create a webhook endpoint
+   408→
+   409→Go to **Stripe Dashboard → Developers → Webhooks → Add endpoint**:
+   410→
+   411→- **Endpoint URL**: `https://your-domain.com/api/billing/webhook`
+   412→  - For local development with the Stripe CLI: `stripe listen --forward-to localhost:4290/api/billing/webhook`
+   413→- **Events to subscribe to** — select these 8 events:
+   414→  - `checkout.session.completed`
+   415→  - `invoice.paid`
+   416→  - `invoice.payment_failed`
+   417→  - `customer.subscription.updated`
+   418→  - `customer.subscription.deleted`
+   419→  - `charge.refunded`
+   420→  - `charge.dispute.created`
+   421→  - `charge.dispute.closed`
+   422→
+   423→After creating the endpoint, copy the **Signing secret** (starts with `whsec_`).
+   424→
+   425→### 4. Set environment variables
+   426→
+   427→Add these to your `.env` file:
+   428→
+   429→```bash
+   430→STRIPE_SECRET_KEY=sk_test_...
+   431→STRIPE_PUBLISHABLE_KEY=pk_test_...
+   432→STRIPE_WEBHOOK_SECRET=whsec_...
+   433→```
+   434→
+   435→### 5. Create plans in the admin UI
+   436→
+   437→Once the backend is running with Stripe configured:
+   438→1. Log in as the root tenant owner
+   439→2. Go to **Admin → Plans** and create your subscription plans
+   440→3. Set pricing, billing intervals, trial days, entitlements, and credit allocations
+   441→4. Optionally create **credit bundles** under Admin → Credit Bundles
+   442→5. Optionally create **promotion codes** under Admin → Promotions
+   443→
+   444→Stripe Products and Prices are created automatically when customers check out — you don't need to configure anything in the Stripe Dashboard beyond the API keys and webhook.
+   445→
+   446→### 6. Go live
+   447→
+   448→When you're ready for production:
+   449→1. Switch to **live mode** in the Stripe Dashboard
+   450→2. Create a new webhook endpoint with your production URL and the same 8 events
+   451→3. Update your production environment variables with the live keys and webhook secret
+   452→
+   453→---
+   454→
+   455→## Configuration
+   456→
+   457→Config files live in `backend/config/`:
+   458→- `dev.example.yaml` / `prod.example.yaml` — committed templates
+   459→- `dev.yaml` / `prod.yaml` — your actual configs (gitignored)
+   460→
+   461→Set `LASTSAAS_ENV=dev` or `LASTSAAS_ENV=prod` to select which config to load. Defaults to `dev`.
+   462→
+   463→Secrets are referenced as `${ENV_VAR}` in YAML and expanded from environment variables at load time. Default values use `${VAR:default}` syntax.
+   464→
+   465→### Environment Variables
+   466→
+   467→| Variable | Required | Description |
+   468→|----------|----------|------------|
+   469→| `DATABASE_NAME` | Yes | Project identity — shared name = shared user base |
+   470→| `MONGODB_URI` | Yes | MongoDB connection string |
+   471→| `JWT_ACCESS_SECRET` | Yes | Secret for signing access tokens |
+   472→| `JWT_REFRESH_SECRET` | Yes | Secret for signing refresh tokens |
+   473→| `FRONTEND_URL` | Yes | Frontend URL for CORS and email links |
+   474→| `APP_NAME` | Yes | Your application name (used in emails, UI) |
+   475→| `STRIPE_SECRET_KEY` | No | Stripe secret API key |
+   476→| `STRIPE_PUBLISHABLE_KEY` | No | Stripe publishable key (sent to frontend) |
+   477→| `STRIPE_WEBHOOK_SECRET` | No | Stripe webhook signing secret |
+   478→| `GOOGLE_CLIENT_ID` | No | Google OAuth client ID |
+   479→| `GOOGLE_CLIENT_SECRET` | No | Google OAuth secret |
+   480→| `GOOGLE_REDIRECT_URL` | No | Google OAuth redirect URL |
+   481→| `RESEND_API_KEY` | No | Resend email service API key |
+   482→| `FROM_EMAIL` | No | Sender email address (default: noreply@yourdomain.com) |
+   483→| `FROM_NAME` | No | Sender name (default: LastSaaS) |
+   484→
+   485→---
+   486→
+   487→## Project Structure
+   488→
+   489→```
+   490→lastsaas/
+   491→  backend/
+   492→    cmd/
+   493→      server/main.go              Entry point (HTTP server, route wiring)
+   494→      lastsaas/main.go            CLI administration tool + MCP server
+   495→    config/                       YAML config files
+   496→    internal/
+   497→      api/handlers/               HTTP handlers (auth, admin, tenant, billing, branding, webhooks, etc.)
+   498→      apicounter/                  API call counters for integration health
+   499→      auth/                       JWT, password hashing, Google/GitHub/Microsoft OAuth, TOTP MFA
+   500→      config/                     Config loader with env variable expansion
+   501→      configstore/                Runtime configuration (DB-backed, cached)
+   502→      db/                         MongoDB connection, collections, indexes
+   503→      email/                      Resend email service with templates
+   504→      events/                     Internal event emitter (drives webhook deliveries)
+   505→      health/                     System health monitoring service
+   506→      middleware/                  Auth, tenant, RBAC, rate limiting, metrics, security, billing enforcement
+   507→      models/                     All data models
+   508→      planstore/                  Plan seeding
+   509→      stripe/                     Stripe service (Checkout, Billing Portal, Customers, Prices, Subscriptions)
+   510→      syslog/                     System logging service with injection detection
+   511→      telemetry/                  Telemetry event collection, Go SDK, and PM analytics queries
+   512→      version/                    Version management and auto-migration
+   513→  frontend/
+   514→    src/
+   515→      api/client.ts               Axios API client with token refresh
+   516→      components/                 Layout, AdminLayout, BrandingThemeInjector, shared components
+   517→      contexts/                   Auth, Tenant, and Branding React contexts
+   518→      pages/
+   519→        admin/                    Admin interface (dashboard, users, tenants, plans, billing, branding, etc.)
+   520→        admin/health/             Health monitoring components and charts
+   521→        app/                      Customer-facing pages (dashboard, billing, team, settings, activity)
+   522→        app/settings/             User settings tabs (profile, security, MFA, sessions, billing)
+   523→        auth/                     Login, signup, MFA challenge, magic link, verification, password reset
+   524→        public/                   Landing page and custom pages
+   525→      types/index.ts              TypeScript type definitions
+   526→  scripts/
+   527→    setup.sh                      Interactive setup script
+   528→  Dockerfile                      Multi-stage production build
+   529→  fly.toml                        Fly.io deployment config
+   530→  VERSION                         Current version number
+   531→```
+   532→
+   533→---
+   534→
+   535→## API Documentation
+   536→
+   537→LastSaaS includes built-in, self-hosted API documentation:
+   538→
+   539→- **Interactive HTML reference**: `GET /api/docs` — expandable endpoint cards with request/response examples
+   540→- **Markdown reference**: `GET /api/docs/markdown` — for embedding in external documentation
+   541→
+   542→The documentation is generated from code and always matches the running version. It covers all endpoints, parameters, request/response formats, and all 19 webhook event types with payload descriptions.
+   543→
+   544→---
+   545→
+   546→## MCP Server Setup
+   547→
+   548→The MCP server lets AI assistants query your admin data in natural language. It proxies read-only requests to the LastSaaS admin API using an API key.
+   549→
+   550→### Prerequisites
+   551→
+   552→1. A running LastSaaS instance (local or deployed)
+   553→2. A root-tenant API key — create one in **Admin → API Keys** with **admin** authority
+   554→
+   555→### Usage with Claude Desktop
+   556→
+   557→Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+   558→
+   559→```json
+   560→{
+   561→  "mcpServers": {
+   562→    "lastsaas": {
+   563→      "command": "/path/to/lastsaas",
+   564→      "args": ["mcp"],
+   565→      "env": {
+   566→        "LASTSAAS_URL": "https://your-app.fly.dev",
+   567→        "LASTSAAS_API_KEY": "lsk_your_api_key_here"
+   568→      }
+   569→    }
+   570→  }
+   571→}
+   572→```
+   573→
+   574→### Usage with Claude Code
+   575→
+   576→Add to your project's `.mcp.json`:
+   577→
+   578→```json
+   579→{
+   580→  "mcpServers": {
+   581→    "lastsaas": {
+   582→      "command": "/path/to/lastsaas",
+   583→      "args": ["mcp"],
+   584→      "env": {
+   585→        "LASTSAAS_URL": "https://your-app.fly.dev",
+   586→        "LASTSAAS_API_KEY": "lsk_your_api_key_here"
+   587→      }
+   588→    }
+   589→  }
+   590→}
+   591→```
+   592→
+   593→### Build the CLI binary
+   594→
+   595→```bash
+   596→cd backend
+   597→go build -o lastsaas ./cmd/lastsaas
+   598→```
+   599→
+   600→### Environment Variables
+   601→
+   602→| Variable | Required | Description |
+   603→|----------|----------|-------------|
+   604→| `LASTSAAS_URL` | Yes | Base URL of the LastSaaS instance (e.g. `http://localhost:4290` or `https://your-app.fly.dev`) |
+   605→| `LASTSAAS_API_KEY` | Yes | Root-tenant API key with admin authority (starts with `lsk_`) |
+   606→
+   607→### Available Tools (26)
+   608→
+   609→| Tool | Description |
+   610→|------|-------------|
+   611→| `get_about` | Software version and environment |
+   612→| `dashboard_stats` | User/tenant counts and health overview |
+   613→| `list_tenants` | Paginated tenant list with search and filters |
+   614→| `get_tenant` | Detailed tenant with plan, billing, and members |
+   615→| `list_users` | Paginated user list with search and filters |
+   616→| `get_user` | Detailed user with auth methods and memberships |
+   617→| `list_transactions` | Financial transactions with search and filters |
+   618→| `get_financial_metrics` | Revenue, ARR, DAU, MAU time-series |
+   619→| `search_logs` | Full-text log search with severity/category/date filters |
+   620→| `get_log_severity_counts` | Log counts by severity level |
+   621→| `get_system_health` | Current CPU, memory, disk, HTTP stats |
+   622→| `get_health_metrics` | Time-series health data (per-node or aggregate) |
+   623→| `list_nodes` | Server nodes with status and version |
+   624→| `get_integrations` | Third-party integration health |
+   625→| `list_config` | All runtime configuration variables |
+   626→| `get_config` | Single config variable details |
+   627→| `list_plans` | Subscription plans with pricing and entitlements |
+   628→| `get_plan` | Detailed plan info |
+   629→| `list_entitlement_keys` | Entitlement key catalog |
+   630→| `list_credit_bundles` | Credit bundle pricing |
+   631→| `list_announcements` | Published and draft announcements |
+   632→| `list_promotions` | Stripe promotion codes and coupons |
+   633→| `list_api_keys` | API key inventory (previews only) |
+   634→| `list_root_members` | Admin team and pending invitations |
+   635→| `list_webhooks` | Outbound webhook configurations |
+   636→| `list_webhook_event_types` | Available webhook event types |
+   637→| `get_webhook` | Webhook detail with delivery history |
+   638→
+   639→### MCP Examples
+   640→
+   641→These examples show how the MCP tools work in practice. Each example lists the user prompt and the exact tool calls that execute behind the scenes.
+   642→
+   643→#### Example 1: Check Business Overview
+   644→
+   645→**Prompt:** "How's my SaaS doing today?"
+   646→
+   647→**Tool calls:**
+   648→1. `dashboard_stats` — returns a snapshot:
+   649→   ```
+   650→   Users: 1,284 (12 new today)
+   651→   Tenants: 89 (3 new this week)
+   652→   Health: All systems healthy
+   653→   Active alerts: 0
+   654→   ```
+   655→
+   656→#### Example 2: Investigate Revenue Trend
+   657→
+   658→**Prompt:** "Show me our revenue trend for the last 30 days"
+   659→
+   660→**Tool calls:**
+   661→1. `get_financial_metrics` — queries time-series data:
+   662→   ```json
+   663→   { "range": "30d", "metric": "revenue" }
+   664→   ```
+   665→   Returns daily revenue data points (values in cents) for charting, e.g.:
+   666→   ```
+   667→   2026-01-27: $1,250.00
+   668→   2026-01-28: $890.00
+   669→   ...
+   670→   2026-02-25: $2,100.00
+   671→   ```
+   672→2. `get_financial_metrics` — follow up with ARR:
+   673→   ```json
+   674→   { "range": "30d", "metric": "arr" }
+   675→   ```
+   676→
+   677→#### Example 3: Find a Specific Tenant
+   678→
+   679→**Prompt:** "Look up the Acme Corp tenant and show me their details"
+   680→
+   681→**Tool calls:**
+   682→1. `list_tenants` — searches by name:
+   683→   ```json
+   684→   { "search": "Acme Corp" }
+   685→   ```
+   686→   Returns matching tenants with IDs, plan names, and billing status.
+   687→2. `get_tenant` — fetches full details using the tenant ID:
+   688→   ```json
+   689→   { "id": "6789abc..." }
+   690→   ```
+   691→   Returns plan info, billing status, credit balances, subscription dates, and a full member list with roles.
+   692→
+   693→#### Example 4: Search for Critical Errors
+   694→
+   695→**Prompt:** "Were there any critical errors in the last hour?"
+   696→
+   697→**Tool calls:**
+   698→1. `search_logs` — filters by severity and time:
+   699→   ```json
+   700→   {
+   701→     "severity": "critical",
+   702→     "fromDate": "2026-02-26T14:00:00Z",
+   703→     "perPage": "50"
+   704→   }
+   705→   ```
+   706→   Returns log entries with timestamps, categories, messages, and metadata. For example:
+   707→   ```
+   708→   [critical] 14:23:05 billing — Stripe webhook signature verification failed
+   709→   [critical] 14:31:12 security — Log injection pattern detected in user input
+   710→   ```
+   711→2. `get_log_severity_counts` — provides overall distribution:
+   712→   ```
+   713→   critical: 2, high: 15, medium: 89, low: 342, debug: 1,204
+   714→   ```
+   715→
+   716→#### Example 5: Monitor System Health
+   717→
+   718→**Prompt:** "How's the system health? Are all integrations working?"
+   719→
+   720→**Tool calls:**
+   721→1. `get_system_health` — returns current metrics:
+   722→   ```
+   723→   CPU: 12.3%
+   724→   Memory: 245 MB / 512 MB (47.8%)
+   725→   Disk: 1.2 GB / 8 GB (15.0%)
+   726→   HTTP: 1,234 requests (p95 latency: 45ms)
+   727→   MongoDB: 12 active connections
+   728→   ```
+   729→2. `get_integrations` — checks third-party connectivity:
+   730→   ```
+   731→   MongoDB: healthy (3ms response)
+   732→   Stripe: healthy (120ms response, 89 calls/24h)
+   733→   Resend: healthy (95ms response, 12 calls/24h)
+   734→   Google OAuth: healthy
+   735→   ```
+   736→
+   737→#### Example 6: Audit API Key Usage
+   738→
+   739→**Prompt:** "Show me all active API keys and when they were last used"
+   740→
+   741→**Tool calls:**
+   742→1. `list_api_keys` — returns inventory (full keys are never exposed):
+   743→   ```
+   744→   "Production Automation" (admin) — lsk_...a3f2 — last used: 2 hours ago
+   745→   "CI/CD Pipeline" (admin) — lsk_...b7e1 — last used: 15 minutes ago
+   746→   "Customer Integration" (user) — lsk_...c9d4 — last used: 3 days ago
+   747→   "Old Test Key" (admin) — lsk_...d1e5 — last used: never
+   748→   ```
+   749→
+   750→#### Example 7: Review Subscription Plans
+   751→
+   752→**Prompt:** "What plans do we offer and how many subscribers does each have?"
+   753→
+   754→**Tool calls:**
+   755→1. `list_plans` — returns all plans with pricing and subscriber counts:
+   756→   ```
+   757→   Starter: $9/mo ($86/yr) — 45 subscribers — 5 seat limit
+   758→   Pro: $29/mo ($278/yr) — 31 subscribers — 25 seat limit, per-seat pricing
+   759→   Enterprise: $99/mo ($950/yr) — 8 subscribers — unlimited seats
+   760→   ```
+   761→2. `list_credit_bundles` — shows available credit purchases:
+   762→   ```
+   763→   Small Pack: 100 credits — $5.00 — active
+   764→   Medium Pack: 500 credits — $20.00 — active
+   765→   Large Pack: 2000 credits — $60.00 — active
+   766→   ```
+   767→
+   768→#### Example 8: Check Webhook Delivery
+   769→
+   770→**Prompt:** "Are our webhooks delivering successfully? Show me the recent history for the production webhook"
+   771→
+   772→**Tool calls:**
+   773→1. `list_webhooks` — shows all configured webhooks:
+   774→   ```
+   775→   "Production" — https://api.example.com/webhooks — 12 events — active
+   776→   "Staging" — https://staging.example.com/hooks — 5 events — active
+   777→   ```
+   778→2. `get_webhook` — fetches delivery history for the production webhook:
+   779→   ```json
+   780→   { "id": "abc123..." }
+   781→   ```
+   782→   Returns recent delivery attempts with status codes, response times, and any failures:
+   783→   ```
+   784→   2026-02-26 14:30:01 — subscription.activated — 200 OK (120ms)
+   785→   2026-02-26 14:15:22 — payment.received — 200 OK (95ms)
+   786→   2026-02-26 13:45:10 — member.joined — 500 Error (340ms)
+   787→   ```
+   788→
+   789→#### Example 9: User Lookup and Membership
+   790→
+   791→**Prompt:** "Find the user with email alice@example.com and show me their tenant memberships"
+   792→
+   793→**Tool calls:**
+   794→1. `list_users` — searches by email:
+   795→   ```json
+   796→   { "search": "alice@example.com" }
+   797→   ```
+   798→   Returns the matching user with ID, verification status, and last login.
+   799→2. `get_user` — fetches full details:
+   800→   ```json
+   801→   { "id": "def456..." }
+   802→   ```
+   803→   Returns:
+   804→   ```
+   805→   Email: alice@example.com (verified)
+   806→   Auth: password + Google OAuth
+   807→   MFA: TOTP enabled
+   808→   Memberships:
+   809→     — Acme Corp (owner) — joined 2026-01-15
+   810→     — Side Project Inc (admin) — joined 2026-02-10
+   811→   Last login: 2 hours ago
+   812→   ```
+   813→
+   814→#### Example 10: Health Metrics Deep Dive
+   815→
+   816→**Prompt:** "Show me the CPU and memory trends across all nodes for the last 24 hours"
+   817→
+   818→**Tool calls:**
+   819→1. `list_nodes` — identifies all server nodes:
+   820→   ```
+   821→   node-1 (v1.0.0) — healthy — last seen: 30s ago
+   822→   node-2 (v1.0.0) — healthy — last seen: 28s ago
+   823→   ```
+   824→2. `get_health_metrics` — fetches aggregate time-series data:
+   825→   ```json
+   826→   { "range": "24h" }
+   827→   ```
+   828→   Returns data points every 60 seconds with CPU %, memory %, disk %, HTTP request counts, and latency percentiles — ready for charting.
+   829→3. `get_health_metrics` — optionally drill into a specific node:
+   830→   ```json
+   831→   { "node": "node-1", "range": "24h" }
+   832→   ```
+   833→
+   834→---
+   835→
+   836→## Deployment
+   837→
+   838→### Fly.io
+   839→
+   840→LastSaaS includes a Dockerfile and Fly.io configuration for production deployment.
+   841→
+   842→```bash
+   843→# Install flyctl if needed
+   844→curl -L https://fly.io/install.sh | sh
+   845→
+   846→# Create the app (first time only)
+   847→flyctl apps create your-app-name --org your-org
+   848→
+   849→# Set production secrets
+   850→flyctl secrets set \
+   851→  DATABASE_NAME="your-db-name" \
+   852→  MONGODB_URI="mongodb+srv://..." \
+   853→  JWT_ACCESS_SECRET="$(openssl rand -hex 32)" \
+   854→  JWT_REFRESH_SECRET="$(openssl rand -hex 32)" \
+   855→  FRONTEND_URL="https://your-app-name.fly.dev" \
+   856→  APP_NAME="YourApp" \
+   857→  STRIPE_SECRET_KEY="sk_live_..." \
+   858→  STRIPE_PUBLISHABLE_KEY="pk_live_..." \
+   859→  STRIPE_WEBHOOK_SECRET="whsec_..."
+   860→
+   861→# Deploy
+   862→flyctl deploy
+   863→```
+   864→
+   865→The Dockerfile builds both the Go backend and React frontend into a single ~14MB Alpine container. The Go binary serves the frontend SPA directly — no nginx or separate web server required.
+   866→
+   867→### Other Platforms
+   868→
+   869→The Docker image works anywhere containers run. The only external dependency is MongoDB. Set the environment variables listed above and expose port 8080.
+   870→
+   871→---
+   872→
+   873→## Fork It and Keep Building with AI
+   874→
+   875→LastSaaS was built entirely through conversation with [Claude Code](https://claude.ai/claude-code) — every feature, every handler, every component was described in natural language and implemented by an AI agent. But the real point isn't that it *was* built this way — it's that it's designed to *keep* being built this way.
+   876→
+   877→The codebase follows consistent patterns, uses clear naming, and maintains a structure that AI agents navigate fluently. Fork it, point Claude Code at it, and start describing your product. The agent already understands the patterns — authentication, tenancy, billing, middleware, events — and builds on top of them naturally. You're not starting from scratch; you're continuing a conversation.
+   878→
+   879→Here's what's already wired up for you:
+   880→
+   881→1. **Add your product's data models** in `backend/internal/models/`
+   882→2. **Add API handlers** in `backend/internal/api/handlers/`
+   883→3. **Wire routes** in `backend/cmd/server/main.go`
+   884→4. **Add frontend pages** in `frontend/src/pages/`
+   885→5. **Use the tenant context** — every authenticated request carries the user's tenant, so your product logic gets multi-tenancy for free
+   886→6. **Use the credit system** — check and deduct credits for usage-based features
+   887→7. **Use entitlements** — gate features with `middleware.RequireEntitlement(db, "feature_name")` and `middleware.RequireActiveBilling()`
+   888→8. **Use the config store** — add runtime-configurable settings without redeployment
+   889→9. **Use the event emitter** — emit events from your handlers and they'll automatically be delivered to configured webhooks
+   890→10. **Use API keys** — your endpoints automatically support both JWT and API key authentication
+   891→11. **Use the branding system** — your UI inherits the white-label theme automatically via the BrandingContext
+   892→12. **Use the telemetry system** — track custom events with `telemetry.Track()` in Go or `POST /telemetry/events` from external clients, and they'll automatically appear in the PM dashboard
+   893→
+   894→---
+   895→
+   896→## Privacy Policy
+   897→
+   898→LastSaaS is self-hosted software — you control your database, your hosting, and your data. The MCP server connects to your LastSaaS instance via the HTTP API using read-only tools — no data is transmitted to Metavert LLC or any third party.
+   899→
+   900→For the full privacy policy, see: https://www.metavert.io/lastsaas-privacy-policy
+   901→
+   902→---
+   903→
+   904→## License
+   905→
+   906→[MIT](LICENSE) - Copyright 2026 Metavert LLC
+   907→

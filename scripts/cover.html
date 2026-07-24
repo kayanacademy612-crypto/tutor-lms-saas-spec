@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    @page { size: 210mm 297mm; margin: 0; }
+    :root {
+      --c-bg: #0f1c2f;
+      --c-accent: #c8a96a;
+      --c-text: #ffffff;
+      --c-muted: #8b9bb0;
+      --c-footer: #5f7088;
+    }
+    html, body {
+      margin: 0; padding: 0;
+      width: 210mm; height: 297mm;
+      background: var(--c-bg);
+      color: var(--c-text);
+      font-family: 'Inter', sans-serif;
+    }
+    @media screen {
+      html { height: auto; display: flex; justify-content: center; min-height: 100vh; background: var(--c-bg); }
+      body { transform-origin: top center; scale: min(1, calc(100vw / 794), calc(100vh / 1123)); margin: 0 auto; box-shadow: 0 0 60px rgba(0,0,0,0.3); }
+    }
+    .cover { width: 210mm; height: 297mm; position: relative; box-sizing: border-box; overflow: hidden; }
+    .grid-bg {
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+      background-size: 56px 56px;
+      z-index: 1;
+      pointer-events: none;
+    }
+    .watermark {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%) rotate(-90deg);
+      transform-origin: center center;
+      font-family: 'Playfair Display', serif;
+      font-size: 220pt;
+      font-weight: 900;
+      color: rgba(200, 169, 106, 0.04);
+      letter-spacing: 8px;
+      white-space: nowrap;
+      z-index: 1;
+      pointer-events: none;
+    }
+    .vline { position: absolute; left: 50px; top: 76px; bottom: 76px; width: 3px; background: var(--c-accent); z-index: 2; }
+    .corner-tl, .corner-tr, .corner-bl, .corner-br {
+      position: absolute; width: 28px; height: 28px;
+      border: 1.5px solid var(--c-accent); z-index: 2;
+    }
+    .corner-tl { top: 38px; left: 38px; border-right: none; border-bottom: none; }
+    .corner-tr { top: 38px; right: 38px; border-left: none; border-bottom: none; }
+    .corner-bl { bottom: 38px; left: 38px; border-right: none; border-top: none; }
+    .corner-br { bottom: 38px; right: 38px; border-left: none; border-top: none; }
+    .content { position: absolute; left: 100px; right: 76px; top: 0; bottom: 0; z-index: 3; }
+    .label {
+      position: absolute; top: 132px;
+      font-size: 9pt; color: var(--c-accent);
+      letter-spacing: 4px; text-transform: uppercase;
+      font-weight: 500;
+    }
+    .label .dot { display: inline-block; width: 6px; height: 6px; background: var(--c-accent); border-radius: 50%; margin: 0 12px 2px 12px; vertical-align: middle; }
+    .title {
+      position: absolute; top: 200px;
+      font-family: 'Playfair Display', serif;
+      font-size: 38pt; font-weight: 700;
+      line-height: 1.18;
+      color: var(--c-text);
+      max-width: 580px;
+      letter-spacing: -0.5px;
+    }
+    .title .em { color: var(--c-accent); font-style: italic; font-weight: 700; }
+    .subtitle {
+      position: absolute; top: 470px;
+      font-size: 13pt;
+      line-height: 1.55;
+      color: var(--c-muted);
+      max-width: 560px;
+      font-weight: 300;
+    }
+    .summary-block {
+      position: absolute; top: 640px;
+      max-width: 540px;
+    }
+    .summary-eyebrow {
+      font-size: 8pt; color: var(--c-accent);
+      letter-spacing: 3px; text-transform: uppercase;
+      margin-bottom: 14px; font-weight: 500;
+    }
+    .summary-text {
+      font-size: 11pt;
+      line-height: 1.7;
+      color: var(--c-muted);
+      font-weight: 300;
+    }
+    .meta-grid {
+      position: absolute; top: 850px; left: 0;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 24px;
+      max-width: 600px;
+    }
+    .meta-item .meta-label {
+      font-size: 8pt; color: var(--c-accent);
+      letter-spacing: 2px; text-transform: uppercase;
+      margin-bottom: 6px; font-weight: 500;
+    }
+    .meta-item .meta-value {
+      font-size: 10pt; color: var(--c-text);
+      font-weight: 400;
+    }
+    .footer {
+      position: absolute; bottom: 76px; left: 100px; right: 76px;
+      display: flex; justify-content: space-between;
+      font-size: 9pt; color: var(--c-footer);
+      letter-spacing: 2px; text-transform: uppercase;
+      font-weight: 400;
+    }
+    .footer .right { color: var(--c-accent); }
+  </style>
+</head>
+<body>
+  <div class="cover">
+    <div class="grid-bg"></div>
+    <div class="watermark">LMS</div>
+    <div class="vline"></div>
+    <div class="corner-tl"></div>
+    <div class="corner-tr"></div>
+    <div class="corner-bl"></div>
+    <div class="corner-br"></div>
+    <div class="content">
+      <div class="label">Technical PRD <span class="dot"></span> v1.0 <span class="dot"></span> Engineering Blueprint</div>
+      <div class="title">Building a<br><span class="em">Tutor LMS Pro</span>-Style SaaS<br>on lastsaas</div>
+      <div class="subtitle">A six-month engineering plan to extend a Go&nbsp;+&nbsp;React SaaS foundation into a multi-tenant learning platform with course authoring, quizzes, certificates, subscriptions, multi-instructor revenue share, content drip, gamification, and AI course generation.</div>
+      <div class="summary-block">
+        <div class="summary-eyebrow">Scope of this document</div>
+        <div class="summary-text">Architecture recap of the lastsaas foundation, feature decomposition of Tutor LMS (free and Pro), gap analysis, MongoDB collection diff, REST API surface, React module structure, video and media pipeline, a phased 24-week roadmap, a risk register, and open decisions for kickoff.</div>
+      </div>
+      <div class="meta-grid">
+        <div class="meta-item">
+          <div class="meta-label">Foundation</div>
+          <div class="meta-value">Go 1.25 + React 19</div>
+        </div>
+        <div class="meta-item">
+          <div class="meta-label">Horizon</div>
+          <div class="meta-value">24 weeks / 5 phases</div>
+        </div>
+        <div class="meta-item">
+          <div class="meta-label">Target</div>
+          <div class="meta-value">Pro feature parity</div>
+        </div>
+      </div>
+      <div class="footer">
+        <span>Prepared for the engineering team</span>
+        <span class="right">July 2026</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
