@@ -52,3 +52,16 @@ prompt
 server.log
 # Skills directory
 /skills/
+# Large project directories (tracked separately)
+repos/
+download/
+upload/
+skills/
+tool-results/
+worklog.md
+.bunny
+*.bak
+*.pdf
+body.pdf
+cover.pdf
+*.zip
