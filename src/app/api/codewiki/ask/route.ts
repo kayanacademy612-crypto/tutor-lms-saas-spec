@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
 
   try {
     // Dynamically import the codewiki client
-    const { CodeWikiClient } = await import('../../../../repos/codewiki-mcp/dist/index.js')
+    const { CodeWikiClient } = await import('/home/z/my-project/repos/codewiki-mcp/dist/index.js')
     const client = new CodeWikiClient({ timeoutMs: 60000, maxRetries: 2 })
     
     const { data, meta } = await client.askRepository('jonradoff/lastsaas', question)

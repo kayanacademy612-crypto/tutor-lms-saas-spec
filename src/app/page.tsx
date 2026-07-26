@@ -260,14 +260,14 @@ function AISearchSection({ aiQuestion, setAiQuestion, aiAnswer, aiLoading, aiSou
             </Button>
           </div>
           <div className="flex gap-2 flex-wrap">
-            {searchTarget === 'lastsaas' && ['How does authentication work?', 'How are MongoDB collections defined?', 'How does the Stripe integration work?', 'How does multi-tenancy work?'].map(q => (
-              <Button key={q} variant="outline" size="sm" className="text-xs" onClick={() => setAiQuestion(q)}>{q}</Button>
+            {searchTarget === 'lastsaas' && ['How does authentication work?', 'How are MongoDB collections defined?', 'How does the Stripe integration work?', 'How does multi-tenancy work?'].map((q, i) => (
+              <Button key={`lsq-${i}`} variant="outline" size="sm" className="text-xs" onClick={() => setAiQuestion(q)}>{q}</Button>
             ))}
-            {searchTarget === 'tutor' && ['How does quiz grading work?', 'How are courses structured?', 'How does enrollment work?', 'How do certificates work?'].map(q => (
-              <Button key={q} variant="outline" size="sm" className="text-xs" onClick={() => setAiQuestion(q)}>{q}</Button>
+            {searchTarget === 'tutor' && ['How does quiz grading work?', 'How are courses structured?', 'How does enrollment work?', 'How do certificates work?'].map((q, i) => (
+              <Button key={`tq-${i}`} variant="outline" size="sm" className="text-xs" onClick={() => setAiQuestion(q)}>{q}</Button>
             ))}
-            {searchTarget === 'compare' && ['How does authentication work?', 'How are payments handled?', 'How does email work?', 'How is data stored?'].map(q => (
-              <Button key={q} variant="outline" size="sm" className="text-xs" onClick={() => setAiQuestion(q)}>{q}</Button>
+            {searchTarget === 'compare' && ['How does authentication work?', 'How are payments handled?', 'How does email work?', 'How is data stored?'].map((q, i) => (
+              <Button key={`cq-${i}`} variant="outline" size="sm" className="text-xs" onClick={() => setAiQuestion(q)}>{q}</Button>
             ))}
           </div>
         </CardContent>
@@ -515,13 +515,13 @@ function FilesSection({ searchQuery }: { searchQuery: string }) {
       {/* Filters */}
       <div className="flex flex-wrap gap-2">
         <Button variant={systemFilter === 'all' ? 'default' : 'outline'} size="sm" onClick={() => setSystemFilter('all')} className="text-xs">All Systems</Button>
-        {['lastsaas', 'tutor', 'tutor-pro', 'codewiki', 'project'].map(s => (
-          <Button key={s} variant={systemFilter === s ? 'default' : 'outline'} size="sm" onClick={() => setSystemFilter(s)} className="text-xs capitalize">{s}</Button>
+        {['lastsaas', 'tutor', 'tutor-pro', 'codewiki', 'project'].map((s, i) => (
+          <Button key={`sys-${i}`} variant={systemFilter === s ? 'default' : 'outline'} size="sm" onClick={() => setSystemFilter(s)} className="text-xs capitalize">{s}</Button>
         ))}
         <div className="w-px bg-border mx-1" />
         <Button variant={categoryFilter === 'all' ? 'default' : 'outline'} size="sm" onClick={() => setCategoryFilter('all')} className="text-xs">All Types</Button>
-        {['source-code', 'documentation', 'config', 'generated', 'script', 'pdf'].map(c => (
-          <Button key={c} variant={categoryFilter === c ? 'default' : 'outline'} size="sm" onClick={() => setCategoryFilter(c)} className="text-xs capitalize">{c.replace('-', ' ')}</Button>
+        {['source-code', 'documentation', 'config', 'generated', 'script', 'pdf'].map((c, i) => (
+          <Button key={`cat-${i}`} variant={categoryFilter === c ? 'default' : 'outline'} size="sm" onClick={() => setCategoryFilter(c)} className="text-xs capitalize">{c.replace('-', ' ')}</Button>
         ))}
       </div>
 
@@ -672,8 +672,8 @@ export default function Home() {
             <p className="text-lg text-muted-foreground max-w-3xl">Complete engineering specification with TWO separated knowledge bases (LastSaaS via CodeWiki/MCP + Tutor LMS via source code indexing), side-by-side comparison, AI search, and full traceability.</p>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-            {stats.map(s => { const Icon = s.icon; return (
-              <Card key={s.label}><CardContent className="p-4"><Icon className={`w-5 h-5 ${s.color} mb-2`} /><div className="text-2xl font-bold">{s.value}</div><div className="text-xs text-muted-foreground mt-1">{s.label}</div></CardContent></Card>
+            {stats.map((s, i) => { const Icon = s.icon; return (
+              <Card key={`stat-${i}`}><CardContent className="p-4"><Icon className={`w-5 h-5 ${s.color} mb-2`} /><div className="text-2xl font-bold">{s.value}</div><div className="text-xs text-muted-foreground mt-1">{s.label}</div></CardContent></Card>
             )})}
           </div>
           <div className="grid md:grid-cols-3 gap-4">
@@ -682,8 +682,8 @@ export default function Home() {
             <Card className="border-purple-500/20"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Plug className="w-4 h-4 text-purple-500" /> AI Access</CardTitle><CardDescription>MCP + JSON API</CardDescription></CardHeader><CardContent className="text-sm text-muted-foreground space-y-1"><div><code className="text-purple-600 dark:text-purple-400 text-xs">POST /api/mcp</code> — MCP server</div><div><code className="text-purple-600 dark:text-purple-400 text-xs">POST /api/codewiki/ask</code> — CodeWiki proxy</div><div><code className="text-emerald-600 dark:text-emerald-400 text-xs">GET /api/spec/*</code> — 10 JSON endpoints</div><div><code className="text-emerald-600 dark:text-emerald-400 text-xs">GET /api/comparison</code> — Comparison data</div></CardContent></Card>
           </div>
           <Card><CardHeader><CardTitle className="flex items-center gap-2"><Map className="w-5 h-5" /> Build Roadmap</CardTitle><CardDescription>6 phases · 24 weeks · ~137.5 dev-days</CardDescription></CardHeader>
-            <CardContent><div className="space-y-3">{PHASES.map(p => (
-              <div key={p.id} className="flex items-start gap-3 p-3 rounded-lg border"><Badge variant="outline" className={`shrink-0 ${PHASE_COLORS[p.id]}`}>{p.id}</Badge><div className="flex-1 min-w-0"><div className="font-medium text-sm">{p.title}</div><div className="text-xs text-muted-foreground mt-0.5">{p.weeks} · {p.theme}</div></div><Badge variant="secondary" className="shrink-0 text-xs">{p.tickets} tickets</Badge></div>
+            <CardContent><div className="space-y-3">{PHASES.map((p, i) => (
+              <div key={p.id || `phase-${i}`} className="flex items-start gap-3 p-3 rounded-lg border"><Badge variant="outline" className={`shrink-0 ${PHASE_COLORS[p.id]}`}>{p.id}</Badge><div className="flex-1 min-w-0"><div className="font-medium text-sm">{p.title}</div><div className="text-xs text-muted-foreground mt-0.5">{p.weeks} · {p.theme}</div></div><Badge variant="secondary" className="shrink-0 text-xs">{p.tickets} tickets</Badge></div>
             ))}</div></CardContent>
           </Card>
         </div>
@@ -716,7 +716,7 @@ export default function Home() {
     // === LASTSAAS ARCHITECTURE ===
     if (active === 'lastsaas') {
       if (loading) return <div className="flex items-center gap-2 p-8"><Loader2 className="w-5 h-5 animate-spin text-blue-500" /><span>Loading lastsaas architecture...</span></div>
-      if (!apiData) return <div className="p-8 text-muted-foreground">Loading...</div>
+      if (!apiData || !apiData.summary) return <div className="p-8 text-muted-foreground">Loading...</div>
       const s = apiData.summary
       return (
         <div className="space-y-4">
@@ -748,8 +748,8 @@ export default function Home() {
           </Card>
           <Card><CardHeader><CardTitle className="text-base">All data available via API</CardTitle></CardHeader>
             <CardContent><div className="grid md:grid-cols-2 gap-2 text-xs">
-              {['GET /api/lastsaas/architecture','GET /api/lastsaas/collections','GET /api/lastsaas/routes','GET /api/lastsaas/models','GET /api/lastsaas/middleware','GET /api/lastsaas/events'].map(p => (
-                <div key={p} className="flex items-center gap-2 p-2 border rounded"><Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-mono">GET</Badge><code className="text-amber-600 dark:text-amber-400">{p}</code></div>
+              {['GET /api/lastsaas/architecture','GET /api/lastsaas/collections','GET /api/lastsaas/routes','GET /api/lastsaas/models','GET /api/lastsaas/middleware','GET /api/lastsaas/events'].map((p, i) => (
+                <div key={`api-${i}`} className="flex items-center gap-2 p-2 border rounded"><Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-mono">GET</Badge><code className="text-amber-600 dark:text-amber-400">{p}</code></div>
               ))}
             </div></CardContent>
           </Card>
@@ -791,8 +791,8 @@ export default function Home() {
           </Card>
           <Card><CardHeader><CardTitle className="text-base">All data available via API</CardTitle></CardHeader>
             <CardContent><div className="grid md:grid-cols-2 gap-2 text-xs">
-              {['GET /api/tutor-kb/classes','GET /api/tutor-kb/models','GET /api/tutor-kb/addons'].map(p => (
-                <div key={p} className="flex items-center gap-2 p-2 border rounded"><Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-mono">GET</Badge><code className="text-amber-600 dark:text-amber-400">{p}</code></div>
+              {['GET /api/tutor-kb/classes','GET /api/tutor-kb/models','GET /api/tutor-kb/addons'].map((p, i) => (
+                <div key={`api-${i}`} className="flex items-center gap-2 p-2 border rounded"><Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-mono">GET</Badge><code className="text-amber-600 dark:text-amber-400">{p}</code></div>
               ))}
             </div></CardContent>
           </Card>
@@ -822,8 +822,8 @@ export default function Home() {
       return (
         <div className="space-y-4">
           <div><h1 className="text-3xl font-bold mb-2">Build Roadmap — ALL 6 Phases</h1></div>
-          {PHASES.map(p => (
-            <Card key={p.id}><CardHeader><div className="flex items-center gap-3"><Badge variant="outline" className={PHASE_COLORS[p.id]}>{p.id}</Badge><CardTitle className="text-base">{p.title}</CardTitle><Badge variant="secondary" className="ml-auto text-xs">{p.tickets} tickets · {p.devDays} days</Badge></div><CardDescription>{p.weeks} · {p.theme}</CardDescription></CardHeader>
+          {PHASES.map((p, i) => (
+            <Card key={p.id || `phase-${i}`}><CardHeader><div className="flex items-center gap-3"><Badge variant="outline" className={PHASE_COLORS[p.id]}>{p.id}</Badge><CardTitle className="text-base">{p.title}</CardTitle><Badge variant="secondary" className="ml-auto text-xs">{p.tickets} tickets · {p.devDays} days</Badge></div><CardDescription>{p.weeks} · {p.theme}</CardDescription></CardHeader>
               <CardContent><ul className="space-y-1">{p.scope.map((s, i) => <li key={i} className="text-sm text-muted-foreground flex items-start gap-2"><ChevronRight className="w-3 h-3 mt-1 shrink-0 text-amber-500" />{s}</li>)}</ul></CardContent>
             </Card>
           ))}
@@ -837,9 +837,9 @@ export default function Home() {
         <div className="space-y-4">
           <div><h1 className="text-3xl font-bold mb-2">Payment Gateways — ALL 11</h1></div>
           <div className="grid md:grid-cols-2 gap-4">
-            {GATEWAYS.map(gw => (
-              <Card key={gw.id} className={gw.phase === 'Phase 2' ? 'border-emerald-500/20' : ''}><CardHeader><div className="flex items-center justify-between"><CardTitle className="text-base flex items-center gap-2"><CreditCard className="w-4 h-4" />{gw.name}</CardTitle><div className="flex gap-1"><Badge variant="outline" className={`text-xs ${PHASE_COLORS[gw.phase]}`}>{gw.phase}</Badge><Badge variant="outline" className="text-xs">{gw.region}</Badge></div></div></CardHeader>
-                <CardContent><div className="space-y-1">{gw.creds.map(c => <div key={c} className="text-xs font-mono"><span className="text-amber-600 dark:text-amber-400">{c}</span></div>)}</div></CardContent>
+            {GATEWAYS.map((gw, i) => (
+              <Card key={gw.id || `gw-${i}`} className={gw.phase === 'Phase 2' ? 'border-emerald-500/20' : ''}><CardHeader><div className="flex items-center justify-between"><CardTitle className="text-base flex items-center gap-2"><CreditCard className="w-4 h-4" />{gw.name}</CardTitle><div className="flex gap-1"><Badge variant="outline" className={`text-xs ${PHASE_COLORS[gw.phase]}`}>{gw.phase}</Badge><Badge variant="outline" className="text-xs">{gw.region}</Badge></div></div></CardHeader>
+                <CardContent><div className="space-y-1">{gw.creds.map((c, ci) => <div key={ci} className="text-xs font-mono"><span className="text-amber-600 dark:text-amber-400">{c}</span></div>)}</div></CardContent>
               </Card>
             ))}
           </div>
@@ -862,8 +862,8 @@ export default function Home() {
           </div>
           <Card className="border-emerald-500/20"><CardHeader><CardTitle className="flex items-center gap-2"><Code2 className="w-5 h-5 text-emerald-500" /> JSON API — ALL Endpoints</CardTitle></CardHeader>
             <CardContent><div className="grid md:grid-cols-2 gap-2">
-              {['GET /api/spec/overview','GET /api/spec/collections → 91','GET /api/spec/endpoints → 172','GET /api/spec/events → 480','GET /api/spec/settings → 66','GET /api/spec/email-triggers → 54','GET /api/lastsaas/architecture','GET /api/lastsaas/collections → 38','GET /api/lastsaas/routes → 133','GET /api/tutor-kb/classes → 89','GET /api/tutor-kb/models → 16','GET /api/comparison → 25'].map(p => (
-                <div key={p} className="flex items-center gap-2 p-2 rounded border text-xs"><Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-mono">GET</Badge><code className="font-mono text-amber-600 dark:text-amber-400">{p}</code></div>
+              {['GET /api/spec/overview','GET /api/spec/collections → 91','GET /api/spec/endpoints → 172','GET /api/spec/events → 480','GET /api/spec/settings → 66','GET /api/spec/email-triggers → 54','GET /api/lastsaas/architecture','GET /api/lastsaas/collections → 38','GET /api/lastsaas/routes → 133','GET /api/tutor-kb/classes → 89','GET /api/tutor-kb/models → 16','GET /api/comparison → 25'].map((p, i) => (
+                <div key={`api-${i}`} className="flex items-center gap-2 p-2 rounded border text-xs"><Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-mono">GET</Badge><code className="font-mono text-amber-600 dark:text-amber-400">{p}</code></div>
               ))}
             </div></CardContent>
           </Card>
@@ -897,8 +897,8 @@ export default function Home() {
         <div className="space-y-4">
           <div><h1 className="text-3xl font-bold mb-2">API Reference — ALL {total} Endpoints</h1></div>
           <div className="space-y-2 max-h-[calc(100vh-200px)] overflow-y-auto">
-            {filtered.map((ep: any) => (
-              <Card key={ep.id}><CardContent className="p-3"><div className="flex items-start gap-2">
+            {filtered.map((ep: any, i: number) => (
+              <Card key={ep.id || `ep-${i}`}><CardContent className="p-3"><div className="flex items-start gap-2">
                 <Badge variant="outline" className={`shrink-0 font-mono text-xs ${METHOD_COLORS[ep.method] || ''}`}>{ep.method}</Badge>
                 <div className="flex-1 min-w-0"><code className="text-xs font-mono text-amber-600 dark:text-amber-400 break-all">{ep.path}</code><span className="text-xs text-muted-foreground ml-2">{ep.name}</span>
                 <div className="mt-1 flex gap-1"><Badge variant="outline" className="text-xs">{ep.auth}</Badge><Badge variant="outline" className={`text-xs ${PHASE_COLORS[ep.phase] || ''}`}>{ep.phase}</Badge><Badge variant="secondary" className="text-xs">{ep.folder}</Badge></div></div>
@@ -956,8 +956,8 @@ export default function Home() {
         <div className="space-y-4">
           <div><h1 className="text-3xl font-bold mb-2">Quiz Question Types — ALL {total}</h1></div>
           <div className="grid md:grid-cols-2 gap-4">
-            {filtered.map((qt: any) => (
-              <Card key={qt.id} className={qt.isPro ? 'border-amber-500/30' : ''}><CardHeader><div className="flex items-center justify-between"><CardTitle className="text-base flex items-center gap-2"><HelpCircle className="w-4 h-4" />{qt.name}</CardTitle><div className="flex gap-1">{qt.isPro && <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-600 dark:text-amber-400">PRO</Badge>}<Badge variant="outline" className={`text-xs ${qt.grading === 'auto' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-orange-500/10 text-orange-600 dark:text-orange-400'}`}>{qt.grading}</Badge></div></div></CardHeader>
+            {filtered.map((qt: any, i: number) => (
+              <Card key={qt.id || qt.name || `qt-${i}`} className={qt.isPro ? 'border-amber-500/30' : ''}><CardHeader><div className="flex items-center justify-between"><CardTitle className="text-base flex items-center gap-2"><HelpCircle className="w-4 h-4" />{qt.name}</CardTitle><div className="flex gap-1">{qt.isPro && <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-600 dark:text-amber-400">PRO</Badge>}<Badge variant="outline" className={`text-xs ${qt.grading === 'auto' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-orange-500/10 text-orange-600 dark:text-orange-400'}`}>{qt.grading}</Badge></div></div></CardHeader>
                 <CardContent><p className="text-sm text-muted-foreground">{qt.desc}</p><div className="mt-1 text-xs font-mono text-muted-foreground">{qt.id}</div></CardContent>
               </Card>
             ))}
