@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { CourseBuilder, FrontendAppsSection } from '@/components/frontend-apps/CourseBuilder'
 import { useTheme } from 'next-themes'
 
 const SECTIONS = [
@@ -41,6 +42,7 @@ const SECTIONS = [
   { id: 'ai-search', label: 'AI Search', icon: Brain, group: 'ai' },
   { id: 'health', label: 'System Health', icon: CheckCircle, group: 'ai' },
   { id: 'mcp', label: 'MCP + API Access', icon: Plug, group: 'ai' },
+  { id: 'frontend-apps', label: 'Frontend Apps', icon: Monitor, group: 'apps' },
 ]
 
 const PHASE_COLORS: Record<string, string> = {
@@ -1243,6 +1245,7 @@ export default function Home() {
   const [active, setActive] = useState('overview')
   const [search, setSearch] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [launchedApp, setLaunchedApp] = useState<string | null>(null)
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
   useEffect(() => { setMounted(true) }, [])
@@ -1842,6 +1845,11 @@ export default function Home() {
       )
     }
 
+    // === FRONTEND APPS ===
+    if (active === 'frontend-apps') {
+      return <FrontendAppsSection onLaunch={(appId) => setLaunchedApp(appId)} />
+    }
+
     // === TICKETS ===
     if (active === 'tickets') {
       return (
@@ -1974,6 +1982,11 @@ export default function Home() {
         </header>
         <main className="flex-1 overflow-y-auto"><div className="container max-w-6xl mx-auto px-4 md:px-8 py-8">{renderContent()}</div></main>
       </div>
+
+      {/* Launched frontend app overlay (full-screen) */}
+      {launchedApp === 'course-builder' && (
+        <CourseBuilder onExit={() => setLaunchedApp(null)} />
+      )}
     </div>
   )
 }
