@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { settingsData, specStats } from '@/data/spec'
+import { settingsData, settingsDataCount } from '@/data/settings-full'
 export const dynamic = 'force-static'
 export async function GET() {
-  return NextResponse.json({ total: specStats.settings, samples: settingsData })
+  return NextResponse.json({ total: settingsDataCount, settings: settingsData })
 }

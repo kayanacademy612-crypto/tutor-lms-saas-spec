@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { quizTypes } from '@/data/spec'
+import { quizTypes, quizTypesCount } from '@/data/quiz-types-full'
 export const dynamic = 'force-static'
 export async function GET() {
-  return NextResponse.json({ total: quizTypes.length, quizTypes })
+  return NextResponse.json({ total: quizTypesCount, quizTypes })
 }
