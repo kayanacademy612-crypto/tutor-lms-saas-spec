@@ -5,7 +5,7 @@ import {
   BookOpen, Database, Code2, Zap, Map, Ticket, HelpCircle, CreditCard,
   Mail, Plug, Search, Sun, Moon, ChevronRight, Menu, Clock, Globe,
   Loader2, FileText, GitCompare, Server, Brain, CheckCircle, XCircle,
-  AlertCircle, ArrowRight, Folder, File, X, Download, HardDrive, FileCode, FileJson, FileText as FileTextIcon, FileType, Monitor, Layers
+  AlertCircle, ArrowRight, Folder, File, X, Download, HardDrive, FileCode, FileJson, FileText as FileTextIcon, FileType, Monitor, Layers, ImageIcon, Maximize2, Code, Eye, ChevronDown, ChevronRight as ChevronR
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -31,7 +31,8 @@ const SECTIONS = [
   { id: 'lastsaas', label: 'LastSaaS Architecture', icon: Server, group: 'lastsaas' },
   { id: 'tutor-kb', label: 'Tutor LMS Knowledge', icon: FileText, group: 'tutor' },
   { id: 'comparison', label: 'Comparison', icon: GitCompare, group: 'comparison' },
-  { id: 'screens', label: 'Screen Inventory (92)', icon: Folder, group: 'comparison' },
+  { id: 'visual-ui', label: 'Visual UI (197 imgs)', icon: ImageIcon, group: 'comparison' },
+  { id: 'screens', label: 'Screen Inventory (429)', icon: Folder, group: 'comparison' },
   { id: 'feature-comparison', label: 'Feature Comparison (13)', icon: GitCompare, group: 'comparison' },
   { id: 'user-flows', label: 'User Flows (7)', icon: Map, group: 'comparison' },
   { id: 'frontend-gaps', label: 'Frontend Gaps (20)', icon: AlertCircle, group: 'comparison' },
@@ -435,12 +436,293 @@ const CATEGORY_ICONS: Record<string, any> = {
   'script': FileCode,
 }
 
-function FilesSection({ searchQuery }: { searchQuery: string }) {
-  const [files, setFiles] = useState<any[]>(null)
-  const [stats, setStats] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
-  const [systemFilter, setSystemFilter] = useState('all')
+// ============================================================
+// VISUAL UI SECTION — real screenshots from Tutor LMS source
+// ============================================================
+function VisualUISection({ data, searchQuery }: { data: any; searchQuery: string }) {
   const [categoryFilter, setCategoryFilter] = useState('all')
+  const [systemFilter, setSystemFilter] = useState('all')
+  const [selected, setSelected] = useState<any | null>(null)
+  const [showPath, setShowPath] = useState(false)
+
+  const images: any[] = data.images || []
+  const filtered = images.filter(img => {
+    if (categoryFilter !== 'all' && img.category !== categoryFilter) return false
+    if (systemFilter !== 'all' && img.system !== systemFilter) return false
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase()
+      if (!`${img.screen_name} ${img.filename} ${img.original_path} ${img.addon_key || ''}`.toLowerCase().includes(q)) return false
+    }
+    return true
+  })
+
+  const categories = ['all', ...Object.keys(data.by_category || {})]
+  const systems = ['all', 'tutor-free', 'tutor-pro']
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start gap-3">
+        <ImageIcon className="w-8 h-8 text-pink-500 shrink-0 mt-1" />
+        <div className="flex-1">
+          <h1 className="text-3xl font-bold">Visual UI — Real Tutor LMS Screenshots</h1>
+          <p className="text-muted-foreground mt-1">{data.total_images} actual images extracted from Tutor LMS source code (free + Pro). These are real PNG/JPG/WEBP files embedded inside the plugin repos — not mockups.</p>
+        </div>
+      </div>
+
+      <Card className="border-amber-500/30 bg-amber-500/5">
+        <CardContent className="p-3 text-xs">
+          <strong className="text-amber-600 dark:text-amber-400">Honest disclosure:</strong> The 408MB docs bundle you previously shared is no longer on disk (lost in a context reset). These {data.total_images} images are extracted directly from <code className="text-amber-600 dark:text-amber-400">tutor/</code> and <code className="text-amber-600 dark:text-amber-400">tutor-pro/</code> source code — they include addon showcase thumbnails, certificate template backgrounds, UI empty/error states, onboarding hero, AI placeholders, and emoji reactions. For full UI screenshots of every screen, see the <strong>Screen Inventory</strong> section which links to the actual PHP template file (the source of truth, better than a screenshot).
+        </CardContent>
+      </Card>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-muted-foreground">Category:</span>
+        {categories.map(c => (
+          <button key={`cat-${c}`} onClick={() => setCategoryFilter(c)} className={`px-2 py-1 rounded text-xs border transition-colors ${categoryFilter === c ? 'bg-pink-500/10 text-pink-600 dark:text-pink-400 border-pink-500/30' : 'border-border text-muted-foreground hover:bg-muted'}`}>
+            {c} <span className="opacity-60">({c === 'all' ? data.total_images : (data.by_category?.[c] || 0)})</span>
+          </button>
+        ))}
+        <span className="text-xs text-muted-foreground ml-3">System:</span>
+        {systems.map(s => (
+          <button key={`sys-${s}`} onClick={() => setSystemFilter(s)} className={`px-2 py-1 rounded text-xs border transition-colors ${systemFilter === s ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30' : 'border-border text-muted-foreground hover:bg-muted'}`}>
+            {s}
+          </button>
+        ))}
+        <label className="flex items-center gap-1 ml-auto text-xs text-muted-foreground cursor-pointer">
+          <input type="checkbox" checked={showPath} onChange={e => setShowPath(e.target.checked)} className="rounded" />
+          Show file paths
+        </label>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+        {filtered.map((img, i) => (
+          <Card key={`img-${i}`} className="overflow-hidden hover:shadow-md transition-shadow cursor-pointer group" >
+            <div className="aspect-square bg-muted/30 flex items-center justify-center overflow-hidden relative" onClick={() => setSelected(img)}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={img.url} alt={img.screen_name} className="w-full h-full object-contain group-hover:scale-105 transition-transform" loading="lazy" />
+              <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <Maximize2 className="w-4 h-4 text-white bg-black/60 p-0.5 rounded" />
+              </div>
+            </div>
+            <CardContent className="p-2">
+              <div className="text-xs font-medium truncate" title={img.screen_name}>{img.screen_name}</div>
+              <div className="flex items-center gap-1 mt-1">
+                <Badge variant="outline" className={`text-[10px] px-1 py-0 ${img.system === 'tutor-pro' ? 'bg-pink-500/10 text-pink-600 dark:text-pink-400' : 'bg-orange-500/10 text-orange-600 dark:text-orange-400'}`}>{img.system === 'tutor-pro' ? 'Pro' : 'Free'}</Badge>
+                <Badge variant="outline" className="text-[10px] px-1 py-0 bg-gray-500/10 text-gray-600 dark:text-gray-400">{img.category}</Badge>
+                <Badge variant="outline" className="text-[10px] px-1 py-0 bg-blue-500/10 text-blue-600 dark:text-blue-400 ml-auto">{(img.size_bytes / 1024).toFixed(1)} KB</Badge>
+              </div>
+              {showPath && (
+                <code className="block text-[10px] text-muted-foreground mt-1 truncate" title={img.original_path}>{img.original_path}</code>
+              )}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {filtered.length === 0 && (
+        <div className="text-center py-12 text-muted-foreground">
+          <ImageIcon className="w-12 h-12 mx-auto mb-3 opacity-30" />
+          <p>No images match the current filters.</p>
+        </div>
+      )}
+
+      <p className="text-xs text-muted-foreground">Showing {filtered.length} of {data.total_images} real images. Click any thumbnail to enlarge.</p>
+
+      {/* Lightbox modal */}
+      {selected && (
+        <Dialog open onOpenChange={() => setSelected(null)}>
+          <DialogContent className="max-w-4xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <ImageIcon className="w-5 h-5 text-pink-500" />
+                {selected.screen_name}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="bg-muted/30 rounded-lg p-4 flex items-center justify-center max-h-[60vh] overflow-auto">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={selected.url} alt={selected.screen_name} className="max-w-full max-h-[55vh] object-contain" />
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div><span className="text-muted-foreground">System:</span> <Badge variant="outline" className="ml-1">{selected.system}</Badge></div>
+                <div><span className="text-muted-foreground">Category:</span> <Badge variant="outline" className="ml-1">{selected.category}</Badge></div>
+                <div><span className="text-muted-foreground">Size:</span> {(selected.size_bytes / 1024).toFixed(2)} KB</div>
+                <div><span className="text-muted-foreground">Filename:</span> <code>{selected.filename}</code></div>
+                <div className="col-span-2"><span className="text-muted-foreground">Original path:</span> <code className="block mt-1 p-2 bg-muted/30 rounded text-[10px]">{selected.original_path}</code></div>
+                {selected.addon_key && <div className="col-span-2"><span className="text-muted-foreground">Addon:</span> <code>{selected.addon_key}</code></div>}
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
+  )
+}
+
+// ============================================================
+// SCREENS SECTION — real PHP templates + real React components
+// ============================================================
+function ScreensSection({ data, searchQuery }: { data: any; searchQuery: string }) {
+  const [systemTab, setSystemTab] = useState<'tutor' | 'lastsaas'>('tutor')
+  const [categoryFilter, setCategoryFilter] = useState('all')
+  const [roleFilter, setRoleFilter] = useState('all')
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [previewScreen, setPreviewScreen] = useState<any | null>(null)
+
+  const allScreens: any[] = data.screens || []
+  const screens = allScreens.filter(s => {
+    if (s.system !== systemTab) return false
+    if (categoryFilter !== 'all' && s.feature !== categoryFilter) return false
+    if (roleFilter !== 'all' && s.role !== roleFilter) return false
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase()
+      if (!`${s.name} ${s.source} ${s.route} ${s.feature} ${s.role}`.toLowerCase().includes(q)) return false
+    }
+    return true
+  })
+
+  const tutorCategories = Object.keys(data.tutor_by_category || {})
+  const lastsaasAreas = Object.keys(data.lastsaas_by_area || {})
+  const categories = systemTab === 'tutor' ? tutorCategories : lastsaasAreas
+  const roles = systemTab === 'tutor' ? Object.keys(data.tutor_by_role || {}) : Object.keys(data.lastsaas_by_role || {})
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start gap-3">
+        <Monitor className="w-8 h-8 text-yellow-500 shrink-0 mt-1" />
+        <div className="flex-1">
+          <h1 className="text-3xl font-bold">Frontend Screen Inventory (REAL)</h1>
+          <p className="text-muted-foreground mt-1">{data.total} real screen-rendering files — {data.tutor_total} Tutor LMS PHP templates + {data.lastsaas_total} LastSaaS React pages. Every entry references a real file on disk you can open and read.</p>
+        </div>
+      </div>
+
+      <Card className="border-emerald-500/30 bg-emerald-500/5">
+        <CardContent className="p-3 text-xs">
+          <strong className="text-emerald-600 dark:text-emerald-400">Real source files:</strong> These are NOT made-up screen names. Each entry is an actual PHP template file (Tutor LMS) or React component file (LastSaaS) extracted from the repos on disk. Click any row to expand metadata, or click <Eye className="inline w-3 h-3" /> to see the first 40 lines of real code from that file.
+        </CardContent>
+      </Card>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button onClick={() => { setSystemTab('tutor'); setCategoryFilter('all'); setRoleFilter('all') }} className={`px-3 py-1.5 rounded text-sm border transition-colors ${systemTab === 'tutor' ? 'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/30 font-medium' : 'border-border text-muted-foreground hover:bg-muted'}`}>
+          <FileText className="inline w-4 h-4 mr-1" /> Tutor LMS PHP ({data.tutor_total})
+        </button>
+        <button onClick={() => { setSystemTab('lastsaas'); setCategoryFilter('all'); setRoleFilter('all') }} className={`px-3 py-1.5 rounded text-sm border transition-colors ${systemTab === 'lastsaas' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30 font-medium' : 'border-border text-muted-foreground hover:bg-muted'}`}>
+          <Server className="inline w-4 h-4 mr-1" /> LastSaaS React ({data.lastsaas_total})
+        </button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-muted-foreground">{systemTab === 'tutor' ? 'Category:' : 'Area:'}</span>
+        <button onClick={() => setCategoryFilter('all')} className={`px-2 py-1 rounded border ${categoryFilter === 'all' ? 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/30' : 'border-border text-muted-foreground hover:bg-muted'}`}>all</button>
+        {categories.map(c => (
+          <button key={`cf-${c}`} onClick={() => setCategoryFilter(c)} className={`px-2 py-1 rounded border ${categoryFilter === c ? 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/30' : 'border-border text-muted-foreground hover:bg-muted'}`}>
+            {c} <span className="opacity-60">({systemTab === 'tutor' ? (data.tutor_by_category?.[c] || 0) : (data.lastsaas_by_area?.[c] || 0)})</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-muted-foreground">Role:</span>
+        <button onClick={() => setRoleFilter('all')} className={`px-2 py-1 rounded border ${roleFilter === 'all' ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/30' : 'border-border text-muted-foreground hover:bg-muted'}`}>all</button>
+        {roles.map(r => (
+          <button key={`rf-${r}`} onClick={() => setRoleFilter(r)} className={`px-2 py-1 rounded border ${roleFilter === r ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/30' : 'border-border text-muted-foreground hover:bg-muted'}`}>
+            {r} <span className="opacity-60">({systemTab === 'tutor' ? (data.tutor_by_role?.[r] || 0) : (data.lastsaas_by_role?.[r] || 0)})</span>
+          </button>
+        ))}
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center justify-between">
+            <span>{systemTab === 'tutor' ? 'Tutor LMS — Real PHP Template Files' : 'LastSaaS — Real React Component Files'}</span>
+            <Badge variant="outline" className="text-xs">{screens.length} showing</Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="max-h-[700px] overflow-y-auto divide-y">
+            {screens.slice(0, 200).map((s, i) => {
+              const isExpanded = expanded === s.id
+              return (
+                <div key={s.id || `scr-${i}`} className="hover:bg-muted/20">
+                  <div className="flex items-center gap-2 p-2 text-xs">
+                    <button onClick={() => setExpanded(isExpanded ? null : s.id)} className="shrink-0 p-1 hover:bg-muted rounded">
+                      {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronR className="w-3 h-3" />}
+                    </button>
+                    <Badge variant="outline" className={`shrink-0 text-[10px] ${systemTab === 'tutor' ? 'bg-orange-500/10 text-orange-600 dark:text-orange-400' : 'bg-blue-500/10 text-blue-600 dark:text-blue-400'}`}>{s.role}</Badge>
+                    <span className="font-medium shrink-0 min-w-[120px] truncate" title={s.name}>{s.name}</span>
+                    <Badge variant="secondary" className="shrink-0 text-[10px]">{s.feature}</Badge>
+                    <code className="text-muted-foreground truncate flex-1" title={s.source}>{s.source}</code>
+                    <Badge variant="outline" className="shrink-0 text-[10px] bg-gray-500/10 text-gray-600 dark:text-gray-400">{s.line_count} lines</Badge>
+                    {s.image_refs && s.image_refs.length > 0 && (
+                      <Badge variant="outline" className="shrink-0 text-[10px] bg-pink-500/10 text-pink-600 dark:text-pink-400" title={s.image_refs.join(', ')}>
+                        <ImageIcon className="inline w-3 h-3 mr-0.5" />{s.image_refs.length}
+                      </Badge>
+                    )}
+                    <button onClick={() => setPreviewScreen(s)} className="shrink-0 p-1 hover:bg-muted rounded" title="Preview code">
+                      <Eye className="w-3 h-3" />
+                    </button>
+                  </div>
+                  {isExpanded && (
+                    <div className="px-4 pb-3 text-xs space-y-2 bg-muted/10">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div><span className="text-muted-foreground">Source path:</span> <code className="text-[10px]">{s.absolute_path}</code></div>
+                        <div><span className="text-muted-foreground">Route hint:</span> <code>{s.route}</code></div>
+                      </div>
+                      {s.image_refs && s.image_refs.length > 0 && (
+                        <div>
+                          <span className="text-muted-foreground">Image references found in template:</span>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {s.image_refs.map((ref: string, ri: number) => (
+                              <code key={`ir-${i}-${ri}`} className="text-[10px] px-1 py-0.5 bg-pink-500/10 text-pink-600 dark:text-pink-400 rounded">{ref}</code>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <pre className="text-[10px] bg-muted/30 p-2 rounded max-h-48 overflow-auto font-mono"><code>{s.preview}</code></pre>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      {screens.length > 200 && (
+        <p className="text-xs text-amber-600 dark:text-amber-400">Showing first 200 of {screens.length} matching screens. Refine filters or use search to narrow down.</p>
+      )}
+
+      {/* Code preview modal */}
+      {previewScreen && (
+        <Dialog open onOpenChange={() => setPreviewScreen(null)}>
+          <DialogContent className="max-w-4xl max-h-[80vh]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Code className="w-5 h-5 text-yellow-500" />
+                {previewScreen.name}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-2 text-xs">
+              <div className="grid grid-cols-2 gap-2">
+                <div><span className="text-muted-foreground">Source:</span> <code className="text-[10px]">{previewScreen.source}</code></div>
+                <div><span className="text-muted-foreground">Lines:</span> {previewScreen.line_count}</div>
+                <div><span className="text-muted-foreground">Role:</span> {previewScreen.role}</div>
+                <div><span className="text-muted-foreground">Category:</span> {previewScreen.feature}</div>
+              </div>
+              <div className="text-muted-foreground">First 40 lines of code (real file content):</div>
+              <pre className="text-[10px] bg-muted/30 p-3 rounded max-h-[55vh] overflow-auto font-mono border"><code>{previewScreen.preview}</code></pre>
+              {previewScreen.absolute_path && (
+                <div className="text-[10px] text-muted-foreground">Absolute path on disk: <code>{previewScreen.absolute_path}</code></div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
+  )
+}
+
+function FilesSection({ searchQuery }: { searchQuery: string }) {
   const [localSearch, setLocalSearch] = useState('')
   const [previewFile, setPreviewFile] = useState<any>(null)
   const [previewContent, setPreviewContent] = useState<string | null>(null)
@@ -623,6 +905,7 @@ export default function Home() {
       'lastsaas': '/api/lastsaas/architecture',
       'tutor-kb': '/api/tutor-kb/addons',
       'comparison': '/api/comparison',
+      'visual-ui': '/api/screenshots',
       'screens': '/api/screens',
       'feature-comparison': '/api/feature-comparison',
       'user-flows': '/api/user-flows',
@@ -940,46 +1223,18 @@ export default function Home() {
       return <ComparisonSection data={apiData} searchQuery={search} />
     }
 
-    // === SCREEN INVENTORY ===
+    // === VISUAL UI (real screenshots gallery) ===
+    if (active === 'visual-ui') {
+      if (loading) return <div className="flex items-center gap-2 p-8"><Loader2 className="w-5 h-5 animate-spin text-yellow-500" /><span>Loading screenshots...</span></div>
+      if (!apiData) return <div className="p-8 text-muted-foreground">Loading...</div>
+      return <VisualUISection data={apiData} searchQuery={search} />
+    }
+
+    // === SCREEN INVENTORY (REAL — 383 PHP templates + 46 React pages) ===
     if (active === 'screens') {
       if (loading) return <div className="flex items-center gap-2 p-8"><Loader2 className="w-5 h-5 animate-spin text-yellow-500" /><span>Loading screens...</span></div>
       if (!apiData) return <div className="p-8 text-muted-foreground">Loading...</div>
-      const screens = apiData.screens || []
-      const filtered = search ? screens.filter((s: any) => JSON.stringify(s).toLowerCase().includes(search.toLowerCase())) : screens
-      const tutorScreens = filtered.filter((s: any) => s.system === 'tutor')
-      const lastsaasScreens = filtered.filter((s: any) => s.system === 'lastsaas')
-      return (
-        <div className="space-y-4">
-          <div className="flex items-center gap-3"><Monitor className="w-8 h-8 text-yellow-500" /><div><h1 className="text-3xl font-bold">Frontend Screen Inventory</h1><p className="text-muted-foreground">{apiData.total} screens — {tutorScreens.length} Tutor LMS + {lastsaasScreens.length} LastSaaS</p></div></div>
-          <div className="grid md:grid-cols-2 gap-4">
-            <Card className="border-orange-500/20"><CardHeader><CardTitle className="text-base flex items-center gap-2"><FileText className="w-4 h-4 text-orange-500" /> Tutor LMS ({tutorScreens.length})</CardTitle></CardHeader>
-              <CardContent><div className="space-y-1 max-h-[500px] overflow-y-auto">
-                {tutorScreens.map((s: any, i: number) => (
-                  <div key={`ts-${i}`} className="flex items-center gap-2 p-2 border rounded text-xs hover:bg-muted/30">
-                    <Badge variant="outline" className="bg-orange-500/10 text-orange-600 dark:text-orange-400 shrink-0">{s.role}</Badge>
-                    <span className="font-medium shrink-0">{s.name}</span>
-                    <code className="text-muted-foreground truncate">{s.route}</code>
-                    <Badge variant="secondary" className="shrink-0 text-xs">{s.feature}</Badge>
-                  </div>
-                ))}
-              </div></CardContent>
-            </Card>
-            <Card className="border-blue-500/20"><CardHeader><CardTitle className="text-base flex items-center gap-2"><Server className="w-4 h-4 text-blue-500" /> LastSaaS ({lastsaasScreens.length})</CardTitle></CardHeader>
-              <CardContent><div className="space-y-1 max-h-[500px] overflow-y-auto">
-                {lastsaasScreens.map((s: any, i: number) => (
-                  <div key={`ls-${i}`} className="flex items-center gap-2 p-2 border rounded text-xs hover:bg-muted/30">
-                    <Badge variant="outline" className="bg-blue-500/10 text-blue-600 dark:text-blue-400 shrink-0">{s.role}</Badge>
-                    <span className="font-medium shrink-0">{s.name}</span>
-                    <code className="text-muted-foreground truncate">{s.route}</code>
-                    <Badge variant="secondary" className="shrink-0 text-xs">{s.feature}</Badge>
-                  </div>
-                ))}
-              </div></CardContent>
-            </Card>
-          </div>
-          <p className="text-xs text-muted-foreground">Showing {filtered.length} of {apiData.total} screens. Each screen has: name, route, user role, feature, module, source file path.</p>
-        </div>
-      )
+      return <ScreensSection data={apiData} searchQuery={search} />
     }
 
     // === FEATURE COMPARISON (Full-Stack) ===
