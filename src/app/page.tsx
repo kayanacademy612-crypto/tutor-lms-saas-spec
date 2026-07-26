@@ -109,6 +109,93 @@ function DataTable({ headers, rows }: { headers: string[]; rows: React.ReactNode
 }
 
 // ════════════════════════════════════════════════════════════════
+// SYSTEM HEALTH SECTION with sync
+// ════════════════════════════════════════════════════════════════
+function HealthSection({ healthData, tutorData }: { healthData: any; tutorData: any }) {
+  const [syncing, setSyncing] = useState(false)
+  const [syncResult, setSyncResult] = useState<any>(null)
+  const lsStats = healthData?.summary || {}
+  const tStats = tutorData || {}
+
+  const doSync = async (target: string) => {
+    setSyncing(true); setSyncResult(null)
+    try {
+      const res = await fetch('/api/sync', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target })
+      })
+      const data = await res.json()
+      setSyncResult(data)
+    } catch (e: any) { setSyncResult({ error: e.message }) }
+    setSyncing(false)
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <CheckCircle className="w-8 h-8 text-emerald-500" />
+        <div><h1 className="text-3xl font-bold">System Health</h1><p className="text-muted-foreground">Indexing status for both knowledge bases — with re-sync capability</p></div>
+      </div>
+
+      {/* Sync controls */}
+      <Card className="border-amber-500/20">
+        <CardContent className="p-4 flex items-center gap-3 flex-wrap">
+          <span className="text-sm font-medium">Re-index:</span>
+          <Button size="sm" variant="outline" onClick={() => doSync('lastsaas')} disabled={syncing} className="text-xs gap-1"><Server className="w-3 h-3" /> LastSaaS</Button>
+          <Button size="sm" variant="outline" onClick={() => doSync('tutor')} disabled={syncing} className="text-xs gap-1"><FileText className="w-3 h-3" /> Tutor LMS</Button>
+          <Button size="sm" variant="outline" onClick={() => doSync('all')} disabled={syncing} className="text-xs gap-1"><CheckCircle className="w-3 h-3" /> Both</Button>
+          {syncing && <Loader2 className="w-4 h-4 animate-spin text-amber-500" />}
+          {syncResult && (
+            <div className="w-full mt-2">
+              {syncResult.tasks?.map((t: any, i: number) => (
+                <div key={i} className="flex items-center gap-2 text-xs mt-1">
+                  {t.status === 'success' ? <CheckCircle className="w-3 h-3 text-emerald-500" /> : <XCircle className="w-3 h-3 text-red-500" />}
+                  <span className="font-mono">{t.task}</span>
+                  <span className="text-muted-foreground">{t.message}</span>
+                </div>
+              ))}
+              {syncResult.lastSyncAt && <div className="text-xs text-muted-foreground mt-1">Last sync: {new Date(syncResult.lastSyncAt).toLocaleString()}</div>}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <div className="grid md:grid-cols-2 gap-4">
+        <Card className="border-blue-500/20"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Server className="w-4 h-4 text-blue-500" /> LastSaaS</CardTitle></CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <div className="flex justify-between"><span className="text-muted-foreground">Source code:</span><Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">Available</Badge></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Go files indexed:</span><span className="font-mono">{lsStats.totalGoFiles || 134}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">TS files indexed:</span><span className="font-mono">{lsStats.totalTSFiles || 91}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Packages detected:</span><span className="font-mono">{lsStats.packages || 22}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Collections detected:</span><span className="font-mono">{lsStats.collections || 38}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">API routes detected:</span><span className="font-mono">{lsStats.apiRoutes || 133}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Models detected:</span><span className="font-mono">{lsStats.models || 22}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Events detected:</span><span className="font-mono">{lsStats.events || 22}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">CodeWiki:</span><Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"><CheckCircle className="w-3 h-3 mr-1" />Connected</Badge></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">MCP:</span><Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"><CheckCircle className="w-3 h-3 mr-1" />Active</Badge></div>
+          </CardContent>
+        </Card>
+        <Card className="border-orange-500/20"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><FileText className="w-4 h-4 text-orange-500" /> Tutor LMS</CardTitle></CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <div className="flex justify-between"><span className="text-muted-foreground">Source code:</span><Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">Available</Badge></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">PHP files (free):</span><span className="font-mono">636</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">PHP files (Pro):</span><span className="font-mono">1618</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Free classes:</span><span className="font-mono">{tStats.totalFree || 61}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Pro classes:</span><span className="font-mono">{tStats.totalPro || 28}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Models:</span><span className="font-mono">16</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Addons:</span><span className="font-mono">29</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">API controllers:</span><span className="font-mono">14</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Email templates:</span><span className="font-mono">54</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Indexing:</span><Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"><CheckCircle className="w-3 h-3 mr-1" />Complete</Badge></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">MCP:</span><Badge variant="outline" className="bg-yellow-500/10 text-yellow-600 dark:text-yellow-400">N/A (internal index)</Badge></div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════════════════════
 // AI SEARCH SECTION — supports both LastSaaS (CodeWiki) and Tutor LMS (internal)
 // ════════════════════════════════════════════════════════════════
 function AISearchSection({ aiQuestion, setAiQuestion, aiAnswer, aiLoading, aiSource, askAI }: {
@@ -727,47 +814,7 @@ export default function Home() {
 
     // === SYSTEM HEALTH ===
     if (active === 'health') {
-      const lsStats = healthData?.summary || {}
-      const tStats = tutorData || {}
-      return (
-        <div className="space-y-4">
-          <div className="flex items-center gap-3">
-            <CheckCircle className="w-8 h-8 text-emerald-500" />
-            <div><h1 className="text-3xl font-bold">System Health</h1><p className="text-muted-foreground">Indexing status for both knowledge bases</p></div>
-          </div>
-          <div className="grid md:grid-cols-2 gap-4">
-            <Card className="border-blue-500/20"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Server className="w-4 h-4 text-blue-500" /> LastSaaS</CardTitle></CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <div className="flex justify-between"><span className="text-muted-foreground">Source code:</span><Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">Available</Badge></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Go files indexed:</span><span className="font-mono">{lsStats.totalGoFiles || 134}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">TS files indexed:</span><span className="font-mono">{lsStats.totalTSFiles || 91}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Packages detected:</span><span className="font-mono">{lsStats.packages || 22}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Collections detected:</span><span className="font-mono">{lsStats.collections || 38}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">API routes detected:</span><span className="font-mono">{lsStats.apiRoutes || 133}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Models detected:</span><span className="font-mono">{lsStats.models || 22}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Events detected:</span><span className="font-mono">{lsStats.events || 22}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">CodeWiki:</span><Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"><CheckCircle className="w-3 h-3 mr-1" />Connected</Badge></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">MCP:</span><Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"><CheckCircle className="w-3 h-3 mr-1" />Active</Badge></div>
-              </CardContent>
-            </Card>
-            <Card className="border-orange-500/20"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><FileText className="w-4 h-4 text-orange-500" /> Tutor LMS</CardTitle></CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <div className="flex justify-between"><span className="text-muted-foreground">Source code:</span><Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">Available</Badge></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">PHP files (free):</span><span className="font-mono">636</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">PHP files (Pro):</span><span className="font-mono">1618</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Free classes:</span><span className="font-mono">{tStats.totalFree || 61}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Pro classes:</span><span className="font-mono">{tStats.totalPro || 28}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Models:</span><span className="font-mono">16</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Addons:</span><span className="font-mono">29</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">API controllers:</span><span className="font-mono">14</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Email templates:</span><span className="font-mono">54</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Indexing:</span><Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"><CheckCircle className="w-3 h-3 mr-1" />Complete</Badge></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">MCP:</span><Badge variant="outline" className="bg-yellow-500/10 text-yellow-600 dark:text-yellow-400">N/A (internal index)</Badge></div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      )
+      return <HealthSection healthData={healthData} tutorData={tutorData} />
     }
 
     // === PHASES ===
