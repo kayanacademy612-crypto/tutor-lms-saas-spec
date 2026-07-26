@@ -441,28 +441,35 @@ const CATEGORY_ICONS: Record<string, any> = {
 // TUTOR DOCS SECTION — 295 real docs + 870 real screenshots
 // ============================================================
 function TutorDocsSection({ data, searchQuery }: { data: any; searchQuery: string }) {
-  const [categoryFilter, setCategoryFilter] = useState('all')
+  const [sectionFilter, setSectionFilter] = useState('all')
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null)
   const [pageDetail, setPageDetail] = useState<any | null>(null)
   const [pageLoading, setPageLoading] = useState(false)
   const [viewMode, setViewMode] = useState<'list' | 'gallery'>('list')
   const [lightboxImg, setLightboxImg] = useState<string | null>(null)
+  const [fullscreen, setFullscreen] = useState(false)
 
   const allPages: any[] = data.pages || []
   const allImages: any[] = data.images || []
+  const sections: { name: string; order: number; count: number }[] = data.sections_in_order || []
 
   const filteredPages = allPages.filter(p => {
-    if (categoryFilter !== 'all' && p.category !== categoryFilter) return false
+    if (sectionFilter !== 'all' && p.section !== sectionFilter) return false
     if (searchQuery) {
       const q = searchQuery.toLowerCase()
-      if (!`${p.title} ${p.slug} ${p.category} ${p.relative_url}`.toLowerCase().includes(q)) return false
+      if (!`${p.title} ${p.slug} ${p.section} ${p.relative_url}`.toLowerCase().includes(q)) return false
     }
     return true
   })
 
-  const categories = ['all', ...Object.keys(data.by_category || {})].sort((a, b) =>
-    a === 'all' ? -1 : b === 'all' ? 1 : (data.by_category[a] || 0) < (data.by_category[b] || 0) ? 1 : -1
-  )
+  // Group filtered pages by section, in section order
+  const groupedBySection = sections
+    .filter(s => sectionFilter === 'all' || s.name === sectionFilter)
+    .map(s => ({
+      ...s,
+      pages: filteredPages.filter(p => p.section === s.name),
+    }))
+    .filter(s => s.pages.length > 0)
 
   const loadPageDetail = async (slug: string) => {
     setSelectedSlug(slug)
@@ -486,10 +493,10 @@ function TutorDocsSection({ data, searchQuery }: { data: any; searchQuery: strin
         <BookOpen className="w-8 h-8 text-orange-500 shrink-0 mt-1" />
         <div className="flex-1">
           <h1 className="text-3xl font-bold">Tutor LMS Documentation</h1>
-          <p className="text-muted-foreground mt-1">{data.total_pages} real doc pages + {data.total_images} real screenshots downloaded from the official Tutor LMS docs site. Every page is the actual HTML doc, every image is the actual screenshot.</p>
+          <p className="text-muted-foreground mt-1">{data.total_pages} real doc pages in original site order ({data.total_sections} sections) + {data.total_images} real screenshots. Indexed from the 428MB docs bundle downloaded from your Google Drive link.</p>
         </div>
         <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-          <CheckCircle className="w-3 h-3 mr-1" /> 428MB extracted
+          <CheckCircle className="w-3 h-3 mr-1" /> 428MB · {data.total_sections} sections
         </Badge>
       </div>
 
@@ -502,42 +509,56 @@ function TutorDocsSection({ data, searchQuery }: { data: any; searchQuery: strin
             <ImageIcon className="inline w-3 h-3 mr-1" />Screenshot Gallery
           </button>
         </div>
-        <span className="text-xs text-muted-foreground ml-2">Category:</span>
-        <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="text-xs border rounded px-2 py-1 bg-background max-w-[260px]">
-          {categories.map(c => (
-            <option key={c} value={c}>{c} ({c === 'all' ? data.total_pages : (data.by_category?.[c] || 0)})</option>
+        <span className="text-xs text-muted-foreground ml-2">Section:</span>
+        <select value={sectionFilter} onChange={e => setSectionFilter(e.target.value)} className="text-xs border rounded px-2 py-1 bg-background max-w-[280px]">
+          <option value="all">all ({data.total_pages})</option>
+          {sections.map(s => (
+            <option key={s.name} value={s.name}>{s.order}. {s.name} ({s.count})</option>
           ))}
         </select>
         <span className="text-xs text-muted-foreground ml-auto">
-          {viewMode === 'list' ? `${filteredPages.length} pages` : `${allImages.length} screenshots`}
+          {viewMode === 'list' ? `${filteredPages.length} pages in ${groupedBySection.length} sections` : `${allImages.length} screenshots`}
         </span>
       </div>
 
       {viewMode === 'list' ? (
         <div className="grid md:grid-cols-[1fr_2fr] gap-4">
-          {/* Page list */}
-          <Card className="h-[70vh] flex flex-col">
-            <CardHeader className="py-2"><CardTitle className="text-sm">Doc Pages ({filteredPages.length})</CardTitle></CardHeader>
+          {/* Page list grouped by section in original order */}
+          <Card className="h-[75vh] flex flex-col">
+            <CardHeader className="py-2"><CardTitle className="text-sm">Doc Pages in Original Site Order</CardTitle></CardHeader>
             <CardContent className="p-0 flex-1 overflow-hidden">
               <ScrollArea className="h-full">
-                <div className="divide-y">
-                  {filteredPages.map((p, i) => (
-                    <button
-                      key={p.id || `doc-${i}`}
-                      onClick={() => loadPageDetail(p.slug)}
-                      className={`w-full text-left p-2 text-xs hover:bg-muted/50 ${selectedSlug === p.slug ? 'bg-orange-500/10 border-l-2 border-orange-500' : ''}`}
-                    >
-                      <div className="font-medium truncate" title={p.title}>{p.title}</div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <Badge variant="outline" className="text-[10px] px-1 py-0 bg-blue-500/10 text-blue-600 dark:text-blue-400">{p.category}</Badge>
-                        {p.image_count > 0 && (
-                          <Badge variant="outline" className="text-[10px] px-1 py-0 bg-pink-500/10 text-pink-600 dark:text-pink-400">
-                            <ImageIcon className="w-2.5 h-2.5 mr-0.5" />{p.image_count}
-                          </Badge>
-                        )}
-                        <code className="text-[10px] text-muted-foreground truncate">{p.relative_url}</code>
+                <div>
+                  {groupedBySection.map(sec => (
+                    <div key={sec.name}>
+                      {/* Section header */}
+                      <div className="sticky top-0 bg-background/95 backdrop-blur px-3 py-1.5 border-y text-xs font-semibold flex items-center gap-2 z-10">
+                        <Badge variant="outline" className="text-[9px] px-1 py-0 bg-orange-500/10 text-orange-600 dark:text-orange-400">{sec.order}</Badge>
+                        <span className="text-orange-600 dark:text-orange-400">{sec.name}</span>
+                        <span className="text-muted-foreground font-normal ml-auto">{sec.pages.length} docs</span>
                       </div>
-                    </button>
+                      {/* Pages in this section */}
+                      {sec.pages.map((p, i) => (
+                        <button
+                          key={p.id || `doc-${sec.name}-${i}`}
+                          onClick={() => loadPageDetail(p.slug)}
+                          className={`w-full text-left px-3 py-2 text-xs border-b hover:bg-muted/50 flex items-center gap-2 ${selectedSlug === p.slug ? 'bg-orange-500/10 border-l-2 border-orange-500' : ''}`}
+                        >
+                          <span className="text-[10px] text-muted-foreground w-6 shrink-0">{p.order_in_section}</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium truncate" title={p.title}>{p.title}</div>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              {p.image_count > 0 && (
+                                <Badge variant="outline" className="text-[9px] px-1 py-0 bg-pink-500/10 text-pink-600 dark:text-pink-400">
+                                  <ImageIcon className="w-2.5 h-2.5 mr-0.5" />{p.image_count}
+                                </Badge>
+                              )}
+                              <code className="text-[10px] text-muted-foreground truncate">{p.slug}</code>
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
                   ))}
                   {filteredPages.length === 0 && (
                     <div className="p-6 text-center text-muted-foreground text-sm">No docs match the filters.</div>
@@ -548,14 +569,14 @@ function TutorDocsSection({ data, searchQuery }: { data: any; searchQuery: strin
           </Card>
 
           {/* Page detail */}
-          <Card className="h-[70vh] flex flex-col">
+          <Card className="h-[75vh] flex flex-col">
             <CardHeader className="py-2">
               <CardTitle className="text-sm">
                 {pageLoading ? 'Loading...' : pageDetail?.title || 'Select a doc page from the left'}
               </CardTitle>
               {pageDetail && !pageDetail.error && (
                 <div className="flex items-center gap-2 mt-1">
-                  <Badge variant="outline" className="text-[10px] bg-blue-500/10 text-blue-600 dark:text-blue-400">{pageDetail.category}</Badge>
+                  <Badge variant="outline" className="text-[10px] bg-orange-500/10 text-orange-600 dark:text-orange-400">{pageDetail.section || pageDetail.category}</Badge>
                   <code className="text-[10px] text-muted-foreground">{pageDetail.relative_url}</code>
                   <Badge variant="outline" className="text-[10px] bg-pink-500/10 text-pink-600 dark:text-pink-400">{pageDetail.image_count} images</Badge>
                   <Badge variant="outline" className="text-[10px] bg-gray-500/10 text-gray-600 dark:text-gray-400">{pageDetail.text_length} chars</Badge>
@@ -583,10 +604,10 @@ function TutorDocsSection({ data, searchQuery }: { data: any; searchQuery: strin
                     {/* Screenshots gallery */}
                     {pageDetail.image_refs?.length > 0 && (
                       <div>
-                        <div className="text-xs font-semibold uppercase text-pink-600 dark:text-pink-400 mb-2">Screenshots ({pageDetail.image_refs.length})</div>
+                        <div className="text-xs font-semibold uppercase text-pink-600 dark:text-pink-400 mb-2">Screenshots ({pageDetail.image_refs.length}) — click to enlarge</div>
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                           {pageDetail.image_refs.map((ir: any, i: number) => (
-                            <div key={`pimg-${i}`} className="border rounded overflow-hidden cursor-pointer group hover:shadow-md transition-shadow bg-muted/20" onClick={() => setLightboxImg(ir.serve_path)}>
+                            <div key={`pimg-${i}`} className="border rounded overflow-hidden cursor-pointer group hover:shadow-md transition-shadow bg-muted/20" onClick={() => { setLightboxImg(ir.serve_path); setFullscreen(false) }}>
                               <div className="aspect-video bg-muted flex items-center justify-center overflow-hidden">
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img src={imgSrc(ir.serve_path)} alt={ir.filename} className="max-w-full max-h-full object-contain group-hover:scale-105 transition-transform" loading="lazy" />
@@ -619,13 +640,13 @@ function TutorDocsSection({ data, searchQuery }: { data: any; searchQuery: strin
             <CardTitle className="text-sm flex items-center gap-2">
               <ImageIcon className="w-4 h-4 text-pink-500" />
               All Screenshots ({allImages.length})
-              <span className="text-xs text-muted-foreground font-normal ml-2">Sorted by file size (largest first = highest detail screenshots)</span>
+              <span className="text-xs text-muted-foreground font-normal ml-2">Sorted by file size (largest first = highest detail screenshots). Click any to enlarge + go fullscreen.</span>
             </CardTitle>
           </CardHeader>
           <CardContent className="p-3">
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 max-h-[75vh] overflow-y-auto">
-              {allImages.slice(0, 600).map((img, i) => (
-                <div key={`gimg-${i}`} className="border rounded overflow-hidden cursor-pointer group hover:shadow-md transition-shadow bg-muted/20" onClick={() => setLightboxImg(img.serve_path)}>
+              {allImages.map((img, i) => (
+                <div key={`gimg-${i}`} className="border rounded overflow-hidden cursor-pointer group hover:shadow-md transition-shadow bg-muted/20" onClick={() => { setLightboxImg(img.serve_path); setFullscreen(false) }}>
                   <div className="aspect-video bg-muted flex items-center justify-center overflow-hidden">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={imgSrc(img.serve_path)} alt={img.filename} className="max-w-full max-h-full object-contain group-hover:scale-105 transition-transform" loading="lazy" />
@@ -640,23 +661,43 @@ function TutorDocsSection({ data, searchQuery }: { data: any; searchQuery: strin
                 </div>
               ))}
             </div>
-            {allImages.length > 600 && (
-              <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">Showing first 600 of {allImages.length} screenshots. Use the Pages tab to see screenshots grouped by their doc page.</p>
-            )}
           </CardContent>
         </Card>
       )}
 
-      {/* Lightbox */}
+      {/* Lightbox with fullscreen option */}
       {lightboxImg && (
-        <Dialog open onOpenChange={() => setLightboxImg(null)}>
-          <DialogContent className="max-w-5xl">
-            <DialogHeader><DialogTitle className="text-sm">Screenshot</DialogTitle></DialogHeader>
-            <div className="bg-muted/30 rounded p-4 flex items-center justify-center max-h-[75vh]">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={imgSrc(lightboxImg)} alt="screenshot" className="max-w-full max-h-[70vh] object-contain" />
+        <Dialog open onOpenChange={() => { setLightboxImg(null); setFullscreen(false) }}>
+          <DialogContent className={fullscreen ? 'max-w-none w-screen h-screen !m-0 !rounded-none !translate-x-0 !translate-y-0 !left-0 !top-0 p-0' : 'max-w-5xl'}>
+            <DialogHeader className={fullscreen ? 'sr-only' : ''}>
+              <DialogTitle className="text-sm flex items-center gap-2">
+                <ImageIcon className="w-4 h-4 text-pink-500" /> Screenshot
+              </DialogTitle>
+            </DialogHeader>
+            <div className={`flex flex-col ${fullscreen ? 'h-screen' : ''}`}>
+              <div className={`bg-black/95 flex items-center justify-center overflow-auto ${fullscreen ? 'flex-1' : 'max-h-[75vh] rounded'}`}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={imgSrc(lightboxImg)} alt="screenshot" className={fullscreen ? 'max-w-full max-h-full object-contain' : 'max-w-full max-h-[70vh] object-contain'} />
+              </div>
+              {!fullscreen && (
+                <>
+                  <div className="text-xs text-muted-foreground mt-2 truncate"><code>{lightboxImg}</code></div>
+                  <div className="flex items-center gap-2 mt-2">
+                    <Button size="sm" variant="default" onClick={() => setFullscreen(true)}>
+                      <Maximize2 className="w-3 h-3 mr-1" /> Fullscreen
+                    </Button>
+                    <a href={imgSrc(lightboxImg)} target="_blank" rel="noopener noreferrer">
+                      <Button size="sm" variant="outline">Open in new tab</Button>
+                    </a>
+                  </div>
+                </>
+              )}
+              {fullscreen && (
+                <Button size="sm" variant="secondary" className="fixed top-3 right-3 z-50" onClick={() => setFullscreen(false)}>
+                  <X className="w-3 h-3 mr-1" /> Exit fullscreen
+                </Button>
+              )}
             </div>
-            <div className="text-xs text-muted-foreground"><code>{lightboxImg}</code></div>
           </DialogContent>
         </Dialog>
       )}
@@ -669,6 +710,7 @@ function VisualUISection({ data, searchQuery }: { data: any; searchQuery: string
   const [systemFilter, setSystemFilter] = useState('all')
   const [selected, setSelected] = useState<any | null>(null)
   const [showPath, setShowPath] = useState(false)
+  const [uiFullscreen, setUiFullscreen] = useState(false)
 
   const images: any[] = data.images || []
   const filtered = images.filter(img => {
@@ -753,29 +795,44 @@ function VisualUISection({ data, searchQuery }: { data: any; searchQuery: string
 
       <p className="text-xs text-muted-foreground">Showing {filtered.length} of {data.total_images} real images. Click any thumbnail to enlarge.</p>
 
-      {/* Lightbox modal */}
+      {/* Lightbox modal with fullscreen */}
       {selected && (
-        <Dialog open onOpenChange={() => setSelected(null)}>
-          <DialogContent className="max-w-4xl">
-            <DialogHeader>
+        <Dialog open onOpenChange={() => { setSelected(null); setUiFullscreen(false) }}>
+          <DialogContent className={uiFullscreen ? 'max-w-none w-screen h-screen !m-0 !rounded-none !translate-x-0 !translate-y-0 !left-0 !top-0 p-0' : 'max-w-4xl'}>
+            <DialogHeader className={uiFullscreen ? 'sr-only' : ''}>
               <DialogTitle className="flex items-center gap-2">
                 <ImageIcon className="w-5 h-5 text-pink-500" />
                 {selected.screen_name}
               </DialogTitle>
             </DialogHeader>
-            <div className="space-y-3">
-              <div className="bg-muted/30 rounded-lg p-4 flex items-center justify-center max-h-[60vh] overflow-auto">
+            <div className={uiFullscreen ? 'h-screen flex flex-col' : 'space-y-3'}>
+              <div className={`bg-black/95 flex items-center justify-center overflow-auto ${uiFullscreen ? 'flex-1' : 'rounded-lg p-4 max-h-[60vh]'}`}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={selected.url} alt={selected.screen_name} className="max-w-full max-h-[55vh] object-contain" />
+                <img src={selected.url} alt={selected.screen_name} className={uiFullscreen ? 'max-w-full max-h-full object-contain' : 'max-w-full max-h-[55vh] object-contain'} />
               </div>
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div><span className="text-muted-foreground">System:</span> <Badge variant="outline" className="ml-1">{selected.system}</Badge></div>
-                <div><span className="text-muted-foreground">Category:</span> <Badge variant="outline" className="ml-1">{selected.category}</Badge></div>
-                <div><span className="text-muted-foreground">Size:</span> {(selected.size_bytes / 1024).toFixed(2)} KB</div>
-                <div><span className="text-muted-foreground">Filename:</span> <code>{selected.filename}</code></div>
-                <div className="col-span-2"><span className="text-muted-foreground">Original path:</span> <code className="block mt-1 p-2 bg-muted/30 rounded text-[10px]">{selected.original_path}</code></div>
-                {selected.addon_key && <div className="col-span-2"><span className="text-muted-foreground">Addon:</span> <code>{selected.addon_key}</code></div>}
-              </div>
+              {!uiFullscreen && (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div><span className="text-muted-foreground">System:</span> <Badge variant="outline" className="ml-1">{selected.system}</Badge></div>
+                    <div><span className="text-muted-foreground">Category:</span> <Badge variant="outline" className="ml-1">{selected.category}</Badge></div>
+                    <div><span className="text-muted-foreground">Size:</span> {(selected.size_bytes / 1024).toFixed(2)} KB</div>
+                    <div><span className="text-muted-foreground">Filename:</span> <code>{selected.filename}</code></div>
+                    <div className="col-span-2"><span className="text-muted-foreground">Original path:</span> <code className="block mt-1 p-2 bg-muted/30 rounded text-[10px]">{selected.original_path}</code></div>
+                    {selected.addon_key && <div className="col-span-2"><span className="text-muted-foreground">Addon:</span> <code>{selected.addon_key}</code></div>}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" onClick={() => setUiFullscreen(true)}><Maximize2 className="w-3 h-3 mr-1" /> Fullscreen</Button>
+                    <a href={selected.url} target="_blank" rel="noopener noreferrer">
+                      <Button size="sm" variant="outline">Open in new tab</Button>
+                    </a>
+                  </div>
+                </div>
+              )}
+              {uiFullscreen && (
+                <Button size="sm" variant="secondary" className="fixed top-3 right-3 z-50" onClick={() => setUiFullscreen(false)}>
+                  <X className="w-3 h-3 mr-1" /> Exit fullscreen
+                </Button>
+              )}
             </div>
           </DialogContent>
         </Dialog>
@@ -794,6 +851,7 @@ function ScreensSection({ data, searchQuery }: { data: any; searchQuery: string 
   const [expanded, setExpanded] = useState<string | null>(null)
   const [previewScreen, setPreviewScreen] = useState<any | null>(null)
   const [lightboxShot, setLightboxShot] = useState<string | null>(null)
+  const [shotFullscreen, setShotFullscreen] = useState(false)
 
   const allScreens: any[] = data.screens || []
   const screens = allScreens.filter(s => {
@@ -991,16 +1049,31 @@ function ScreensSection({ data, searchQuery }: { data: any; searchQuery: string 
         </Dialog>
       )}
 
-      {/* Screenshot lightbox */}
+      {/* Screenshot lightbox with fullscreen */}
       {lightboxShot && (
-        <Dialog open onOpenChange={() => setLightboxShot(null)}>
-          <DialogContent className="max-w-6xl">
-            <DialogHeader><DialogTitle className="text-sm flex items-center gap-2"><ImageIcon className="w-4 h-4 text-pink-500" /> Screenshot from Tutor LMS docs</DialogTitle></DialogHeader>
-            <div className="bg-muted/30 rounded p-4 flex items-center justify-center max-h-[75vh]">
+        <Dialog open onOpenChange={() => { setLightboxShot(null); setShotFullscreen(false) }}>
+          <DialogContent className={shotFullscreen ? 'max-w-none w-screen h-screen !m-0 !rounded-none !translate-x-0 !translate-y-0 !left-0 !top-0 p-0' : 'max-w-6xl'}>
+            <DialogHeader className={shotFullscreen ? 'sr-only' : ''}>
+              <DialogTitle className="text-sm flex items-center gap-2"><ImageIcon className="w-4 h-4 text-pink-500" /> Screenshot from Tutor LMS docs</DialogTitle>
+            </DialogHeader>
+            <div className={`bg-black/95 flex items-center justify-center overflow-auto ${shotFullscreen ? 'h-screen' : 'rounded max-h-[75vh] p-4'}`}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={`/api/tutor-docs/file?p=${encodeURIComponent(lightboxShot)}`} alt="screenshot" className="max-w-full max-h-[70vh] object-contain" />
+              <img src={`/api/tutor-docs/file?p=${encodeURIComponent(lightboxShot)}`} alt="screenshot" className={shotFullscreen ? 'max-w-full max-h-full object-contain' : 'max-w-full max-h-[70vh] object-contain'} />
             </div>
-            <div className="text-xs text-muted-foreground"><code>{lightboxShot}</code></div>
+            {!shotFullscreen && (
+              <div className="flex items-center gap-2 mt-2">
+                <Button size="sm" onClick={() => setShotFullscreen(true)}><Maximize2 className="w-3 h-3 mr-1" /> Fullscreen</Button>
+                <a href={`/api/tutor-docs/file?p=${encodeURIComponent(lightboxShot)}`} target="_blank" rel="noopener noreferrer">
+                  <Button size="sm" variant="outline">Open in new tab</Button>
+                </a>
+                <code className="text-xs text-muted-foreground truncate ml-2">{lightboxShot}</code>
+              </div>
+            )}
+            {shotFullscreen && (
+              <Button size="sm" variant="secondary" className="fixed top-3 right-3 z-50" onClick={() => setShotFullscreen(false)}>
+                <X className="w-3 h-3 mr-1" /> Exit fullscreen
+              </Button>
+            )}
           </DialogContent>
         </Dialog>
       )}

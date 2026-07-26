@@ -123,3 +123,44 @@ Stage Summary:
 - New API endpoints: /api/tutor-docs, /api/tutor-docs/page?slug=, /api/tutor-docs/file?p=
 - New sidebar item: "Tutor Docs (295)" — full documentation browser with category filter, page detail, screenshot gallery, lightbox
 - Sample verified: admin-panel-courses doc page shows real "1-tutorlms-menus-courses.jpg" (1480x1831 JPEG, 193KB) screenshot from the docs
+
+---
+Task ID: 17-docs-correct-order-fullscreen
+Agent: Main (Super Z)
+Task: User pointed out the docs index was incomplete and not in the original order from the docs site. Also requested fullscreen option for enlarged images.
+
+Work Log:
+- Wrote /scripts/extract-docs-nav.py to parse the sidebar HTML from a real doc page
+- Extracted the COMPLETE sidebar navigation: 27 sections, 288 unique doc links in ORIGINAL site order
+- Discovered my previous indexer got 295 pages because it included some 404 placeholder pages and helper pages that aren't actually in the sidebar
+- Cross-checked: 288 sidebar links -> all 288 exist on disk (zero broken links)
+- Found 7 on-disk directories NOT in the sidebar:
+  * admin-panel-courses (real doc, 712KB — added to "Uncategorized")
+  * migration-tool-overview (real doc, 744KB — added to "Uncategorized")
+  * content-drip, installation, quiz-creation, feed, schema.org (placeholder/404 pages — skipped)
+- Wrote /scripts/index-tutor-docs-v2.py:
+  * Uses the nav file as source of truth for ordering
+  * Each page gets: section, section_order, order_in_section, global_order
+  * Appends real orphan docs in a separate "Uncategorized" section at end
+  * Total: 291 real doc pages in 28 sections (27 from sidebar + 1 Uncategorized with 3 orphans)
+- Re-ran /scripts/match-screens-to-docs.py with the new index — 345 screens matched with 4,229 screenshots
+- Updated /api/tutor-docs route to return sections_in_order + per-page section/order_in_section/global_order
+- Updated /api/tutor-docs/page route to return same new fields
+- Rewrote TutorDocsSection UI:
+  * Pages grouped by section in ORIGINAL SITE ORDER (not alphabetical)
+  * Sticky section headers with section number badge, name, doc count
+  * Each page row shows in-section order number
+  * Section dropdown filter shows "N. SectionName (count)" — preserves original order
+  * Gallery view shows ALL 870 screenshots (no 600 limit)
+- Added fullscreen option to ALL 3 lightbox modals:
+  * TutorDocsSection lightbox — "Fullscreen" button + "Open in new tab" + exit button
+  * ScreensSection screenshot lightbox — same
+  * VisualUISection lightbox — same
+  * Fullscreen mode: covers entire viewport (w-screen h-screen), no padding/rounding, image scaled to max-w-full max-h-full, exit button fixed top-right
+
+Stage Summary:
+- 291 real doc pages indexed in EXACT original site order from the docs sidebar
+- 28 sections (Getting Started, Course Builder, Quiz Builder, Quiz Question Types, Course Bundle, Student Learning Experience, Learner Dashboard, Instructor Dashboard, Native eCommerce, Payment Gateways, Subscriptions, Memberships, Gift Course, Admin Panel, Tutor LMS Settings, Tutor LMS Addons, Certificate Builder, Integrations, Elementor Integration, Divi Integration, Oxygen Builder Integration, Tutorials, Migration, Tutor LMS Shortcodes, Advanced Customization, Troubleshooting, Developer Guides, Uncategorized)
+- All 870 real screenshots browseable in gallery view + per-page screenshots inline with doc content
+- All 3 lightbox modals now support fullscreen (click "Fullscreen" button to cover entire viewport) + "Open in new tab" for direct URL access
+- Verified: page 1 = "System Requirements" in Getting Started section, page 291 = last doc in Developer Guides section
