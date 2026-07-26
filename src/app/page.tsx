@@ -5,7 +5,7 @@ import {
   BookOpen, Database, Code2, Zap, Map, Ticket, HelpCircle, CreditCard,
   Mail, Plug, Search, Sun, Moon, ChevronRight, Menu, Clock, Globe,
   Loader2, FileText, GitCompare, Server, Brain, CheckCircle, XCircle,
-  AlertCircle, ArrowRight, Folder, File, X, Download, HardDrive, FileCode, FileJson, FileText as FileTextIcon, FileType
+  AlertCircle, ArrowRight, Folder, File, X, Download, HardDrive, FileCode, FileJson, FileText as FileTextIcon, FileType, Monitor, Layers
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -31,6 +31,11 @@ const SECTIONS = [
   { id: 'lastsaas', label: 'LastSaaS Architecture', icon: Server, group: 'lastsaas' },
   { id: 'tutor-kb', label: 'Tutor LMS Knowledge', icon: FileText, group: 'tutor' },
   { id: 'comparison', label: 'Comparison', icon: GitCompare, group: 'comparison' },
+  { id: 'screens', label: 'Screen Inventory (92)', icon: Folder, group: 'comparison' },
+  { id: 'feature-comparison', label: 'Feature Comparison (13)', icon: GitCompare, group: 'comparison' },
+  { id: 'user-flows', label: 'User Flows (7)', icon: Map, group: 'comparison' },
+  { id: 'frontend-gaps', label: 'Frontend Gaps (20)', icon: AlertCircle, group: 'comparison' },
+  { id: 'backend-gaps', label: 'Backend Gaps (20)', icon: AlertCircle, group: 'comparison' },
   { id: 'ai-search', label: 'AI Search', icon: Brain, group: 'ai' },
   { id: 'health', label: 'System Health', icon: CheckCircle, group: 'ai' },
   { id: 'mcp', label: 'MCP + API Access', icon: Plug, group: 'ai' },
@@ -618,6 +623,11 @@ export default function Home() {
       'lastsaas': '/api/lastsaas/architecture',
       'tutor-kb': '/api/tutor-kb/addons',
       'comparison': '/api/comparison',
+      'screens': '/api/screens',
+      'feature-comparison': '/api/feature-comparison',
+      'user-flows': '/api/user-flows',
+      'frontend-gaps': '/api/gaps/frontend',
+      'backend-gaps': '/api/gaps/backend',
     }
     return map[active] || null
   })()
@@ -928,6 +938,222 @@ export default function Home() {
       if (loading) return <div className="flex items-center gap-2 p-8"><Loader2 className="w-5 h-5 animate-spin text-yellow-500" /><span>Loading comparison...</span></div>
       if (!apiData) return <div className="p-8 text-muted-foreground">Loading...</div>
       return <ComparisonSection data={apiData} searchQuery={search} />
+    }
+
+    // === SCREEN INVENTORY ===
+    if (active === 'screens') {
+      if (loading) return <div className="flex items-center gap-2 p-8"><Loader2 className="w-5 h-5 animate-spin text-yellow-500" /><span>Loading screens...</span></div>
+      if (!apiData) return <div className="p-8 text-muted-foreground">Loading...</div>
+      const screens = apiData.screens || []
+      const filtered = search ? screens.filter((s: any) => JSON.stringify(s).toLowerCase().includes(search.toLowerCase())) : screens
+      const tutorScreens = filtered.filter((s: any) => s.system === 'tutor')
+      const lastsaasScreens = filtered.filter((s: any) => s.system === 'lastsaas')
+      return (
+        <div className="space-y-4">
+          <div className="flex items-center gap-3"><Monitor className="w-8 h-8 text-yellow-500" /><div><h1 className="text-3xl font-bold">Frontend Screen Inventory</h1><p className="text-muted-foreground">{apiData.total} screens — {tutorScreens.length} Tutor LMS + {lastsaasScreens.length} LastSaaS</p></div></div>
+          <div className="grid md:grid-cols-2 gap-4">
+            <Card className="border-orange-500/20"><CardHeader><CardTitle className="text-base flex items-center gap-2"><FileText className="w-4 h-4 text-orange-500" /> Tutor LMS ({tutorScreens.length})</CardTitle></CardHeader>
+              <CardContent><div className="space-y-1 max-h-[500px] overflow-y-auto">
+                {tutorScreens.map((s: any, i: number) => (
+                  <div key={`ts-${i}`} className="flex items-center gap-2 p-2 border rounded text-xs hover:bg-muted/30">
+                    <Badge variant="outline" className="bg-orange-500/10 text-orange-600 dark:text-orange-400 shrink-0">{s.role}</Badge>
+                    <span className="font-medium shrink-0">{s.name}</span>
+                    <code className="text-muted-foreground truncate">{s.route}</code>
+                    <Badge variant="secondary" className="shrink-0 text-xs">{s.feature}</Badge>
+                  </div>
+                ))}
+              </div></CardContent>
+            </Card>
+            <Card className="border-blue-500/20"><CardHeader><CardTitle className="text-base flex items-center gap-2"><Server className="w-4 h-4 text-blue-500" /> LastSaaS ({lastsaasScreens.length})</CardTitle></CardHeader>
+              <CardContent><div className="space-y-1 max-h-[500px] overflow-y-auto">
+                {lastsaasScreens.map((s: any, i: number) => (
+                  <div key={`ls-${i}`} className="flex items-center gap-2 p-2 border rounded text-xs hover:bg-muted/30">
+                    <Badge variant="outline" className="bg-blue-500/10 text-blue-600 dark:text-blue-400 shrink-0">{s.role}</Badge>
+                    <span className="font-medium shrink-0">{s.name}</span>
+                    <code className="text-muted-foreground truncate">{s.route}</code>
+                    <Badge variant="secondary" className="shrink-0 text-xs">{s.feature}</Badge>
+                  </div>
+                ))}
+              </div></CardContent>
+            </Card>
+          </div>
+          <p className="text-xs text-muted-foreground">Showing {filtered.length} of {apiData.total} screens. Each screen has: name, route, user role, feature, module, source file path.</p>
+        </div>
+      )
+    }
+
+    // === FEATURE COMPARISON (Full-Stack) ===
+    if (active === 'feature-comparison') {
+      if (loading) return <div className="flex items-center gap-2 p-8"><Loader2 className="w-5 h-5 animate-spin text-yellow-500" /><span>Loading feature comparison...</span></div>
+      if (!apiData) return <div className="p-8 text-muted-foreground">Loading...</div>
+      const comps = apiData.comparisons || []
+      const filtered = search ? comps.filter((c: any) => JSON.stringify(c).toLowerCase().includes(search.toLowerCase())) : comps
+      return (
+        <div className="space-y-4">
+          <div className="flex items-center gap-3"><Layers className="w-8 h-8 text-yellow-500" /><div><h1 className="text-3xl font-bold">Full-Stack Feature Comparison</h1><p className="text-muted-foreground">{apiData.total} features compared — Frontend + Backend + Data + API + Source</p></div></div>
+          <div className="space-y-3">
+            {filtered.map((fc: any, i: number) => (
+              <Card key={`fc-${i}`} className="border-yellow-500/20">
+                <CardHeader><div className="flex items-center gap-2"><CardTitle className="text-base">{fc.feature}</CardTitle><Badge variant="outline" className={`text-xs ${STATUS_COLORS[fc.comparison] || ''}`}>{fc.comparison.replace(/-/g, ' ')}</Badge></div></CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="border-l-2 border-orange-500/30 pl-3">
+                      <div className="text-xs font-semibold uppercase text-orange-600 dark:text-orange-400 mb-1">Tutor LMS</div>
+                      <div className="space-y-1 text-xs">
+                        <div><span className="text-muted-foreground">Status:</span> <Badge variant="outline" className={fc.tutor.status === 'complete' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-red-500/10 text-red-600 dark:text-red-400'}>{fc.tutor.status}</Badge></div>
+                        <div><span className="text-muted-foreground">Screens:</span> {fc.tutor.screens.join(', ') || 'None'}</div>
+                        <div><span className="text-muted-foreground">APIs:</span> <code className="text-purple-600 dark:text-purple-400">{fc.tutor.apis.join(', ') || 'None'}</code></div>
+                        <div><span className="text-muted-foreground">Models:</span> {fc.tutor.models.join(', ') || 'None'}</div>
+                        <div><span className="text-muted-foreground">Source:</span> <code className="text-muted-foreground">{fc.tutor.source}</code></div>
+                      </div>
+                    </div>
+                    <div className="border-l-2 border-blue-500/30 pl-3">
+                      <div className="text-xs font-semibold uppercase text-blue-600 dark:text-blue-400 mb-1">LastSaaS</div>
+                      <div className="space-y-1 text-xs">
+                        <div><span className="text-muted-foreground">Status:</span> <Badge variant="outline" className={fc.lastsaas.status === 'complete' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : fc.lastsaas.status === 'missing' ? 'bg-red-500/10 text-red-600 dark:text-red-400' : 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400'}>{fc.lastsaas.status}</Badge></div>
+                        <div><span className="text-muted-foreground">Screens:</span> {fc.lastsaas.screens.join(', ') || 'None'}</div>
+                        <div><span className="text-muted-foreground">APIs:</span> <code className="text-purple-600 dark:text-purple-400">{fc.lastsaas.apis.join(', ') || 'None'}</code></div>
+                        <div><span className="text-muted-foreground">Models:</span> {fc.lastsaas.models.join(', ') || 'None'}</div>
+                        <div><span className="text-muted-foreground">Source:</span> <code className="text-muted-foreground">{fc.lastsaas.source}</code></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="pt-2 border-t space-y-1">
+                    <div className="text-xs"><span className="font-medium">Notes:</span> <span className="text-muted-foreground">{fc.notes}</span></div>
+                    <div className="text-xs flex items-start gap-1"><AlertCircle className="w-3 h-3 mt-0.5 text-amber-500 shrink-0" /><span className="text-amber-600 dark:text-amber-400"><span className="font-medium">Gap:</span> {fc.gap}</span></div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">Showing {filtered.length} of {apiData.total} feature comparisons. Each shows: Tutor LMS (screens, APIs, models, source) vs LastSaaS (same) with gap analysis.</p>
+        </div>
+      )
+    }
+
+    // === USER FLOWS ===
+    if (active === 'user-flows') {
+      if (loading) return <div className="flex items-center gap-2 p-8"><Loader2 className="w-5 h-5 animate-spin text-yellow-500" /><span>Loading user flows...</span></div>
+      if (!apiData) return <div className="p-8 text-muted-foreground">Loading...</div>
+      const flows = apiData.flows || []
+      return (
+        <div className="space-y-4">
+          <div className="flex items-center gap-3"><Map className="w-8 h-8 text-yellow-500" /><div><h1 className="text-3xl font-bold">User Flow Comparison</h1><p className="text-muted-foreground">{apiData.total} workflows compared side-by-side</p></div></div>
+          {flows.map((uf: any, i: number) => (
+            <Card key={`uf-${i}`}>
+              <CardHeader><CardTitle className="text-base">{uf.flow}</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <div className="text-xs font-semibold uppercase text-orange-600 dark:text-orange-400 mb-2">Tutor LMS Flow ({uf.tutor.length} steps)</div>
+                    <div className="flex flex-wrap items-center gap-1">
+                      {uf.tutor.map((step: string, si: number) => (
+                        <div key={`ts-${i}-${si}`} className="flex items-center gap-1">
+                          {si > 0 && <ArrowRight className="w-3 h-3 text-muted-foreground" />}
+                          <Badge variant="outline" className="text-xs bg-orange-500/10 text-orange-600 dark:text-orange-400">{step}</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold uppercase text-blue-600 dark:text-blue-400 mb-2">LastSaaS Flow ({uf.lastsaas.length} steps)</div>
+                    <div className="flex flex-wrap items-center gap-1">
+                      {uf.lastsaas.map((step: string, si: number) => (
+                        <div key={`ls-${i}-${si}`} className="flex items-center gap-1">
+                          {si > 0 && <ArrowRight className="w-3 h-3 text-muted-foreground" />}
+                          <Badge variant="outline" className={`text-xs ${step.startsWith('N/A') ? 'bg-red-500/10 text-red-600 dark:text-red-400' : 'bg-blue-500/10 text-blue-600 dark:text-blue-400'}`}>{step}</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div className="pt-2 border-t space-y-1">
+                  <div className="text-xs"><span className="font-medium">Analysis:</span> <span className="text-muted-foreground">{uf.analysis}</span></div>
+                  <div className="text-xs flex items-start gap-1"><AlertCircle className="w-3 h-3 mt-0.5 text-amber-500 shrink-0" /><span className="text-amber-600 dark:text-amber-400"><span className="font-medium">Gap:</span> {uf.gap}</span></div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )
+    }
+
+    // === FRONTEND GAPS ===
+    if (active === 'frontend-gaps') {
+      if (loading) return <div className="flex items-center gap-2 p-8"><Loader2 className="w-5 h-5 animate-spin text-red-500" /><span>Loading frontend gaps...</span></div>
+      if (!apiData) return <div className="p-8 text-muted-foreground">Loading...</div>
+      const gaps = apiData.gaps || []
+      const filtered = search ? gaps.filter((g: any) => JSON.stringify(g).toLowerCase().includes(search.toLowerCase())) : gaps
+      const severityColors: Record<string, string> = { critical: 'bg-red-500/10 text-red-600 dark:text-red-400', high: 'bg-orange-500/10 text-orange-600 dark:text-orange-400', medium: 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400', low: 'bg-blue-500/10 text-blue-600 dark:text-blue-400' }
+      return (
+        <div className="space-y-4">
+          <div className="flex items-center gap-3"><AlertCircle className="w-8 h-8 text-red-500" /><div><h1 className="text-3xl font-bold">Frontend Gap Analysis</h1><p className="text-muted-foreground">{apiData.total} gaps identified — what's missing from LastSaaS frontend</p></div></div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {['critical', 'high', 'medium', 'low'].map(sev => (
+              <Card key={sev} className="p-3"><div className="text-xl font-bold">{gaps.filter((g: any) => g.severity === sev).length}</div><div className="text-xs text-muted-foreground capitalize">{sev}</div></Card>
+            ))}
+          </div>
+          <div className="space-y-2">
+            {filtered.map((g: any, i: number) => (
+              <Card key={`fg-${i}`} className={g.severity === 'critical' ? 'border-red-500/30' : ''}>
+                <CardContent className="p-3">
+                  <div className="flex items-start gap-3">
+                    <Badge variant="outline" className={`shrink-0 text-xs ${severityColors[g.severity]}`}>{g.severity}</Badge>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm">{g.gap}</div>
+                      <div className="text-xs mt-1 grid md:grid-cols-2 gap-2">
+                        <div><span className="text-orange-600 dark:text-orange-400 font-medium">Tutor:</span> <span className="text-muted-foreground">{g.tutor}</span></div>
+                        <div><span className="text-blue-600 dark:text-blue-400 font-medium">LastSaaS:</span> <span className="text-muted-foreground">{g.lastsaas}</span></div>
+                      </div>
+                      <div className="text-xs mt-1 flex items-start gap-1"><ChevronRight className="w-3 h-3 mt-0.5 text-amber-500 shrink-0" /><span className="text-amber-600 dark:text-amber-400">{g.action}</span></div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">Showing {filtered.length} of {apiData.total} frontend gaps</p>
+        </div>
+      )
+    }
+
+    // === BACKEND GAPS ===
+    if (active === 'backend-gaps') {
+      if (loading) return <div className="flex items-center gap-2 p-8"><Loader2 className="w-5 h-5 animate-spin text-red-500" /><span>Loading backend gaps...</span></div>
+      if (!apiData) return <div className="p-8 text-muted-foreground">Loading...</div>
+      const gaps = apiData.gaps || []
+      const filtered = search ? gaps.filter((g: any) => JSON.stringify(g).toLowerCase().includes(search.toLowerCase())) : gaps
+      const severityColors: Record<string, string> = { critical: 'bg-red-500/10 text-red-600 dark:text-red-400', high: 'bg-orange-500/10 text-orange-600 dark:text-orange-400', medium: 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400', low: 'bg-blue-500/10 text-blue-600 dark:text-blue-400' }
+      return (
+        <div className="space-y-4">
+          <div className="flex items-center gap-3"><AlertCircle className="w-8 h-8 text-red-500" /><div><h1 className="text-3xl font-bold">Backend Gap Analysis</h1><p className="text-muted-foreground">{apiData.total} gaps identified — what's missing from LastSaaS backend</p></div></div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {['critical', 'high', 'medium', 'low'].map(sev => (
+              <Card key={sev} className="p-3"><div className="text-xl font-bold">{gaps.filter((g: any) => g.severity === sev).length}</div><div className="text-xs text-muted-foreground capitalize">{sev}</div></Card>
+            ))}
+          </div>
+          <div className="space-y-2">
+            {filtered.map((g: any, i: number) => (
+              <Card key={`bg-${i}`} className={g.severity === 'critical' ? 'border-red-500/30' : ''}>
+                <CardContent className="p-3">
+                  <div className="flex items-start gap-3">
+                    <Badge variant="outline" className={`shrink-0 text-xs ${severityColors[g.severity]}`}>{g.severity}</Badge>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm">{g.gap}</div>
+                      <div className="text-xs mt-1 grid md:grid-cols-2 gap-2">
+                        <div><span className="text-orange-600 dark:text-orange-400 font-medium">Tutor:</span> <span className="text-muted-foreground">{g.tutor}</span></div>
+                        <div><span className="text-blue-600 dark:text-blue-400 font-medium">LastSaaS:</span> <span className="text-muted-foreground">{g.lastsaas}</span></div>
+                      </div>
+                      <div className="text-xs mt-1 flex items-start gap-1"><ChevronRight className="w-3 h-3 mt-0.5 text-amber-500 shrink-0" /><span className="text-amber-600 dark:text-amber-400">{g.action}</span></div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">Showing {filtered.length} of {apiData.total} backend gaps</p>
+        </div>
+      )
     }
 
     // === AI SEARCH ===
