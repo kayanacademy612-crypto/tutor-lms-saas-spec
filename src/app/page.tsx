@@ -832,7 +832,7 @@ export default function Home() {
         <div className="space-y-4">
           <div className="flex items-center gap-3">
             <FileText className="w-8 h-8 text-orange-500" />
-            <div><h1 className="text-3xl font-bold">Tutor LMS Knowledge</h1><p className="text-muted-foreground">Indexed from source code — 636 PHP (free) + 1618 (Pro)</p></div>
+            <div><h1 className="text-3xl font-bold">Tutor LMS Knowledge</h1><p className="text-muted-foreground">Indexed from source code — {(s?.totalPhpFilesFree || 636) + (s?.totalPhpFilesPro || 1618)} PHP files total</p></div>
             <Badge variant="outline" className="ml-auto bg-orange-500/10 text-orange-600 dark:text-orange-400"><CheckCircle className="w-3 h-3 mr-1" /> Source Indexed</Badge>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
@@ -842,12 +842,40 @@ export default function Home() {
               { label: 'Models', value: s?.models || 16 }, { label: 'Addons', value: s?.addons || 29 },
               { label: 'API Controllers', value: s?.apiControllers || 14 }, { label: 'Email Templates', value: s?.emailTemplates || 54 },
               { label: 'Shortcodes', value: s?.shortcodes || 9 },
-            ].map(stat => <Card key={stat.label} className="p-3"><div className="text-xl font-bold">{stat.value}</div><div className="text-xs text-muted-foreground">{stat.label}</div></Card>)}
+            ].map((stat, i) => <Card key={`tstat-${i}`} className="p-3"><div className="text-xl font-bold">{stat.value}</div><div className="text-xs text-muted-foreground">{stat.label}</div></Card>)}
           </div>
+
+          {/* Architecture Layers */}
+          <Card><CardHeader><CardTitle className="text-base">Tutor LMS Architecture Layers</CardTitle><CardDescription>WordPress plugin architecture — how components connect</CardDescription></CardHeader>
+            <CardContent><div className="space-y-2">
+              {[
+                { name: 'Templates (PHP)', components: ['single-course.php', 'dashboard.php', 'checkout.php', 'cart.php', 'login.php', '54 email templates'], source: 'tutor/templates/, tutor-pro/templates/', color: 'border-purple-500/30' },
+                { name: 'Classes (Core Logic)', components: ['Course', 'Lesson', 'Quiz', 'Enrollment', 'Earnings', 'Withdraw', 'Reviews', 'Q_And_A', 'Frontend', 'Admin', 'Shortcode', 'RestAPI', 'Assets', 'Permalink', 'Rewrite_Rules', 'Tutor_Setup'], source: 'tutor/classes/ (61 files), tutor-pro/classes/ (28 files)', color: 'border-orange-500/30' },
+                { name: 'Models (Data Layer)', components: ['CourseModel', 'LessonModel', 'QuizModel', 'EnrollmentModel', 'OrderModel', 'CouponModel', 'CartModel', 'WithdrawModel', 'UserModel', 'BillingModel'], source: 'tutor/models/ (16 files)', color: 'border-amber-500/30' },
+                { name: 'REST API (Pro)', components: ['CourseController', 'QuizController', 'EnrollmentController', 'LessonController', 'TopicController', 'QAndAController', 'ReviewController', 'StudentController', 'AssignmentController', 'QuizAttemptController', 'WishlistController', 'UserProfileController'], source: 'tutor-pro/rest-api/Controllers/ (14 files)', color: 'border-red-500/30' },
+                { name: 'Pro Addons (29)', components: ['tutor-certificate', 'content-drip', 'tutor-multi-instructors', 'subscription', 'tutor-zoom', 'google-meet', 'tutor-notifications', 'tutor-email', 'social-login', 'calendar', 'tutor-report', 'gradebook', 'h5p', 'buddypress', 'google-classroom', 'course-bundle', 'enrollments', 'tutor-course-preview', 'tutor-course-attachments', 'quiz-import-export', 'tutor-wpml', 'tutor-prerequisites', 'wc-subscriptions', 'pmpro', 'restrict-content-pro', 'tutor-weglot', 'tutor-assignments', 'auth'], source: 'tutor-pro/addons/ (29 addon folders)', color: 'border-pink-500/30' },
+                { name: 'WordPress Layer', components: ['Custom Post Types (courses, lessons, topics, quizzes)', 'Custom Taxonomies (course-category, course-tag)', 'Options API (get_tutor_option)', 'do_action hooks (480 events)', 'add_shortcode (9 shortcodes)', 'WP REST API (wp-json/tutor/v1/)'], source: 'WordPress core integration', color: 'border-blue-500/30' },
+              ].map((layer, i) => (
+                <div key={`tlayer-${i}`} className={`p-3 border rounded-lg ${layer.color}`}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <Badge variant="outline" className="text-xs bg-orange-500/10 text-orange-600 dark:text-orange-400">Layer {i + 1}</Badge>
+                    <span className="font-medium text-sm">{layer.name}</span>
+                    <code className="text-xs text-muted-foreground ml-auto">{layer.source}</code>
+                  </div>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {layer.components.map((c, ci) => <Badge key={`tc-${i}-${ci}`} variant="secondary" className="text-xs font-mono">{c}</Badge>)}
+                  </div>
+                  {i < 5 && <div className="text-center mt-1 text-muted-foreground text-xs">↓</div>}
+                </div>
+              ))}
+            </div></CardContent>
+          </Card>
+
+          {/* Pro Addons Grid */}
           <Card><CardHeader><CardTitle className="text-base">Pro Addons ({apiData.addons?.length || 0})</CardTitle></CardHeader>
             <CardContent><div className="grid md:grid-cols-3 gap-2">
-              {(apiData.addons || []).map((addon: any) => (
-                <div key={addon.name} className="p-2 border rounded text-xs">
+              {(apiData.addons || []).map((addon: any, i: number) => (
+                <div key={addon.name || `addon-${i}`} className="p-2 border rounded text-xs">
                   <div className="font-mono font-medium text-orange-600 dark:text-orange-400">{addon.name}</div>
                   <div className="text-muted-foreground mt-0.5">{addon.files} PHP files</div>
                   <div className="text-xs text-muted-foreground mt-0.5 font-mono truncate">{addon.source}</div>
@@ -855,12 +883,41 @@ export default function Home() {
               ))}
             </div></CardContent>
           </Card>
-          <Card><CardHeader><CardTitle className="text-base">All data available via API</CardTitle></CardHeader>
-            <CardContent><div className="grid md:grid-cols-2 gap-2 text-xs">
-              {['GET /api/tutor-kb/classes','GET /api/tutor-kb/models','GET /api/tutor-kb/addons'].map((p, i) => (
-                <div key={`api-${i}`} className="flex items-center gap-2 p-2 border rounded"><Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-mono">GET</Badge><code className="text-amber-600 dark:text-amber-400">{p}</code></div>
+
+          {/* Indexed Data Sources */}
+          <Card><CardHeader><CardTitle className="text-base">Indexed Data Sources</CardTitle><CardDescription>What's been extracted from the Tutor LMS source code</CardDescription></CardHeader>
+            <CardContent><div className="space-y-1 text-xs">
+              {[
+                { source: 'tutor/classes/*.php', count: 61, desc: 'Core PHP classes (Course, Quiz, Lesson, etc.)', confidence: 'confirmed' },
+                { source: 'tutor-pro/classes/*.php', count: 28, desc: 'Pro PHP classes (Certificate, Drip, AI Studio, etc.)', confidence: 'confirmed' },
+                { source: 'tutor/models/*.php', count: 16, desc: 'Data models with constants and fields', confidence: 'confirmed' },
+                { source: 'tutor-pro/addons/*/', count: 29, desc: 'Pro addon folders with PHP file counts', confidence: 'confirmed' },
+                { source: 'tutor-pro/rest-api/Controllers/', count: 14, desc: 'REST API controller classes', confidence: 'confirmed' },
+                { source: 'tutor-pro/templates/email/', count: 54, desc: 'Email template files (to_*.php)', confidence: 'confirmed' },
+                { source: 'do_action() calls (all PHP)', count: 480, desc: 'WordPress action hooks = Go events', confidence: 'confirmed' },
+                { source: 'get_tutor_option() calls', count: 66, desc: 'Setting keys from source', confidence: 'confirmed' },
+                { source: 'add_shortcode() calls', count: 9, desc: 'WordPress shortcodes', confidence: 'confirmed' },
+              ].map((item, i) => (
+                <div key={`src-${i}`} className="flex items-center gap-2 p-2 border rounded">
+                  <Badge variant="secondary" className="text-xs shrink-0">{item.count}</Badge>
+                  <code className="font-mono text-orange-600 dark:text-orange-400 shrink-0">{item.source}</code>
+                  <span className="text-muted-foreground flex-1 truncate">{item.desc}</span>
+                  <Badge variant="outline" className="text-xs bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shrink-0">{item.confidence}</Badge>
+                </div>
               ))}
             </div></CardContent>
+          </Card>
+
+          {/* API endpoints */}
+          <Card><CardHeader><CardTitle className="text-base">Query Tutor LMS Knowledge</CardTitle></CardHeader>
+            <CardContent className="text-sm text-muted-foreground">
+              <p>Ask questions through the AI Search section (select "Tutor LMS" target). Searches our internal index of 2,254 PHP files.</p>
+              <div className="mt-2 grid md:grid-cols-2 gap-2 text-xs">
+                {['GET /api/tutor-kb/classes','GET /api/tutor-kb/models','GET /api/tutor-kb/addons','POST /api/tutor-kb/search'].map((p, i) => (
+                  <div key={`tkapi-${i}`} className="flex items-center gap-2 p-2 border rounded"><Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-mono text-xs">{p.startsWith('POST') ? 'POST' : 'GET'}</Badge><code className="text-amber-600 dark:text-amber-400">{p.replace('GET ', '').replace('POST ', '')}</code></div>
+                ))}
+              </div>
+            </CardContent>
           </Card>
         </div>
       )
