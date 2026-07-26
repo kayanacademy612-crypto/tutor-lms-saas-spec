@@ -5,7 +5,7 @@ import {
   BookOpen, Database, Code2, Zap, Map, Ticket, HelpCircle, CreditCard,
   Mail, Plug, Search, Sun, Moon, ChevronRight, Menu, Clock, Globe,
   Loader2, FileText, GitCompare, Server, Brain, CheckCircle, XCircle,
-  AlertCircle, ArrowRight, Folder, File
+  AlertCircle, ArrowRight, Folder, File, X, Download, HardDrive, FileCode, FileJson, FileText as FileTextIcon, FileType
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,10 +13,12 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useTheme } from 'next-themes'
 
 const SECTIONS = [
   { id: 'overview', label: 'Overview', icon: BookOpen, group: 'general' },
+  { id: 'files', label: 'Files & Resources', icon: Folder, group: 'general' },
   { id: 'collections', label: 'Data Model (91)', icon: Database, group: 'general' },
   { id: 'endpoints', label: 'API Reference (172)', icon: Code2, group: 'general' },
   { id: 'events', label: 'Events (480)', icon: Zap, group: 'general' },
@@ -102,6 +104,190 @@ function DataTable({ headers, rows }: { headers: string[]; rows: React.ReactNode
         <thead className="bg-muted/50 sticky top-0"><tr>{headers.map((h, i) => <th key={i} className="text-left p-3 font-medium whitespace-nowrap">{h}</th>)}</tr></thead>
         <tbody>{rows.map((row, i) => <tr key={i} className="border-t hover:bg-muted/30">{row.map((cell, j) => <td key={j} className="p-3">{cell}</td>)}</tr>)}</tbody>
       </table>
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════════════════════
+// FILES & RESOURCES SECTION
+// ════════════════════════════════════════════════════════════════
+const SYSTEM_COLORS: Record<string, string> = {
+  lastsaas: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
+  tutor: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
+  'tutor-pro': 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+  codewiki: 'bg-purple-500/10 text-purple-600 dark:text-purple-400',
+  project: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+}
+
+const CATEGORY_ICONS: Record<string, any> = {
+  'source-code': FileCode,
+  'documentation': FileText,
+  'config': FileCode,
+  'data': FileJson,
+  'generated': FileJson,
+  'pdf': File,
+  'script': FileCode,
+}
+
+function FilesSection({ searchQuery }: { searchQuery: string }) {
+  const [files, setFiles] = useState<any[]>(null)
+  const [stats, setStats] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [systemFilter, setSystemFilter] = useState('all')
+  const [categoryFilter, setCategoryFilter] = useState('all')
+  const [localSearch, setLocalSearch] = useState('')
+  const [previewFile, setPreviewFile] = useState<any>(null)
+  const [previewContent, setPreviewContent] = useState<string | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+
+  useEffect(() => {
+    setLoading(true)
+    const params = new URLSearchParams()
+    if (systemFilter !== 'all') params.set('system', systemFilter)
+    if (categoryFilter !== 'all') params.set('category', categoryFilter)
+    fetch(`/api/files?${params}`)
+      .then(r => r.json())
+      .then(d => { setFiles(d.files); setStats(d.stats); setLoading(false) })
+      .catch(e => { setLoading(false) })
+  }, [systemFilter, categoryFilter])
+
+  useEffect(() => {
+    setLocalSearch(searchQuery)
+  }, [searchQuery])
+
+  const filteredFiles = files?.filter(f => {
+    if (!localSearch) return true
+    return f.name.toLowerCase().includes(localSearch.toLowerCase()) || 
+           f.path.toLowerCase().includes(localSearch.toLowerCase())
+  }) || []
+
+  const openPreview = async (filePath: string) => {
+    setPreviewLoading(true)
+    setPreviewFile({ path: filePath, name: filePath.split('/').pop() })
+    try {
+      const res = await fetch(`/api/files/preview?path=${encodeURIComponent(filePath)}`)
+      const data = await res.json()
+      if (data.content) {
+        setPreviewContent(data.content)
+      } else {
+        setPreviewContent(`Error: ${data.error || 'Could not load file'}`)
+      }
+    } catch (e: any) {
+      setPreviewContent(`Error: ${e.message}`)
+    }
+    setPreviewLoading(false)
+  }
+
+  const closePreview = () => {
+    setPreviewFile(null)
+    setPreviewContent(null)
+  }
+
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
+          <Folder className="w-8 h-8 text-amber-500" />
+          Files & Resources
+        </h1>
+        <p className="text-muted-foreground">All project files — source code, documentation, generated data, scripts. Browse, search, and preview.</p>
+      </div>
+
+      {/* Stats */}
+      {stats && (
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+          <Card className="p-3"><div className="text-xl font-bold">{stats.total}</div><div className="text-xs text-muted-foreground">Total Files</div></Card>
+          <Card className="p-3"><div className="text-xl font-bold text-blue-600 dark:text-blue-400">{stats.bySystem.lastsaas}</div><div className="text-xs text-muted-foreground">LastSaaS</div></Card>
+          <Card className="p-3"><div className="text-xl font-bold text-orange-600 dark:text-orange-400">{stats.bySystem.tutor + stats.bySystem['tutor-pro']}</div><div className="text-xs text-muted-foreground">Tutor LMS</div></Card>
+          <Card className="p-3"><div className="text-xl font-bold text-purple-600 dark:text-purple-400">{stats.bySystem.codewiki}</div><div className="text-xs text-muted-foreground">CodeWiki</div></Card>
+          <Card className="p-3"><div className="text-xl font-bold text-emerald-600 dark:text-emerald-400">{stats.bySystem.project}</div><div className="text-xs text-muted-foreground">Project</div></Card>
+          <Card className="p-3"><div className="text-xl font-bold">{stats.totalSizeMB} MB</div><div className="text-xs text-muted-foreground">Total Size</div></Card>
+        </div>
+      )}
+
+      {/* Filters */}
+      <div className="flex flex-wrap gap-2">
+        <Button variant={systemFilter === 'all' ? 'default' : 'outline'} size="sm" onClick={() => setSystemFilter('all')} className="text-xs">All Systems</Button>
+        {['lastsaas', 'tutor', 'tutor-pro', 'codewiki', 'project'].map(s => (
+          <Button key={s} variant={systemFilter === s ? 'default' : 'outline'} size="sm" onClick={() => setSystemFilter(s)} className="text-xs capitalize">{s}</Button>
+        ))}
+        <div className="w-px bg-border mx-1" />
+        <Button variant={categoryFilter === 'all' ? 'default' : 'outline'} size="sm" onClick={() => setCategoryFilter('all')} className="text-xs">All Types</Button>
+        {['source-code', 'documentation', 'config', 'generated', 'script', 'pdf'].map(c => (
+          <Button key={c} variant={categoryFilter === c ? 'default' : 'outline'} size="sm" onClick={() => setCategoryFilter(c)} className="text-xs capitalize">{c.replace('-', ' ')}</Button>
+        ))}
+      </div>
+
+      {/* File List */}
+      {loading ? (
+        <div className="flex items-center gap-2 p-8"><Loader2 className="w-5 h-5 animate-spin text-amber-500" /><span>Scanning filesystem...</span></div>
+      ) : (
+        <>
+          <div className="border rounded-lg overflow-auto max-h-[calc(100vh-380px)]">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 sticky top-0">
+                <tr>
+                  <th className="text-left p-3 font-medium">File</th>
+                  <th className="text-left p-3 font-medium">System</th>
+                  <th className="text-left p-3 font-medium">Type</th>
+                  <th className="text-right p-3 font-medium">Size</th>
+                  <th className="text-left p-3 font-medium">Path</th>
+                  <th className="text-left p-3 font-medium">Modified</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredFiles.map((f, i) => {
+                  const Icon = CATEGORY_ICONS[f.category] || File
+                  return (
+                    <tr key={i} className="border-t hover:bg-muted/30 cursor-pointer" onClick={() => openPreview(f.path)}>
+                      <td className="p-3">
+                        <div className="flex items-center gap-2">
+                          <Icon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                          <span className="font-mono text-xs font-medium">{f.name}</span>
+                        </div>
+                      </td>
+                      <td className="p-3"><Badge variant="outline" className={`text-xs ${SYSTEM_COLORS[f.system] || ''}`}>{f.system}</Badge></td>
+                      <td className="p-3"><Badge variant="secondary" className="text-xs">{f.category.replace('-', ' ')}</Badge></td>
+                      <td className="p-3 text-right text-xs text-muted-foreground font-mono">{formatSize(f.size)}</td>
+                      <td className="p-3 text-xs font-mono text-muted-foreground truncate max-w-xs">{f.path}</td>
+                      <td className="p-3 text-xs text-muted-foreground">{new Date(f.modifiedAt).toLocaleDateString()}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-muted-foreground">Showing {filteredFiles.length} of {files?.length || 0} files (max 500 displayed). Click any file to preview.</p>
+        </>
+      )}
+
+      {/* File Preview Dialog */}
+      <Dialog open={!!previewFile} onOpenChange={(open) => !open && closePreview()}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-sm">
+              <FileCode className="w-4 h-4 text-amber-500" />
+              <span className="font-mono">{previewFile?.name}</span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-auto">
+            {previewLoading ? (
+              <div className="flex items-center gap-2 p-8"><Loader2 className="w-5 h-5 animate-spin text-amber-500" /><span>Loading file...</span></div>
+            ) : (
+              <pre className="text-xs font-mono text-zinc-300 bg-zinc-950 p-4 rounded-lg overflow-auto max-h-[60vh] whitespace-pre-wrap break-all"><code>{previewContent}</code></pre>
+            )}
+          </div>
+          <div className="flex items-center gap-2 pt-2 border-t text-xs text-muted-foreground">
+            <span className="font-mono">{previewFile?.path}</span>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -564,6 +750,11 @@ export default function Home() {
           </div>
         </div>
       )
+    }
+
+    // === FILES & RESOURCES ===
+    if (active === 'files') {
+      return <FilesSection searchQuery={search} />
     }
 
     return <div className="p-8 text-muted-foreground">Select a section.</div>
