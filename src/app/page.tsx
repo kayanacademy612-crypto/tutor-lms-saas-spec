@@ -14,7 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { CourseBuilder, FrontendAppsSection } from '@/components/frontend-apps/CourseBuilder'
+import { FrontendAppsSection } from '@/components/frontend-apps/FrontendAppsSection'
 import { useTheme } from 'next-themes'
 
 const SECTIONS = [
@@ -1983,9 +1983,31 @@ export default function Home() {
         <main className="flex-1 overflow-y-auto"><div className="container max-w-6xl mx-auto px-4 md:px-8 py-8">{renderContent()}</div></main>
       </div>
 
-      {/* Launched frontend app overlay (full-screen) */}
-      {launchedApp === 'course-builder' && (
-        <CourseBuilder onExit={() => setLaunchedApp(null)} />
+      {/* Launched frontend app overlay (full-screen iframe to tailux via proxy) */}
+      {launchedApp && (
+        <div className="fixed inset-0 z-50 bg-white dark:bg-zinc-900">
+          <div className="absolute top-2 right-2 z-10 flex items-center gap-2">
+            <a
+              href={`/api/tailux/apps/${launchedApp}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1.5 text-xs rounded-md bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 hover:bg-gray-50 dark:hover:bg-zinc-700 text-gray-700 dark:text-zinc-100 shadow-sm"
+            >
+              Open in new tab ↗
+            </a>
+            <button
+              onClick={() => setLaunchedApp(null)}
+              className="px-3 py-1.5 text-xs rounded-md bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 hover:bg-gray-50 dark:hover:bg-zinc-700 text-gray-700 dark:text-zinc-100 shadow-sm flex items-center gap-1"
+            >
+              <X className="w-3 h-3" /> Close
+            </button>
+          </div>
+          <iframe
+            src={`/api/tailux/apps/${launchedApp}`}
+            className="w-full h-full border-0"
+            title={`Frontend App: ${launchedApp}`}
+          />
+        </div>
       )}
     </div>
   )
