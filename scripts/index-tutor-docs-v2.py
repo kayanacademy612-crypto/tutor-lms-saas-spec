@@ -102,7 +102,7 @@ def parse_doc_page(slug: str, section: str, section_order: int, order_in_section
         "global_order": global_order,
         "file_path": str(index_html),
         "relative_url": f"/docs/{slug}/",
-        "text_preview": text[:6000],
+        "text_preview": text[:30000],
         "text_length": len(text),
         "image_refs": img_refs,
         "image_count": len(img_refs),
