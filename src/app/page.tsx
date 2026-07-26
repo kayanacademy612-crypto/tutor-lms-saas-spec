@@ -30,6 +30,7 @@ const SECTIONS = [
   { id: 'email-triggers', label: 'Email Triggers (54)', icon: Mail, group: 'general' },
   { id: 'lastsaas', label: 'LastSaaS Architecture', icon: Server, group: 'lastsaas' },
   { id: 'tutor-kb', label: 'Tutor LMS Knowledge', icon: FileText, group: 'tutor' },
+  { id: 'tutor-docs', label: 'Tutor Docs (295)', icon: BookOpen, group: 'tutor' },
   { id: 'comparison', label: 'Comparison', icon: GitCompare, group: 'comparison' },
   { id: 'visual-ui', label: 'Visual UI (197 imgs)', icon: ImageIcon, group: 'comparison' },
   { id: 'screens', label: 'Screen Inventory (429)', icon: Folder, group: 'comparison' },
@@ -437,8 +438,232 @@ const CATEGORY_ICONS: Record<string, any> = {
 }
 
 // ============================================================
-// VISUAL UI SECTION — real screenshots from Tutor LMS source
+// TUTOR DOCS SECTION — 295 real docs + 870 real screenshots
 // ============================================================
+function TutorDocsSection({ data, searchQuery }: { data: any; searchQuery: string }) {
+  const [categoryFilter, setCategoryFilter] = useState('all')
+  const [selectedSlug, setSelectedSlug] = useState<string | null>(null)
+  const [pageDetail, setPageDetail] = useState<any | null>(null)
+  const [pageLoading, setPageLoading] = useState(false)
+  const [viewMode, setViewMode] = useState<'list' | 'gallery'>('list')
+  const [lightboxImg, setLightboxImg] = useState<string | null>(null)
+
+  const allPages: any[] = data.pages || []
+  const allImages: any[] = data.images || []
+
+  const filteredPages = allPages.filter(p => {
+    if (categoryFilter !== 'all' && p.category !== categoryFilter) return false
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase()
+      if (!`${p.title} ${p.slug} ${p.category} ${p.relative_url}`.toLowerCase().includes(q)) return false
+    }
+    return true
+  })
+
+  const categories = ['all', ...Object.keys(data.by_category || {})].sort((a, b) =>
+    a === 'all' ? -1 : b === 'all' ? 1 : (data.by_category[a] || 0) < (data.by_category[b] || 0) ? 1 : -1
+  )
+
+  const loadPageDetail = async (slug: string) => {
+    setSelectedSlug(slug)
+    setPageLoading(true)
+    setPageDetail(null)
+    try {
+      const res = await fetch(`/api/tutor-docs/page?slug=${encodeURIComponent(slug)}`)
+      const d = await res.json()
+      setPageDetail(d)
+    } catch (e) {
+      setPageDetail({ error: 'failed to load' })
+    }
+    setPageLoading(false)
+  }
+
+  const imgSrc = (servePath: string) => `/api/tutor-docs/file?p=${encodeURIComponent(servePath)}`
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start gap-3">
+        <BookOpen className="w-8 h-8 text-orange-500 shrink-0 mt-1" />
+        <div className="flex-1">
+          <h1 className="text-3xl font-bold">Tutor LMS Documentation</h1>
+          <p className="text-muted-foreground mt-1">{data.total_pages} real doc pages + {data.total_images} real screenshots downloaded from the official Tutor LMS docs site. Every page is the actual HTML doc, every image is the actual screenshot.</p>
+        </div>
+        <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+          <CheckCircle className="w-3 h-3 mr-1" /> 428MB extracted
+        </Badge>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex rounded border overflow-hidden text-xs">
+          <button onClick={() => setViewMode('list')} className={`px-3 py-1 ${viewMode === 'list' ? 'bg-orange-500/10 text-orange-600 dark:text-orange-400 font-medium' : 'text-muted-foreground hover:bg-muted'}`}>
+            <FileText className="inline w-3 h-3 mr-1" />Pages
+          </button>
+          <button onClick={() => setViewMode('gallery')} className={`px-3 py-1 ${viewMode === 'gallery' ? 'bg-orange-500/10 text-orange-600 dark:text-orange-400 font-medium' : 'text-muted-foreground hover:bg-muted'}`}>
+            <ImageIcon className="inline w-3 h-3 mr-1" />Screenshot Gallery
+          </button>
+        </div>
+        <span className="text-xs text-muted-foreground ml-2">Category:</span>
+        <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="text-xs border rounded px-2 py-1 bg-background max-w-[260px]">
+          {categories.map(c => (
+            <option key={c} value={c}>{c} ({c === 'all' ? data.total_pages : (data.by_category?.[c] || 0)})</option>
+          ))}
+        </select>
+        <span className="text-xs text-muted-foreground ml-auto">
+          {viewMode === 'list' ? `${filteredPages.length} pages` : `${allImages.length} screenshots`}
+        </span>
+      </div>
+
+      {viewMode === 'list' ? (
+        <div className="grid md:grid-cols-[1fr_2fr] gap-4">
+          {/* Page list */}
+          <Card className="h-[70vh] flex flex-col">
+            <CardHeader className="py-2"><CardTitle className="text-sm">Doc Pages ({filteredPages.length})</CardTitle></CardHeader>
+            <CardContent className="p-0 flex-1 overflow-hidden">
+              <ScrollArea className="h-full">
+                <div className="divide-y">
+                  {filteredPages.map((p, i) => (
+                    <button
+                      key={p.id || `doc-${i}`}
+                      onClick={() => loadPageDetail(p.slug)}
+                      className={`w-full text-left p-2 text-xs hover:bg-muted/50 ${selectedSlug === p.slug ? 'bg-orange-500/10 border-l-2 border-orange-500' : ''}`}
+                    >
+                      <div className="font-medium truncate" title={p.title}>{p.title}</div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Badge variant="outline" className="text-[10px] px-1 py-0 bg-blue-500/10 text-blue-600 dark:text-blue-400">{p.category}</Badge>
+                        {p.image_count > 0 && (
+                          <Badge variant="outline" className="text-[10px] px-1 py-0 bg-pink-500/10 text-pink-600 dark:text-pink-400">
+                            <ImageIcon className="w-2.5 h-2.5 mr-0.5" />{p.image_count}
+                          </Badge>
+                        )}
+                        <code className="text-[10px] text-muted-foreground truncate">{p.relative_url}</code>
+                      </div>
+                    </button>
+                  ))}
+                  {filteredPages.length === 0 && (
+                    <div className="p-6 text-center text-muted-foreground text-sm">No docs match the filters.</div>
+                  )}
+                </div>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+
+          {/* Page detail */}
+          <Card className="h-[70vh] flex flex-col">
+            <CardHeader className="py-2">
+              <CardTitle className="text-sm">
+                {pageLoading ? 'Loading...' : pageDetail?.title || 'Select a doc page from the left'}
+              </CardTitle>
+              {pageDetail && !pageDetail.error && (
+                <div className="flex items-center gap-2 mt-1">
+                  <Badge variant="outline" className="text-[10px] bg-blue-500/10 text-blue-600 dark:text-blue-400">{pageDetail.category}</Badge>
+                  <code className="text-[10px] text-muted-foreground">{pageDetail.relative_url}</code>
+                  <Badge variant="outline" className="text-[10px] bg-pink-500/10 text-pink-600 dark:text-pink-400">{pageDetail.image_count} images</Badge>
+                  <Badge variant="outline" className="text-[10px] bg-gray-500/10 text-gray-600 dark:text-gray-400">{pageDetail.text_length} chars</Badge>
+                </div>
+              )}
+            </CardHeader>
+            <CardContent className="p-0 flex-1 overflow-hidden">
+              {!selectedSlug && (
+                <div className="p-8 text-center text-muted-foreground text-sm">
+                  <BookOpen className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                  Click any page from the left to read the real doc content + see its screenshots.
+                </div>
+              )}
+              {pageLoading && (
+                <div className="p-8 flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Fetching page content...
+                </div>
+              )}
+              {pageDetail?.error && (
+                <div className="p-8 text-center text-red-500 text-sm">{pageDetail.error}</div>
+              )}
+              {pageDetail && !pageDetail.error && !pageLoading && (
+                <ScrollArea className="h-full">
+                  <div className="p-4 space-y-4">
+                    {/* Screenshots gallery */}
+                    {pageDetail.image_refs?.length > 0 && (
+                      <div>
+                        <div className="text-xs font-semibold uppercase text-pink-600 dark:text-pink-400 mb-2">Screenshots ({pageDetail.image_refs.length})</div>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                          {pageDetail.image_refs.map((ir: any, i: number) => (
+                            <div key={`pimg-${i}`} className="border rounded overflow-hidden cursor-pointer group hover:shadow-md transition-shadow bg-muted/20" onClick={() => setLightboxImg(ir.serve_path)}>
+                              <div className="aspect-video bg-muted flex items-center justify-center overflow-hidden">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={imgSrc(ir.serve_path)} alt={ir.filename} className="max-w-full max-h-full object-contain group-hover:scale-105 transition-transform" loading="lazy" />
+                              </div>
+                              <div className="p-1 text-[10px] text-muted-foreground truncate" title={ir.filename}>{ir.filename}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {/* Text content */}
+                    <div>
+                      <div className="text-xs font-semibold uppercase text-blue-600 dark:text-blue-400 mb-2">Doc Content</div>
+                      <div className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">{pageDetail.text_preview}</div>
+                    </div>
+                    {/* File path */}
+                    <div className="text-[10px] text-muted-foreground pt-3 border-t">
+                      <span className="font-medium">Source file:</span> <code>{pageDetail.file_path}</code>
+                    </div>
+                  </div>
+                </ScrollArea>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      ) : (
+        /* Gallery view: all 870 screenshots */
+        <Card>
+          <CardHeader className="py-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <ImageIcon className="w-4 h-4 text-pink-500" />
+              All Screenshots ({allImages.length})
+              <span className="text-xs text-muted-foreground font-normal ml-2">Sorted by file size (largest first = highest detail screenshots)</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-3">
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 max-h-[75vh] overflow-y-auto">
+              {allImages.slice(0, 600).map((img, i) => (
+                <div key={`gimg-${i}`} className="border rounded overflow-hidden cursor-pointer group hover:shadow-md transition-shadow bg-muted/20" onClick={() => setLightboxImg(img.serve_path)}>
+                  <div className="aspect-video bg-muted flex items-center justify-center overflow-hidden">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={imgSrc(img.serve_path)} alt={img.filename} className="max-w-full max-h-full object-contain group-hover:scale-105 transition-transform" loading="lazy" />
+                  </div>
+                  <div className="p-1">
+                    <div className="text-[10px] font-medium truncate" title={img.filename}>{img.filename}</div>
+                    <div className="flex items-center justify-between mt-0.5">
+                      <span className="text-[9px] text-muted-foreground">{(img.size_bytes / 1024).toFixed(0)} KB</span>
+                      <Badge variant="outline" className="text-[9px] px-1 py-0 bg-blue-500/10 text-blue-600 dark:text-blue-400">{img.referenced_by_count} docs</Badge>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {allImages.length > 600 && (
+              <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">Showing first 600 of {allImages.length} screenshots. Use the Pages tab to see screenshots grouped by their doc page.</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Lightbox */}
+      {lightboxImg && (
+        <Dialog open onOpenChange={() => setLightboxImg(null)}>
+          <DialogContent className="max-w-5xl">
+            <DialogHeader><DialogTitle className="text-sm">Screenshot</DialogTitle></DialogHeader>
+            <div className="bg-muted/30 rounded p-4 flex items-center justify-center max-h-[75vh]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={imgSrc(lightboxImg)} alt="screenshot" className="max-w-full max-h-[70vh] object-contain" />
+            </div>
+            <div className="text-xs text-muted-foreground"><code>{lightboxImg}</code></div>
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
+  )
+}
+
 function VisualUISection({ data, searchQuery }: { data: any; searchQuery: string }) {
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [systemFilter, setSystemFilter] = useState('all')
@@ -568,6 +793,7 @@ function ScreensSection({ data, searchQuery }: { data: any; searchQuery: string 
   const [roleFilter, setRoleFilter] = useState('all')
   const [expanded, setExpanded] = useState<string | null>(null)
   const [previewScreen, setPreviewScreen] = useState<any | null>(null)
+  const [lightboxShot, setLightboxShot] = useState<string | null>(null)
 
   const allScreens: any[] = data.screens || []
   const screens = allScreens.filter(s => {
@@ -658,16 +884,43 @@ function ScreensSection({ data, searchQuery }: { data: any; searchQuery: string 
                         <ImageIcon className="inline w-3 h-3 mr-0.5" />{s.image_refs.length}
                       </Badge>
                     )}
+                    {s.doc_screenshot_count > 0 && (
+                      <Badge variant="outline" className="shrink-0 text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" title={`${s.doc_screenshot_count} screenshots matched from Tutor LMS docs`}>
+                        <ImageIcon className="inline w-3 h-3 mr-0.5" />{s.doc_screenshot_count} docs
+                      </Badge>
+                    )}
                     <button onClick={() => setPreviewScreen(s)} className="shrink-0 p-1 hover:bg-muted rounded" title="Preview code">
                       <Eye className="w-3 h-3" />
                     </button>
                   </div>
                   {isExpanded && (
-                    <div className="px-4 pb-3 text-xs space-y-2 bg-muted/10">
+                    <div className="px-4 pb-3 text-xs space-y-3 bg-muted/10">
                       <div className="grid grid-cols-2 gap-2">
                         <div><span className="text-muted-foreground">Source path:</span> <code className="text-[10px]">{s.absolute_path}</code></div>
                         <div><span className="text-muted-foreground">Route hint:</span> <code>{s.route}</code></div>
                       </div>
+                      {/* Real screenshots from Tutor LMS docs */}
+                      {s.doc_screenshots && s.doc_screenshots.length > 0 && (
+                        <div>
+                          <div className="text-muted-foreground mb-1">
+                            <span className="font-semibold text-pink-600 dark:text-pink-400">Real screenshots from docs</span> ({s.doc_screenshot_count} matched from Tutor LMS docs bundle):
+                          </div>
+                          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                            {s.doc_screenshots.map((ds: any, di: number) => (
+                              <div key={`ds-${i}-${di}`} className="border rounded overflow-hidden bg-background group">
+                                <div className="aspect-video bg-muted flex items-center justify-center overflow-hidden cursor-pointer" onClick={() => setLightboxShot(ds.serve_path)}>
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img src={`/api/tutor-docs/file?p=${encodeURIComponent(ds.serve_path)}`} alt={ds.filename} className="max-w-full max-h-full object-contain group-hover:scale-105 transition-transform" loading="lazy" />
+                                </div>
+                                <div className="p-1">
+                                  <div className="text-[9px] truncate" title={ds.filename}>{ds.filename}</div>
+                                  <code className="text-[9px] text-muted-foreground truncate block" title={ds.doc_title}>from: {ds.doc_title}</code>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       {s.image_refs && s.image_refs.length > 0 && (
                         <div>
                           <span className="text-muted-foreground">Image references found in template:</span>
@@ -678,7 +931,10 @@ function ScreensSection({ data, searchQuery }: { data: any; searchQuery: string 
                           </div>
                         </div>
                       )}
-                      <pre className="text-[10px] bg-muted/30 p-2 rounded max-h-48 overflow-auto font-mono"><code>{s.preview}</code></pre>
+                      <div>
+                        <span className="text-muted-foreground">First 40 lines of code:</span>
+                        <pre className="text-[10px] bg-muted/30 p-2 rounded max-h-48 overflow-auto font-mono mt-1"><code>{s.preview}</code></pre>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -709,12 +965,42 @@ function ScreensSection({ data, searchQuery }: { data: any; searchQuery: string 
                 <div><span className="text-muted-foreground">Role:</span> {previewScreen.role}</div>
                 <div><span className="text-muted-foreground">Category:</span> {previewScreen.feature}</div>
               </div>
+              {previewScreen.doc_screenshots && previewScreen.doc_screenshots.length > 0 && (
+                <div>
+                  <div className="text-pink-600 dark:text-pink-400 font-semibold mb-1">Real screenshots from docs ({previewScreen.doc_screenshot_count} matched):</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {previewScreen.doc_screenshots.map((ds: any, di: number) => (
+                      <div key={`pds-${di}`} className="border rounded overflow-hidden bg-background cursor-pointer" onClick={() => setLightboxShot(ds.serve_path)}>
+                        <div className="aspect-video bg-muted overflow-hidden">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={`/api/tutor-docs/file?p=${encodeURIComponent(ds.serve_path)}`} alt={ds.filename} className="w-full h-full object-contain" loading="lazy" />
+                        </div>
+                        <div className="p-1 text-[9px] truncate">{ds.filename}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="text-muted-foreground">First 40 lines of code (real file content):</div>
               <pre className="text-[10px] bg-muted/30 p-3 rounded max-h-[55vh] overflow-auto font-mono border"><code>{previewScreen.preview}</code></pre>
               {previewScreen.absolute_path && (
                 <div className="text-[10px] text-muted-foreground">Absolute path on disk: <code>{previewScreen.absolute_path}</code></div>
               )}
             </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Screenshot lightbox */}
+      {lightboxShot && (
+        <Dialog open onOpenChange={() => setLightboxShot(null)}>
+          <DialogContent className="max-w-6xl">
+            <DialogHeader><DialogTitle className="text-sm flex items-center gap-2"><ImageIcon className="w-4 h-4 text-pink-500" /> Screenshot from Tutor LMS docs</DialogTitle></DialogHeader>
+            <div className="bg-muted/30 rounded p-4 flex items-center justify-center max-h-[75vh]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={`/api/tutor-docs/file?p=${encodeURIComponent(lightboxShot)}`} alt="screenshot" className="max-w-full max-h-[70vh] object-contain" />
+            </div>
+            <div className="text-xs text-muted-foreground"><code>{lightboxShot}</code></div>
           </DialogContent>
         </Dialog>
       )}
@@ -904,6 +1190,7 @@ export default function Home() {
       'quiz-types': '/api/spec/quiz-types',
       'lastsaas': '/api/lastsaas/architecture',
       'tutor-kb': '/api/tutor-kb/addons',
+      'tutor-docs': '/api/tutor-docs',
       'comparison': '/api/comparison',
       'visual-ui': '/api/screenshots',
       'screens': '/api/screens',
@@ -1114,6 +1401,13 @@ export default function Home() {
           </Card>
         </div>
       )
+    }
+
+    // === TUTOR DOCS (295 real pages + 870 screenshots) ===
+    if (active === 'tutor-docs') {
+      if (loading) return <div className="flex items-center gap-2 p-8"><Loader2 className="w-5 h-5 animate-spin text-orange-500" /><span>Loading Tutor LMS docs...</span></div>
+      if (!apiData) return <div className="p-8 text-muted-foreground">Loading...</div>
+      return <TutorDocsSection data={apiData} searchQuery={search} />
     }
 
     // === TUTOR KB ===

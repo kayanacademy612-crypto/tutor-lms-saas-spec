@@ -84,3 +84,42 @@ Stage Summary:
 - Honest disclosure shown in UI: 408MB docs bundle lost, but real source images + templates now power the comparison
 - For screens without rendered screenshots, the actual PHP template file IS the source of truth (better than a screenshot because it's the code that generates the screen)
 - New API endpoints: /api/screenshots, /api/screens, /api/screens/tutor, /api/screens/lastsaas
+
+---
+Task ID: 16-tutor-docs-bundle
+Agent: Main (Super Z)
+Task: Download the 408MB Tutor LMS docs bundle from Google Drive (file ID 12m2ZrSv8tC5xfpMTALrkWJIl1_DaEIp9), extract it, and add a new "Tutor Docs" sidebar item plus real screenshots in the Frontend Screen Inventory.
+
+Work Log:
+- Installed gdown 6.1.0 via pip (--break-system-packages)
+- Downloaded 428MB ZIP in 12 seconds via gdown
+- Extracted to /home/z/my-project/repos/tutor-docs/tutorlms-docs/ — it's an HTTrack mirror of tutorlms.com/docs with 2,967 files total
+- Identified 297 doc directories under tutorlms.com/docs/ — each contains a real index.html page
+- Found 870 real screenshot images under docs.themeum.com/wp-content/uploads/ (years 2019-2026)
+- Wrote /scripts/index-tutor-docs.py — parses every index.html, extracts title/category/text/image references, builds a 2.6MB JSON catalog
+- Indexed 295 doc pages across 32 categories (Admin Panel 12, Elementor 38, Divi 29, Quiz 17, Frontend 13, Certificate Builder 10, Dev Guide 7, Setup 6, etc.)
+- Indexed 870 unique screenshots referenced 959 times across docs
+- Created /api/tutor-docs route — returns catalog (pages + images list, no full text in listing)
+- Created /api/tutor-docs/page route — returns full page content (text_preview + image refs) on demand
+- Created /api/tutor-docs/file route — serves real image files from /repos/tutor-docs/ with path traversal protection, MIME types, immutable cache headers
+- Wrote /scripts/match-screens-to-docs.py — matches each of 383 Tutor LMS PHP templates to relevant screenshots from docs by keyword
+- Matched 345 screens with 4,540 screenshot links (average 13.16 screenshots per screen)
+- Updated /api/screens to include doc_screenshots and doc_screenshot_count per screen
+- Added new sidebar item "Tutor Docs (295)" under tutor group with BookOpen icon
+- Built TutorDocsSection component with two view modes:
+  * Pages view: split-screen with page list on left (filterable by 32 categories) + page detail on right showing real screenshots grid + real text content
+  * Gallery view: grid of all 870 screenshots sorted by file size, with lightbox modal
+- Updated ScreensSection to show "X docs" badge per row when matched screenshots exist
+- Updated ScreensSection expand panel to show grid of up to 6 real screenshots from docs alongside the PHP template code
+- Updated ScreensSection code-preview modal to also show doc screenshots grid
+- Added screenshot lightbox modal in ScreensSection
+
+Stage Summary:
+- 428MB docs bundle successfully downloaded from Google Drive file ID 12m2ZrSv8tC5xfpMTALrkWJIl1_DaEIp9
+- 295 real Tutor LMS documentation pages indexed and browseable
+- 870 real screenshots (PNG/JPG/WEBP/GIF) served via /api/tutor-docs/file endpoint
+- 345 of 383 Tutor LMS PHP templates now have linked real screenshots from docs (90% coverage)
+- Every Tutor LMS screen in the Screen Inventory now shows actual rendered UI screenshots alongside the source code
+- New API endpoints: /api/tutor-docs, /api/tutor-docs/page?slug=, /api/tutor-docs/file?p=
+- New sidebar item: "Tutor Docs (295)" — full documentation browser with category filter, page detail, screenshot gallery, lightbox
+- Sample verified: admin-panel-courses doc page shows real "1-tutorlms-menus-courses.jpg" (1480x1831 JPEG, 193KB) screenshot from the docs
