@@ -109,6 +109,128 @@ function DataTable({ headers, rows }: { headers: string[]; rows: React.ReactNode
 }
 
 // ════════════════════════════════════════════════════════════════
+// AI SEARCH SECTION — supports both LastSaaS (CodeWiki) and Tutor LMS (internal)
+// ════════════════════════════════════════════════════════════════
+function AISearchSection({ aiQuestion, setAiQuestion, aiAnswer, aiLoading, aiSource, askAI }: {
+  aiQuestion: string; setAiQuestion: (v: string) => void; aiAnswer: string | null; aiLoading: boolean; aiSource: string; askAI: () => void
+}) {
+  const [searchTarget, setSearchTarget] = useState<'lastsaas' | 'tutor' | 'compare'>('lastsaas')
+  const [tutorAnswer, setTutorAnswer] = useState<string | null>(null)
+  const [tutorLoading, setTutorLoading] = useState(false)
+  const [tutorResults, setTutorResults] = useState<any[]>([])
+
+  const askTutor = async () => {
+    if (!aiQuestion) return
+    setTutorLoading(true); setTutorAnswer(null); setTutorResults([])
+    try {
+      const res = await fetch('/api/tutor-kb/search', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: aiQuestion })
+      })
+      const data = await res.json()
+      setTutorAnswer(data.answer || data.error || 'No response')
+      setTutorResults(data.results || [])
+    } catch (e: any) { setTutorAnswer(`Error: ${e.message}`) }
+    setTutorLoading(false)
+  }
+
+  const handleAsk = () => {
+    if (searchTarget === 'lastsaas') { askAI() }
+    else if (searchTarget === 'tutor') { askTutor() }
+    else if (searchTarget === 'compare') { askAI(); setTimeout(() => askTutor(), 500) }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <Brain className="w-8 h-8 text-purple-500" />
+        <div><h1 className="text-3xl font-bold">AI Search</h1><p className="text-muted-foreground">Ask questions about either codebase. Two separate knowledge bases, never mixed.</p></div>
+      </div>
+
+      {/* Target selector */}
+      <div className="flex gap-2">
+        <Button variant={searchTarget === 'lastsaas' ? 'default' : 'outline'} size="sm" onClick={() => setSearchTarget('lastsaas')} className="text-xs gap-1">
+          <Server className="w-3 h-3" /> LastSaaS (CodeWiki)
+        </Button>
+        <Button variant={searchTarget === 'tutor' ? 'default' : 'outline'} size="sm" onClick={() => setSearchTarget('tutor')} className="text-xs gap-1">
+          <FileText className="w-3 h-3" /> Tutor LMS (Internal Index)
+        </Button>
+        <Button variant={searchTarget === 'compare' ? 'default' : 'outline'} size="sm" onClick={() => setSearchTarget('compare')} className="text-xs gap-1">
+          <GitCompare className="w-3 h-3" /> Compare Both
+        </Button>
+      </div>
+
+      {/* Question input */}
+      <Card className="border-purple-500/20">
+        <CardContent className="p-4 space-y-3">
+          <div className="flex gap-2">
+            <Input
+              placeholder={searchTarget === 'lastsaas' ? 'Ask about lastsaas... (e.g. How does authentication work?)' : searchTarget === 'tutor' ? 'Ask about Tutor LMS... (e.g. How does quiz grading work?)' : 'Ask both codebases... (e.g. How does authentication work?)'}
+              value={aiQuestion} onChange={e => setAiQuestion(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAsk()} className="flex-1"
+            />
+            <Button onClick={handleAsk} disabled={aiLoading || tutorLoading}>
+              {(aiLoading || tutorLoading) ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Ask'}
+            </Button>
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            {searchTarget === 'lastsaas' && ['How does authentication work?', 'How are MongoDB collections defined?', 'How does the Stripe integration work?', 'How does multi-tenancy work?'].map(q => (
+              <Button key={q} variant="outline" size="sm" className="text-xs" onClick={() => setAiQuestion(q)}>{q}</Button>
+            ))}
+            {searchTarget === 'tutor' && ['How does quiz grading work?', 'How are courses structured?', 'How does enrollment work?', 'How do certificates work?'].map(q => (
+              <Button key={q} variant="outline" size="sm" className="text-xs" onClick={() => setAiQuestion(q)}>{q}</Button>
+            ))}
+            {searchTarget === 'compare' && ['How does authentication work?', 'How are payments handled?', 'How does email work?', 'How is data stored?'].map(q => (
+              <Button key={q} variant="outline" size="sm" className="text-xs" onClick={() => setAiQuestion(q)}>{q}</Button>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* LastSaaS answer */}
+      {(searchTarget === 'lastsaas' || searchTarget === 'compare') && aiAnswer && (
+        <Card className="border-blue-500/20"><CardHeader><CardTitle className="text-base flex items-center gap-2"><Server className="w-4 h-4 text-blue-500" /> LastSaaS Answer <Badge variant="outline" className="text-xs bg-blue-500/10 text-blue-600 dark:text-blue-400">{aiSource}</Badge></CardTitle></CardHeader>
+          <CardContent><pre className="whitespace-pre-wrap text-sm text-muted-foreground max-h-[50vh] overflow-y-auto">{aiAnswer}</pre></CardContent>
+        </Card>
+      )}
+
+      {/* Tutor answer */}
+      {(searchTarget === 'tutor' || searchTarget === 'compare') && tutorAnswer && (
+        <Card className="border-orange-500/20"><CardHeader><CardTitle className="text-base flex items-center gap-2"><FileText className="w-4 h-4 text-orange-500" /> Tutor LMS Answer <Badge variant="outline" className="text-xs bg-orange-500/10 text-orange-600 dark:text-orange-400">Internal Index</Badge></CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            <pre className="whitespace-pre-wrap text-sm text-muted-foreground max-h-[40vh] overflow-y-auto">{tutorAnswer}</pre>
+            {tutorResults.length > 0 && (
+              <div className="space-y-1">
+                <div className="text-xs font-semibold uppercase text-muted-foreground">Source References ({tutorResults.length} found)</div>
+                {tutorResults.slice(0, 10).map((r: any, i: number) => (
+                  <div key={i} className="flex items-center gap-2 p-2 border rounded text-xs">
+                    <Badge variant="secondary" className="shrink-0">{r.type}</Badge>
+                    <span className="font-medium text-orange-600 dark:text-orange-400">{r.name}</span>
+                    <span className="text-muted-foreground truncate">{r.detail}</span>
+                    <code className="text-muted-foreground shrink-0 text-[10px]">{r.source}</code>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Info card */}
+      <div className="grid md:grid-cols-2 gap-4">
+        <Card className="border-blue-500/20 bg-blue-500/5"><CardContent className="p-4 text-sm">
+          <div className="flex items-center gap-2 mb-1"><Server className="w-4 h-4 text-blue-500" /><strong>LastSaaS</strong></div>
+          Questions are proxied to <code className="text-blue-600 dark:text-blue-400">codewiki.google</code> via CodeWiki MCP. The Gemini agent has full knowledge of the lastsaas Go + React codebase.
+        </CardContent></Card>
+        <Card className="border-orange-500/20 bg-orange-500/5"><CardContent className="p-4 text-sm">
+          <div className="flex items-center gap-2 mb-1"><FileText className="w-4 h-4 text-orange-500" /><strong>Tutor LMS</strong></div>
+          Questions search our internal index of <strong>2,254 PHP files</strong>, 89 classes, 16 models, 29 addons, 480 events, 66 settings, 54 email triggers. Results include source file references.
+        </CardContent></Card>
+      </div>
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════════════════════
 // INTERACTIVE COMPARISON SECTION
 // ════════════════════════════════════════════════════════════════
 function ComparisonSection({ data, searchQuery }: { data: any; searchQuery: string }) {
@@ -600,35 +722,7 @@ export default function Home() {
 
     // === AI SEARCH ===
     if (active === 'ai-search') {
-      return (
-        <div className="space-y-6">
-          <div className="flex items-center gap-3">
-            <Brain className="w-8 h-8 text-purple-500" />
-            <div><h1 className="text-3xl font-bold">AI Search</h1><p className="text-muted-foreground">Ask questions about either codebase via CodeWiki/MCP</p></div>
-          </div>
-          <Card className="border-purple-500/20">
-            <CardContent className="p-4 space-y-3">
-              <div className="flex gap-2">
-                <Input placeholder="Ask about lastsaas... (e.g. How does authentication work?)" value={aiQuestion} onChange={e => setAiQuestion(e.target.value)} onKeyDown={e => e.key === 'Enter' && askAI()} className="flex-1" />
-                <Button onClick={askAI} disabled={aiLoading}>{aiLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Ask'}</Button>
-              </div>
-              <div className="flex gap-2 flex-wrap">
-                {['How does authentication work?', 'How are MongoDB collections defined?', 'How does the Stripe integration work?', 'How does multi-tenancy work?'].map(q => (
-                  <Button key={q} variant="outline" size="sm" className="text-xs" onClick={() => { setAiQuestion(q); }}>{q}</Button>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-          {aiAnswer && (
-            <Card><CardHeader><CardTitle className="text-base flex items-center gap-2">Answer <Badge variant="outline" className="text-xs bg-blue-500/10 text-blue-600 dark:text-blue-400">{aiSource}</Badge></CardTitle></CardHeader>
-              <CardContent><pre className="whitespace-pre-wrap text-sm text-muted-foreground max-h-[60vh] overflow-y-auto">{aiAnswer}</pre></CardContent>
-            </Card>
-          )}
-          <Card className="border-amber-500/20 bg-amber-500/5"><CardContent className="p-4 text-sm">
-            <strong>How it works:</strong> Questions are proxied to <code className="text-amber-600 dark:text-amber-400">codewiki.google/github.com/jonradoff/lastsaas</code> via the CodeWiki MCP client. The Gemini agent (which has full knowledge of the lastsaas codebase) responds with code-level answers.
-          </CardContent></Card>
-        </div>
-      )
+      return <AISearchSection aiQuestion={aiQuestion} setAiQuestion={setAiQuestion} aiAnswer={aiAnswer} aiLoading={aiLoading} aiSource={aiSource} askAI={askAI} />
     }
 
     // === SYSTEM HEALTH ===
