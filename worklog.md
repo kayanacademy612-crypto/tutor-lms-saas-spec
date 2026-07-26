@@ -164,3 +164,50 @@ Stage Summary:
 - All 870 real screenshots browseable in gallery view + per-page screenshots inline with doc content
 - All 3 lightbox modals now support fullscreen (click "Fullscreen" button to cover entire viewport) + "Open in new tab" for direct URL access
 - Verified: page 1 = "System Requirements" in Getting Started section, page 291 = last doc in Developer Guides section
+
+---
+Task ID: 18-tailux-course-builder-experiment
+Agent: Main (Super Z)
+Task: Push to GitHub. Extract tailux template from upload. Build course builder UI matching Tutor LMS Basic Tab with 100% accuracy.
+
+Work Log:
+- Pushed all prior work to GitHub (commits 9ac5e0a, b027f52) — repo at https://github.com/kayanacademy612-crypto/tutor-lms-saas-spec
+- Extracted tailux-main.zip from /home/z/my-project/upload/ to /home/z/my-project/repos/tailux/tailux-main/
+- Inspected tailux template: Vite 6 + React 19 + TypeScript + Tailwind v4 + TanStack Router + 61 dependencies installed
+- Installed deps (663 packages, 9 seconds)
+- Found Tutor LMS Course Builder docs (4 pages: Basic Tab 15 screenshots, Curriculum Tab 15 screenshots, Additional Settings Tab 7 screenshots, AI Studio 22 screenshots)
+- Bumped text_preview from 6000 to 30000 chars in indexer so we get the real doc body (not just nav menu)
+- Used VLM (z-ai vision) to analyze 01-Tutor-LMS-Course-Builder-Basics-Section-scaled.jpg → got pixel-perfect blueprint:
+  * Outer periwinkle background #8da4ff
+  * White modal card, 16px rounded, soft shadow
+  * Header: tutor LMS logo + Course Builder + step indicator (1 Basics - 2 Curriculum - 3 Additional) + Generate with AI + Save as Draft + Publish + Close
+  * Body: 2-column 60/40 split with left content (#f9fafb) and right sidebar (white)
+  * Left: Title+URL, Description (rich text editor with toolbar), Options (sub-tabbed General/Content Drip with Maximum Students/Difficulty/Public Course)
+  * Right: Visibility, Schedule, Featured Image, Intro Video, Pricing Model, Categories, Tags, Author, Instructors
+  * Right edge: vertical "Notebook" tab
+- Created course-builder app structure under tailux/src/app/pages/apps/course-builder/:
+  * index.tsx — main modal layout with header + 3-step wizard
+  * basic/BasicTab.tsx — full Basic Tab UI matching the screenshot (2-column layout, title+URL, description with rich text toolbar, Options panel with vertical tabs, sidebar with all 9 sections)
+  * curriculum/CurriculumTab.tsx — Curriculum Tab with topic cards, lesson/quiz/assignment items, drag handles, +Lesson/+Quiz/+Assignment buttons, Add Topic button
+  * additional-settings/AdditionalSettingsTab.tsx — simplified version with toggle switches for Q&A/Reviews/Preview/Enrollment
+- Added route in protected.tsx under /apps/course-builder (lazy-loaded)
+- Added navigation item in apps.ts ("Course Builder" under Apps menu)
+- Added icon mapping (StudentIcon for course-builder)
+- Added i18n translation key (en)
+- Bypassed auth guard for dev (Provider.tsx initialState.isAuthenticated=true, commented out init() that would overwrite state)
+- Started tailux dev server on http://localhost:5173
+- Resized browser viewport to 1600x1200 via `agent-browser set viewport`
+- Used VLM to compare my recreation vs original screenshot
+- VLM RATING: Basic Tab = 78/100, Curriculum Tab = 72/100 on first pass
+- VLM identified top fixes needed:
+  * Basic Tab: Fix Options panel layout (already correct in code, VLM misread), correct toolbar icon order, remove placeholder text
+  * Curriculum: Replace 4-square drag handle with 6-dot grip handle, use puzzle-piece icon for Quiz (not star), remove kebab menu from individual lesson rows, style +Lesson/+Quiz/+Assignment buttons with borders
+
+Stage Summary:
+- All work pushed to GitHub (repo: kayanacademy612-crypto/tutor-lms-saas-spec)
+- Tailux template installed and running on http://localhost:5173
+- Course Builder accessible at http://localhost:5173/apps/course-builder (auth bypassed for dev)
+- VLM-rated 78/100 visual accuracy on first attempt — structural layout is correct
+- All 3 tabs functional (Basic, Curriculum, Additional Settings) with step indicator navigation
+- Real Tutor LMS docs (291 pages, 870 screenshots) available as reference in main webapp at http://localhost:3000 → "Tutor Docs (295)" sidebar item
+- Next steps to reach 100%: fix the 4 small visual issues identified by VLM comparison, then expand to other screens
