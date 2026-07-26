@@ -109,6 +109,98 @@ function DataTable({ headers, rows }: { headers: string[]; rows: React.ReactNode
 }
 
 // ════════════════════════════════════════════════════════════════
+// INTERACTIVE COMPARISON SECTION
+// ════════════════════════════════════════════════════════════════
+function ComparisonSection({ data, searchQuery }: { data: any; searchQuery: string }) {
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [expandedRow, setExpandedRow] = useState<number | null>(null)
+
+  const allComparisons = data.comparisons || []
+  const filtered = allComparisons.filter((c: any) => {
+    if (searchQuery && !JSON.stringify(c).toLowerCase().includes(searchQuery.toLowerCase())) return false
+    if (statusFilter !== 'all' && c.status !== statusFilter) return false
+    return true
+  })
+
+  // Group by status for summary
+  const statusCounts = allComparisons.reduce((acc: any, c: any) => {
+    acc[c.status] = (acc[c.status] || 0) + 1
+    return acc
+  }, {})
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <GitCompare className="w-8 h-8 text-yellow-500" />
+        <div><h1 className="text-3xl font-bold">Side-by-Side Comparison</h1><p className="text-muted-foreground">{data.total} comparison rows — Tutor LMS vs LastSaaS. Click any row to expand details.</p></div>
+      </div>
+
+      {/* Status summary + filter */}
+      <div className="flex flex-wrap gap-2">
+        <Button variant={statusFilter === 'all' ? 'default' : 'outline'} size="sm" onClick={() => setStatusFilter('all')} className="text-xs">All ({allComparisons.length})</Button>
+        {Object.entries(statusCounts).map(([status, count]: [string, any]) => (
+          <Button key={status} variant={statusFilter === status ? 'default' : 'outline'} size="sm" onClick={() => setStatusFilter(status)} className="text-xs">
+            <Badge variant="outline" className={`mr-1 ${STATUS_COLORS[status] || ''}`}>{count}</Badge>
+            {status.replace(/-/g, ' ')}
+          </Button>
+        ))}
+      </div>
+
+      {/* Comparison cards — expandable */}
+      <div className="space-y-2 max-h-[calc(100vh-280px)] overflow-y-auto">
+        {filtered.map((c: any, i: number) => {
+          const isExpanded = expandedRow === i
+          const realIndex = allComparisons.indexOf(c)
+          return (
+            <Card key={i} className={`cursor-pointer transition-all ${isExpanded ? 'border-amber-500/40' : ''}`} >
+              <div onClick={() => setExpandedRow(isExpanded ? null : i)} className="p-3">
+                <div className="flex items-start gap-3">
+                  <ChevronRight className={`w-4 h-4 mt-0.5 shrink-0 text-muted-foreground transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-sm">{c.category}</span>
+                      <Badge variant="outline" className={`text-xs ${STATUS_COLORS[c.status] || ''}`}>{c.status.replace(/-/g, ' ')}</Badge>
+                      <Badge variant="outline" className={c.confidence === 'confirmed' ? 'text-xs bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'text-xs bg-yellow-500/10 text-yellow-600 dark:text-yellow-400'}>{c.confidence}</Badge>
+                    </div>
+                    {!isExpanded && (
+                      <div className="mt-1 grid md:grid-cols-2 gap-2 text-xs">
+                        <div><span className="text-orange-600 dark:text-orange-400 font-medium">Tutor:</span> <span className="text-muted-foreground">{c.tutorLms?.substring(0, 80)}</span></div>
+                        <div><span className="text-blue-600 dark:text-blue-400 font-medium">LastSaaS:</span> <span className="text-muted-foreground">{c.lastsaas?.substring(0, 80)}</span></div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+              {isExpanded && (
+                <div className="border-t px-4 pb-4 pt-3 space-y-3 bg-muted/20">
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1"><span className="w-3 h-3 rounded-full bg-orange-500"></span><span className="text-xs font-semibold uppercase text-orange-600 dark:text-orange-400">Tutor LMS</span></div>
+                      <p className="text-sm text-muted-foreground">{c.tutorLms}</p>
+                      <div className="mt-2 text-xs"><span className="text-muted-foreground">Source:</span> <code className="font-mono text-orange-600 dark:text-orange-400">{c.tutorSource}</code></div>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 mb-1"><span className="w-3 h-3 rounded-full bg-blue-500"></span><span className="text-xs font-semibold uppercase text-blue-600 dark:text-blue-400">LastSaaS</span></div>
+                      <p className="text-sm text-muted-foreground">{c.lastsaas}</p>
+                      <div className="mt-2 text-xs"><span className="text-muted-foreground">Source:</span> <code className="font-mono text-blue-600 dark:text-blue-400">{c.lastsaasSource}</code></div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 pt-2 border-t">
+                    <Badge variant="outline" className={`text-xs ${STATUS_COLORS[c.status] || ''}`}>{c.status.replace(/-/g, ' ')}</Badge>
+                    <Badge variant="outline" className={c.confidence === 'confirmed' ? 'text-xs bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'text-xs bg-yellow-500/10 text-yellow-600 dark:text-yellow-400'}>Confidence: {c.confidence}</Badge>
+                  </div>
+                </div>
+              )}
+            </Card>
+          )
+        })}
+      </div>
+      <p className="text-xs text-muted-foreground">Showing {filtered.length} of {data.total} comparisons. Click any row to expand details with source files.</p>
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════════════════════
 // FILES & RESOURCES SECTION
 // ════════════════════════════════════════════════════════════════
 const SYSTEM_COLORS: Record<string, string> = {
@@ -503,26 +595,7 @@ export default function Home() {
     if (active === 'comparison') {
       if (loading) return <div className="flex items-center gap-2 p-8"><Loader2 className="w-5 h-5 animate-spin text-yellow-500" /><span>Loading comparison...</span></div>
       if (!apiData) return <div className="p-8 text-muted-foreground">Loading...</div>
-      const filtered = filterData(apiData.comparisons || [])
-      return (
-        <div className="space-y-4">
-          <div className="flex items-center gap-3">
-            <GitCompare className="w-8 h-8 text-yellow-500" />
-            <div><h1 className="text-3xl font-bold">Side-by-Side Comparison</h1><p className="text-muted-foreground">{apiData.total} comparison rows — Tutor LMS vs LastSaaS</p></div>
-          </div>
-          <DataTable headers={['Category', 'Tutor LMS', 'LastSaaS', 'Status', 'Tutor Source', 'LastSaaS Source', 'Confidence']}
-            rows={filtered.map((c: any) => [
-              <span className="font-medium">{c.category}</span>,
-              <span className="text-xs text-orange-600 dark:text-orange-400">{c.tutorLms}</span>,
-              <span className="text-xs text-blue-600 dark:text-blue-400">{c.lastsaas}</span>,
-              <Badge variant="outline" className={`text-xs ${STATUS_COLORS[c.status] || ''}`}>{c.status}</Badge>,
-              <span className="text-xs font-mono text-muted-foreground">{c.tutorSource}</span>,
-              <span className="text-xs font-mono text-muted-foreground">{c.lastsaasSource}</span>,
-              <Badge variant="outline" className={c.confidence === 'confirmed' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400'}>{c.confidence}</Badge>,
-            ])} />
-          <p className="text-xs text-muted-foreground">Showing {filtered.length} of {apiData.total} comparisons</p>
-        </div>
-      )
+      return <ComparisonSection data={apiData} searchQuery={search} />
     }
 
     // === AI SEARCH ===
