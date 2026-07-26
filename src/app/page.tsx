@@ -722,7 +722,7 @@ export default function Home() {
         <div className="space-y-4">
           <div className="flex items-center gap-3">
             <Server className="w-8 h-8 text-blue-500" />
-            <div><h1 className="text-3xl font-bold">LastSaaS Architecture</h1><p className="text-muted-foreground">Extracted from real source code — 134 Go files, 91 TS files</p></div>
+            <div><h1 className="text-3xl font-bold">LastSaaS Architecture</h1><p className="text-muted-foreground">Extracted from real source code — {s.totalGoFiles} Go files, {s.totalTSFiles} TS files, {s.packages} packages</p></div>
             <Badge variant="outline" className="ml-auto bg-blue-500/10 text-blue-600 dark:text-blue-400"><CheckCircle className="w-3 h-3 mr-1" /> CodeWiki Connected</Badge>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
@@ -733,25 +733,91 @@ export default function Home() {
               { label: 'Models', value: s.models }, { label: 'Events', value: s.events },
               { label: 'Frontend Pages', value: s.frontendPages }, { label: 'Components', value: s.frontendComponents },
               { label: 'Contexts', value: s.frontendContexts }, { label: 'API Handlers', value: s.apiHandlers },
-            ].map(stat => <Card key={stat.label} className="p-3"><div className="text-xl font-bold">{stat.value}</div><div className="text-xs text-muted-foreground">{stat.label}</div></Card>)}
+            ].map((stat, i) => <Card key={`ls-stat-${i}`} className="p-3"><div className="text-xl font-bold">{stat.value}</div><div className="text-xs text-muted-foreground">{stat.label}</div></Card>)}
           </div>
-          <Card><CardHeader><CardTitle className="text-base">Backend Packages ({s.packages})</CardTitle></CardHeader>
-            <CardContent><div className="grid md:grid-cols-3 gap-2">
-              {apiData.packages.map((pkg: any) => (
-                <div key={pkg.name} className="p-2 border rounded text-xs">
-                  <div className="font-mono font-medium text-blue-600 dark:text-blue-400">{pkg.name}/</div>
-                  <div className="text-muted-foreground mt-0.5">{pkg.files} files</div>
-                  <div className="text-muted-foreground mt-0.5 truncate">{pkg.fileList[0] || ''}</div>
+
+          {/* Architecture Layers */}
+          <Card><CardHeader><CardTitle className="text-base">Architecture Layers (top → bottom)</CardTitle><CardDescription>How the system is structured — from frontend to database</CardDescription></CardHeader>
+            <CardContent><div className="space-y-2">
+              {[
+                { name: 'Frontend (React 19 + Vite)', components: ['AuthContext', 'BrandingContext', 'TenantContext', 'ThemeContext', 'API Client', '52 pages', '18 components'], source: 'lastsaas/frontend/src/', color: 'border-purple-500/30' },
+                { name: 'HTTP Layer (gorilla/mux)', components: ['main.go (router)', '10 middleware (auth, rbac, tenant, ratelimit, security, recovery, requestid, bodylimit, metrics, apiversion)'], source: 'lastsaas/backend/cmd/server/main.go', color: 'border-indigo-500/30' },
+                { name: 'API Handlers (24 files)', components: ['auth', 'tenant', 'billing', 'plans', 'webhooks', 'branding', 'admin', 'messages', 'announcements', 'config', 'health', 'telemetry', 'apikeys', 'logs', 'bundles', 'usage', 'pm', 'bootstrap', 'docs', 'openapi', 'promotions', 'helpers', 'event_definitions'], source: 'lastsaas/backend/internal/api/handlers/', color: 'border-blue-500/30' },
+                { name: 'Services (Business Logic)', components: ['auth', 'configstore', 'email (Resend)', 'events (Emitter)', 'health', 'metrics', 'planstore', 'stripe', 'telemetry', 'webhooks (Dispatcher)'], source: 'lastsaas/backend/internal/', color: 'border-cyan-500/30' },
+                { name: 'Data Layer (MongoDB)', components: ['38 collections (mongodb.go)', '16 schema validators (schema.go)', '22 model files (models/)'], source: 'lastsaas/backend/internal/db/, models/', color: 'border-emerald-500/30' },
+              ].map((layer, i) => (
+                <div key={`layer-${i}`} className={`p-3 border rounded-lg ${layer.color}`}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <Badge variant="outline" className="text-xs bg-blue-500/10 text-blue-600 dark:text-blue-400">Layer {i + 1}</Badge>
+                    <span className="font-medium text-sm">{layer.name}</span>
+                    <code className="text-xs text-muted-foreground ml-auto">{layer.source}</code>
+                  </div>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {layer.components.map((c, ci) => <Badge key={`comp-${i}-${ci}`} variant="secondary" className="text-xs font-mono">{c}</Badge>)}
+                  </div>
+                  {i < 4 && <div className="text-center mt-1 text-muted-foreground text-xs">↓</div>}
                 </div>
               ))}
             </div></CardContent>
           </Card>
-          <Card><CardHeader><CardTitle className="text-base">All data available via API</CardTitle></CardHeader>
-            <CardContent><div className="grid md:grid-cols-2 gap-2 text-xs">
-              {['GET /api/lastsaas/architecture','GET /api/lastsaas/collections','GET /api/lastsaas/routes','GET /api/lastsaas/models','GET /api/lastsaas/middleware','GET /api/lastsaas/events'].map((p, i) => (
-                <div key={`api-${i}`} className="flex items-center gap-2 p-2 border rounded"><Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-mono">GET</Badge><code className="text-amber-600 dark:text-amber-400">{p}</code></div>
+
+          {/* Module Relationships */}
+          <Card><CardHeader><CardTitle className="text-base">Module Relationships</CardTitle><CardDescription>How modules connect to each other — traced from source code</CardDescription></CardHeader>
+            <CardContent><div className="space-y-1 max-h-[400px] overflow-y-auto">
+              {[
+                { from: 'db', to: 'collections', type: 'owns', desc: 'The db package defines all 38 MongoDB collections via accessor methods in mongodb.go' },
+                { from: 'models', to: 'db', type: 'maps-to', desc: 'Each model struct maps to a MongoDB collection with bson tags' },
+                { from: 'api/handlers', to: 'models', type: 'uses', desc: 'API handlers import model structs for request/response serialization' },
+                { from: 'middleware/auth', to: 'models/user', type: 'validates', desc: 'Auth middleware validates JWT tokens against the users collection' },
+                { from: 'middleware/tenant', to: 'models/tenant', type: 'extracts', desc: 'Tenant middleware extracts tenant_id from JWT and injects into request context' },
+                { from: 'middleware/rbac', to: 'models/membership', type: 'checks', desc: 'RBAC middleware checks tenant_memberships for user roles' },
+                { from: 'stripe', to: 'models/plan', type: 'syncs', desc: 'Stripe service syncs plans collection with Stripe Products and Prices' },
+                { from: 'stripe', to: 'models/billing', type: 'records', desc: 'Stripe service records transactions in financial_transactions collection' },
+                { from: 'webhooks/dispatcher', to: 'models/webhook', type: 'delivers', desc: 'Webhook dispatcher reads webhook subscriptions and delivers signed payloads' },
+                { from: 'events/emitter', to: 'webhooks/dispatcher', type: 'triggers', desc: 'Event emitter fires events that the webhook dispatcher subscribes to' },
+                { from: 'email/resend', to: 'events/emitter', type: 'listens', desc: 'Email service subscribes to events and sends transactional emails via Resend API' },
+                { from: 'configstore', to: 'db', type: 'caches', desc: 'Config store caches config_vars collection in-memory with periodic reload' },
+                { from: 'health', to: 'db', type: 'monitors', desc: 'Health service runs periodic checks on MongoDB connectivity' },
+                { from: 'metrics', to: 'health', type: 'collects', desc: 'Metrics service collects system metrics from health checks and Go runtime' },
+                { from: 'frontend/AuthContext', to: 'api/handlers/auth', type: 'calls', desc: 'AuthContext calls /api/auth/* endpoints for login, register, refresh' },
+                { from: 'frontend/BrandingContext', to: 'api/handlers/branding', type: 'calls', desc: 'BrandingContext calls /api/branding for tenant branding config' },
+                { from: 'frontend/API Client', to: 'api/handlers', type: 'calls-all', desc: 'API client makes all HTTP requests to /api/* endpoints with token refresh' },
+                { from: 'planstore', to: 'models/plan', type: 'manages', desc: 'Plan store manages plan data with caching on top of plans collection' },
+              ].map((rel, i) => (
+                <div key={`rel-${i}`} className="flex items-center gap-2 p-2 border rounded text-xs hover:bg-muted/30">
+                  <code className="font-mono text-blue-600 dark:text-blue-400 shrink-0">{rel.from}</code>
+                  <ArrowRight className="w-3 h-3 text-muted-foreground shrink-0" />
+                  <Badge variant="outline" className="text-xs shrink-0 bg-amber-500/10 text-amber-600 dark:text-amber-400">{rel.type}</Badge>
+                  <ArrowRight className="w-3 h-3 text-muted-foreground shrink-0" />
+                  <code className="font-mono text-blue-600 dark:text-blue-400 shrink-0">{rel.to}</code>
+                  <span className="text-muted-foreground truncate ml-2">{rel.desc}</span>
+                </div>
               ))}
             </div></CardContent>
+          </Card>
+
+          {/* Backend Packages */}
+          <Card><CardHeader><CardTitle className="text-base">Backend Packages ({s.packages})</CardTitle></CardHeader>
+            <CardContent><div className="grid md:grid-cols-3 gap-2">
+              {apiData.packages.map((pkg: any, i: number) => (
+                <div key={pkg.name || `pkg-${i}`} className="p-2 border rounded text-xs">
+                  <div className="font-mono font-medium text-blue-600 dark:text-blue-400">{pkg.name}/</div>
+                  <div className="text-muted-foreground mt-0.5">{pkg.files} files</div>
+                  <div className="text-muted-foreground mt-0.5 truncate">{pkg.fileList?.[0] || ''}</div>
+                </div>
+              ))}
+            </div></CardContent>
+          </Card>
+
+          <Card><CardHeader><CardTitle className="text-base">Query LastSaaS via CodeWiki</CardTitle></CardHeader>
+            <CardContent className="text-sm text-muted-foreground">
+              <p>Ask questions about the lastsaas codebase through the AI Search section (select "LastSaaS" target). Questions are proxied to <code className="text-blue-600 dark:text-blue-400">codewiki.google/github.com/jonradoff/lastsaas</code> via CodeWiki MCP.</p>
+              <div className="mt-2 grid md:grid-cols-2 gap-2 text-xs">
+                {['GET /api/lastsaas/architecture','GET /api/lastsaas/collections','GET /api/lastsaas/routes','GET /api/lastsaas/models','GET /api/lastsaas/middleware','GET /api/lastsaas/events','GET /api/lastsaas/relationships','POST /api/codewiki/ask'].map((p, i) => (
+                  <div key={`lsapi-${i}`} className="flex items-center gap-2 p-2 border rounded"><Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-mono text-xs">{p.startsWith('POST') ? 'POST' : 'GET'}</Badge><code className="text-amber-600 dark:text-amber-400">{p.replace('GET ', '').replace('POST ', '')}</code></div>
+                ))}
+              </div>
+            </CardContent>
           </Card>
         </div>
       )
