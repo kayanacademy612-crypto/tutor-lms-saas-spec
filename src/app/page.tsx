@@ -332,15 +332,42 @@ function AISearchSection({ aiQuestion, setAiQuestion, aiAnswer, aiLoading, aiSou
 // INTERACTIVE COMPARISON SECTION
 // ════════════════════════════════════════════════════════════════
 // ============================================================
-// CODEWIKI — Full CodeWiki HTML in iframe + AI chat panel
+// CODEWIKI — Native render with section nav + content + AI chat
 // ============================================================
 function CodeWikiSection({ data, searchQuery }: { data: any; searchQuery: string }) {
+  const [nav, setNav] = useState<any[]>([])
+  const [selectedSection, setSelectedSection] = useState<string | null>(null)
+  const [sectionData, setSectionData] = useState<any>(null)
+  const [sectionLoading, setSectionLoading] = useState(false)
   const [chatOpen, setChatOpen] = useState(true)
   const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([
-    { role: 'assistant', content: 'I have access to the full LastSaaS CodeWiki analysis (61 sections, 177 source files). Ask me anything about the lastsaas codebase architecture, models, API routes, middleware, auth, billing, webhooks, frontend, or how it connects to the LMS compendium plan.' }
+    { role: 'assistant', content: 'I have access to the full LastSaaS CodeWiki analysis (61 sections, 177 source files, 48 architecture diagrams). Ask me anything about the lastsaas codebase — architecture, models, API routes, middleware, auth, billing, webhooks, frontend, or how it connects to the LMS compendium plan.' }
   ])
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
+
+  // Load nav on mount
+  useEffect(() => {
+    fetch('/api/codewiki-sections?format=nav')
+      .then(r => r.json())
+      .then(d => {
+        setNav(d.sections || [])
+        if (d.sections?.length > 0) {
+          setSelectedSection(d.sections[0].id)
+        }
+      })
+  }, [])
+
+  // Load section content when selected
+  useEffect(() => {
+    if (!selectedSection) return
+    setSectionLoading(true)
+    setSectionData(null)
+    fetch(`/api/codewiki-sections?section=${selectedSection}`)
+      .then(r => r.json())
+      .then(d => setSectionData(d))
+      .finally(() => setSectionLoading(false))
+  }, [selectedSection])
 
   const sendChat = async () => {
     if (!chatInput.trim() || chatLoading) return
@@ -349,10 +376,8 @@ function CodeWikiSection({ data, searchQuery }: { data: any; searchQuery: string
     setChatMessages(prev => [...prev, { role: 'user', content: q }])
     setChatLoading(true)
     try {
-      // Query our AI search endpoint which has access to the codewiki data
       const res = await fetch('/api/codewiki/ask', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: q })
       })
       const d = await res.json()
@@ -363,83 +388,124 @@ function CodeWikiSection({ data, searchQuery }: { data: any; searchQuery: string
     setChatLoading(false)
   }
 
+  const filteredNav = searchQuery
+    ? nav.filter((s: any) => s.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    : nav
+
   return (
-    <div className="flex h-[calc(100vh-8rem)] gap-0 -mx-4 md:-mx-8">
-      {/* Main content — full CodeWiki HTML in iframe */}
-      <div className="flex-1 relative">
-        <div className="absolute top-2 right-2 z-10 flex gap-2">
-          <a href="/codewiki.html" target="_blank" rel="noopener noreferrer">
-            <Button variant="outline" size="sm" className="text-xs bg-white/90 dark:bg-zinc-800/90 backdrop-blur shadow-sm">
-              Open in new tab ↗
-            </Button>
-          </a>
-          <Button
-            variant={chatOpen ? "default" : "outline"}
-            size="sm"
-            className="text-xs bg-white/90 dark:bg-zinc-800/90 backdrop-blur shadow-sm"
-            onClick={() => setChatOpen(!chatOpen)}
-          >
-            <Brain className="w-3 h-3 mr-1" />
-            {chatOpen ? 'Hide Chat' : 'AI Chat'}
-          </Button>
+    <div className="flex gap-4 h-[calc(100vh-8rem)]">
+      {/* Section navigation — left sub-sidebar */}
+      <div className="w-64 shrink-0 flex flex-col">
+        <div className="mb-2 flex items-center gap-2">
+          <FileText className="w-4 h-4 text-blue-500" />
+          <span className="text-sm font-semibold">Sections</span>
+          <Badge variant="outline" className="text-[10px] ml-auto">{nav.length}</Badge>
         </div>
-        <iframe
-          src="/codewiki.html"
-          className="w-full h-full border-0"
-          title="LastSaaS CodeWiki"
-        />
+        <ScrollArea className="flex-1 border rounded-md">
+          <div className="p-1">
+            {filteredNav.map((s: any) => (
+              <button
+                key={s.id}
+                onClick={() => setSelectedSection(s.id)}
+                className={`w-full text-left px-2 py-1.5 rounded text-xs transition-colors ${
+                  selectedSection === s.id
+                    ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 font-medium'
+                    : 'text-muted-foreground hover:bg-muted'
+                } ${s.level === 3 ? 'pl-4' : ''}`}
+              >
+                <div className="flex items-center gap-1.5">
+                  <span className="flex-1 truncate">{s.name}</span>
+                  {s.svg_count > 0 && <Badge variant="outline" className="text-[8px] px-1 py-0 shrink-0 bg-pink-500/10 text-pink-600">{s.svg_count}📊</Badge>}
+                </div>
+              </button>
+            ))}
+          </div>
+        </ScrollArea>
       </div>
 
-      {/* AI Chat panel — right side */}
-      {chatOpen && (
-        <div className="w-96 shrink-0 border-l bg-background flex flex-col">
-          <div className="p-3 border-b bg-blue-500/5">
-            <div className="flex items-center gap-2">
-              <Brain className="w-4 h-4 text-blue-500" />
-              <span className="text-sm font-semibold">CodeWiki AI Assistant</span>
+      {/* Content — center */}
+      <div className="flex-1 min-w-0 overflow-y-auto pr-2">
+        {sectionLoading && (
+          <div className="flex items-center gap-2 p-8"><Loader2 className="w-5 h-5 animate-spin text-blue-500" /><span>Loading section...</span></div>
+        )}
+        {!sectionLoading && sectionData && (
+          <div className="space-y-4">
+            {/* Section header */}
+            <div className="flex items-center gap-3 pb-3 border-b">
+              {sectionData.level === 2 ? <h2 className="text-2xl font-bold">{sectionData.name}</h2> : <h3 className="text-xl font-semibold">{sectionData.name}</h3>}
+              <div className="flex gap-1.5 ml-auto">
+                {sectionData.svg_count > 0 && <Badge variant="outline" className="text-[10px] bg-pink-500/10 text-pink-600">{sectionData.svg_count} diagrams</Badge>}
+                {sectionData.code_count > 0 && <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-600">{sectionData.code_count} code blocks</Badge>}
+                <Badge variant="outline" className="text-[10px] bg-blue-500/10 text-blue-600">{sectionData.content_length.toLocaleString()} chars</Badge>
+              </div>
             </div>
-            <p className="text-[10px] text-muted-foreground mt-1">Ask anything about the lastsaas codebase analysis. 61 sections, 177 source files, 50 architecture diagrams.</p>
+
+            {/* SVG diagrams — rendered natively */}
+            {sectionData.svgs && sectionData.svgs.length > 0 && (
+              <div className="space-y-3">
+                {sectionData.svgs.map((svg: string, i: number) => (
+                  <Card key={`svg-${i}`} className="p-4 bg-white dark:bg-zinc-900">
+                    <div className="text-[10px] text-muted-foreground mb-2">Diagram {i + 1}</div>
+                    <div className="w-full overflow-x-auto" dangerouslySetInnerHTML={{ __html: svg }} />
+                  </Card>
+                ))}
+              </div>
+            )}
+
+            {/* Text content */}
+            <div className="prose prose-sm dark:prose-invert max-w-none">
+              <pre className="whitespace-pre-wrap break-words text-sm font-sans leading-relaxed bg-transparent border-0 p-0">{sectionData.content}</pre>
+            </div>
+
+            {/* Code blocks */}
+            {sectionData.code_blocks && sectionData.code_blocks.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Code Blocks ({sectionData.code_blocks.length})</div>
+                {sectionData.code_blocks.map((code: string, i: number) => (
+                  <pre key={`code-${i}`} className="bg-zinc-950 border border-zinc-800 rounded-md p-3 text-xs font-mono text-zinc-300 overflow-x-auto">
+                    <code>{code}</code>
+                  </pre>
+                ))}
+              </div>
+            )}
           </div>
-          <ScrollArea className="flex-1 p-3">
-            <div className="space-y-3">
+        )}
+      </div>
+
+      {/* AI Chat — right panel */}
+      {chatOpen && (
+        <div className="w-80 shrink-0 border-l pl-4 flex flex-col">
+          <div className="mb-2 flex items-center gap-2">
+            <Brain className="w-4 h-4 text-blue-500" />
+            <span className="text-sm font-semibold">AI Assistant</span>
+            <Button variant="ghost" size="sm" className="ml-auto text-xs" onClick={() => setChatOpen(false)}>Hide</Button>
+          </div>
+          <ScrollArea className="flex-1 min-h-0">
+            <div className="space-y-2 pr-2">
               {chatMessages.map((msg, i) => (
                 <div key={`msg-${i}`} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[85%] rounded-lg p-2.5 text-xs ${
-                    msg.role === 'user'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-muted text-foreground'
-                  }`}>
+                  <div className={`max-w-[85%] rounded-lg p-2 text-xs ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-muted'}`}>
                     <div className="whitespace-pre-wrap break-words">{msg.content}</div>
                   </div>
                 </div>
               ))}
               {chatLoading && (
-                <div className="flex justify-start">
-                  <div className="bg-muted rounded-lg p-2.5 flex items-center gap-2 text-xs">
-                    <Loader2 className="w-3 h-3 animate-spin" /> Searching CodeWiki...
-                  </div>
-                </div>
+                <div className="flex justify-start"><div className="bg-muted rounded-lg p-2 text-xs flex items-center gap-2"><Loader2 className="w-3 h-3 animate-spin" /> Searching...</div></div>
               )}
             </div>
           </ScrollArea>
-          <div className="p-3 border-t">
-            <div className="flex gap-2">
-              <Input
-                placeholder="Ask about the codebase..."
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') sendChat() }}
-                className="text-xs h-9"
-              />
-              <Button size="sm" onClick={sendChat} disabled={chatLoading} className="shrink-0">
-                <ArrowRight className="w-3 h-3" />
-              </Button>
-            </div>
-            <div className="text-[9px] text-muted-foreground mt-1.5">
-              API: POST /api/codewiki/ask · Also: GET /api/codewiki-analysis?format=text
+          <div className="pt-2 border-t mt-2">
+            <div className="flex gap-1.5">
+              <Input placeholder="Ask about the codebase..." value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') sendChat() }} className="text-xs h-8" />
+              <Button size="sm" onClick={sendChat} disabled={chatLoading} className="shrink-0 h-8 w-8 p-0"><ArrowRight className="w-3 h-3" /></Button>
             </div>
           </div>
         </div>
+      )}
+      {!chatOpen && (
+        <Button variant="outline" size="sm" className="self-start shrink-0" onClick={() => setChatOpen(true)}>
+          <Brain className="w-3 h-3 mr-1" /> AI Chat
+        </Button>
       )}
     </div>
   )
