@@ -378,6 +378,44 @@ function CodeWikiSection({ data, searchQuery }: { data: any; searchQuery: string
         </CardContent>
       </Card>
 
+      {/* API Access — how AI agents can read the full analysis */}
+      <Card className="border-purple-500/20 bg-purple-500/5">
+        <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Plug className="w-4 h-4 text-purple-500" /> API Access — Full Text for AI Agents</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-muted-foreground">Any AI agent can read the complete analysis via 3 endpoints. The full text of all 61 sections is served — not summaries.</p>
+          <div className="space-y-2">
+            <div className="flex items-start gap-2 p-2 rounded border bg-background">
+              <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] shrink-0">JSON</Badge>
+              <div className="flex-1 min-w-0">
+                <code className="text-xs text-amber-600 dark:text-amber-400 block">GET /api/codewiki-analysis</code>
+                <p className="text-[10px] text-muted-foreground mt-0.5">Full JSON with all 61 sections + their complete content + 177 source files. ~194KB.</p>
+              </div>
+              <a href="/api/codewiki-analysis" target="_blank" rel="noopener noreferrer"><Button variant="ghost" size="sm" className="text-xs">Open ↗</Button></a>
+            </div>
+            <div className="flex items-start gap-2 p-2 rounded border bg-background">
+              <Badge variant="outline" className="bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] shrink-0">TEXT</Badge>
+              <div className="flex-1 min-w-0">
+                <code className="text-xs text-amber-600 dark:text-amber-400 block">GET /api/codewiki-analysis?format=text</code>
+                <p className="text-[10px] text-muted-foreground mt-0.5">Plain text — all 61 sections as readable markdown. Best for AI agents. ~157KB.</p>
+              </div>
+              <a href="/api/codewiki-analysis?format=text" target="_blank" rel="noopener noreferrer"><Button variant="ghost" size="sm" className="text-xs">Open ↗</Button></a>
+            </div>
+            <div className="flex items-start gap-2 p-2 rounded border bg-background">
+              <Badge variant="outline" className="bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 text-[10px] shrink-0">SINGLE</Badge>
+              <div className="flex-1 min-w-0">
+                <code className="text-xs text-amber-600 dark:text-amber-400 block">GET /api/codewiki-analysis?section=cw-5</code>
+                <p className="text-[10px] text-muted-foreground mt-0.5">Single section by ID (cw-1 through cw-61). Returns full content of that section only.</p>
+              </div>
+            </div>
+          </div>
+          <div className="text-[10px] text-muted-foreground pt-2 border-t">
+            <strong>MCP access:</strong> POST /api/mcp with tool <code>search_spec</code> and query "codewiki" also returns this data.
+            <br />
+            <strong>Cross-reference:</strong> The Compendium → SaaS plan (GET /api/compendium-saas) shows what to build on top of this foundation.
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="space-y-2">
         {filtered.map((s: any, i: number) => {
           const isExpanded = expanded === s.id
@@ -392,7 +430,12 @@ function CodeWikiSection({ data, searchQuery }: { data: any; searchQuery: string
                   <h3 className="font-medium text-sm flex-1">{s.name}</h3>
                   <Badge variant="outline" className="text-[10px] shrink-0">{s.content_length.toLocaleString()} chars</Badge>
                 </div>
-                <p className="text-xs text-muted-foreground mt-1.5 ml-8 line-clamp-2">{s.summary}</p>
+                {!isExpanded && <p className="text-xs text-muted-foreground mt-1.5 ml-8 line-clamp-2">{s.summary}</p>}
+                {isExpanded && s.content && (
+                  <div className="mt-3 ml-8">
+                    <pre className="text-xs whitespace-pre-wrap break-words bg-muted/30 dark:bg-zinc-900/50 border rounded-md p-3 max-h-[500px] overflow-y-auto font-sans leading-relaxed">{s.content}</pre>
+                  </div>
+                )}
               </div>
             </Card>
           )
