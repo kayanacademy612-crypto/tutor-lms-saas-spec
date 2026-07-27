@@ -30,6 +30,7 @@ const SECTIONS = [
   { id: 'settings', label: 'Settings (66)', icon: Mail, group: 'general' },
   { id: 'email-triggers', label: 'Email Triggers (54)', icon: Mail, group: 'general' },
   { id: 'lastsaas', label: 'LastSaaS Architecture', icon: Server, group: 'lastsaas' },
+  { id: 'codewiki', label: 'CodeWiki Analysis', icon: FileText, group: 'lastsaas' },
   { id: 'tutor-kb', label: 'Tutor LMS Knowledge', icon: FileText, group: 'tutor' },
   { id: 'tutor-docs', label: 'Tutor Docs (295)', icon: BookOpen, group: 'tutor' },
   { id: 'comparison', label: 'Comparison', icon: GitCompare, group: 'comparison' },
@@ -330,6 +331,92 @@ function AISearchSection({ aiQuestion, setAiQuestion, aiAnswer, aiLoading, aiSou
 // ════════════════════════════════════════════════════════════════
 // INTERACTIVE COMPARISON SECTION
 // ════════════════════════════════════════════════════════════════
+// ============================================================
+// CODEWIKI ANALYSIS — LastSaaS codebase analysis (61 sections)
+// ============================================================
+function CodeWikiSection({ data, searchQuery }: { data: any; searchQuery: string }) {
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const allSections: any[] = data.sections || []
+  const filtered = searchQuery
+    ? allSections.filter((s: any) => `${s.name} ${s.summary}`.toLowerCase().includes(searchQuery.toLowerCase()))
+    : allSections
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start gap-3">
+        <FileText className="w-8 h-8 text-blue-500 shrink-0 mt-1" />
+        <div className="flex-1">
+          <h1 className="text-3xl font-bold">LastSaaS CodeWiki Analysis</h1>
+          <p className="text-muted-foreground mt-1">
+            {data.total_sections} sections analyzing the lastsaas codebase (Go backend + React frontend).
+            {data.total_source_files} source files referenced. This is the foundation we build our LMS SaaS on top of.
+          </p>
+        </div>
+        <Badge variant="outline" className="bg-blue-500/10 text-blue-600 dark:text-blue-400">
+          {data.total_source_files} files
+        </Badge>
+      </div>
+
+      <Card className="border-blue-500/20 bg-blue-500/5">
+        <CardContent className="p-4 text-xs space-y-2">
+          <div className="font-semibold text-blue-600 dark:text-blue-400">How This Connects to the Compendium → SaaS Plan</div>
+          <p className="text-muted-foreground">
+            The CodeWiki analysis tells us what lastsaas <strong>already provides</strong> (auth, billing, multi-tenancy, webhooks, health monitoring, CLI tools).
+            The Compendium → SaaS plan tells us what we <strong>need to build</strong> on top of it (courses, quizzes, lessons, eCommerce, certificates, addons).
+            Together they form the complete build plan: lastsaas is the foundation, the LMS layer is what we add.
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
+            <div className="flex items-center gap-1.5"><Server className="w-3 h-3 text-blue-500" /><span>Go backend (22 packages)</span></div>
+            <div className="flex items-center gap-1.5"><FileText className="w-3 h-3 text-blue-500" /><span>22 data models</span></div>
+            <div className="flex items-center gap-1.5"><Code2 className="w-3 h-3 text-blue-500" /><span>133 API routes</span></div>
+            <div className="flex items-center gap-1.5"><Zap className="w-3 h-3 text-blue-500" /><span>22 events</span></div>
+            <div className="flex items-center gap-1.5"><CreditCard className="w-3 h-3 text-blue-500" /><span>Stripe billing</span></div>
+            <div className="flex items-center gap-1.5"><Plug className="w-3 h-3 text-blue-500" /><span>Webhooks + email</span></div>
+            <div className="flex items-center gap-1.5"><CheckCircle className="w-3 h-3 text-blue-500" /><span>Health monitoring</span></div>
+            <div className="flex items-center gap-1.5"><BookOpen className="w-3 h-3 text-blue-500" /><span>CLI tools</span></div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="space-y-2">
+        {filtered.map((s: any, i: number) => {
+          const isExpanded = expanded === s.id
+          return (
+            <Card key={s.id || `cw-${i}`}>
+              <div className="p-3">
+                <div className="flex items-center gap-3">
+                  <button onClick={() => setExpanded(isExpanded ? null : s.id)} className="shrink-0 p-1 hover:bg-muted rounded">
+                    {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                  </button>
+                  <span className="text-xs text-muted-foreground shrink-0">#{i + 1}</span>
+                  <h3 className="font-medium text-sm flex-1">{s.name}</h3>
+                  <Badge variant="outline" className="text-[10px] shrink-0">{s.content_length.toLocaleString()} chars</Badge>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1.5 ml-8 line-clamp-2">{s.summary}</p>
+              </div>
+            </Card>
+          )
+        })}
+      </div>
+
+      {data.source_files && data.source_files.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle className="text-sm">Source Files Referenced ({data.source_files.length})</CardTitle></CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-1 max-h-60 overflow-y-auto">
+              {data.source_files.map((f: string, i: number) => (
+                <code key={`sf-${i}`} className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400">{f}</code>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <p className="text-xs text-muted-foreground">Showing {filtered.length} of {data.total_sections} analysis sections from the CodeWiki.</p>
+    </div>
+  )
+}
+
 function ComparisonSection({ data, searchQuery }: { data: any; searchQuery: string }) {
   const [statusFilter, setStatusFilter] = useState('all')
   const [expandedRow, setExpandedRow] = useState<number | null>(null)
@@ -1559,6 +1646,7 @@ export default function Home() {
       'email-triggers': '/api/spec/email-triggers',
       'quiz-types': '/api/spec/quiz-types',
       'lastsaas': '/api/lastsaas/architecture',
+      'codewiki': '/api/codewiki-analysis',
       'tutor-kb': '/api/tutor-kb/addons',
       'tutor-docs': '/api/tutor-docs',
       'comparison': '/api/comparison',
@@ -1779,6 +1867,13 @@ export default function Home() {
       if (loading) return <div className="flex items-center gap-2 p-8"><Loader2 className="w-5 h-5 animate-spin text-orange-500" /><span>Loading Tutor LMS docs...</span></div>
       if (!apiData) return <div className="p-8 text-muted-foreground">Loading...</div>
       return <TutorDocsSection data={apiData} searchQuery={search} />
+    }
+
+    // === CODEWIKI ANALYSIS ===
+    if (active === 'codewiki') {
+      if (loading) return <div className="flex items-center gap-2 p-8"><Loader2 className="w-5 h-5 animate-spin text-blue-500" /><span>Loading CodeWiki analysis...</span></div>
+      if (!apiData) return <div className="p-8 text-muted-foreground">Loading...</div>
+      return <CodeWikiSection data={apiData} searchQuery={search} />
     }
 
     // === TUTOR KB ===
