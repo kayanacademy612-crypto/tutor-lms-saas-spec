@@ -1,122 +1,90 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 
-export const dynamic = 'force-dynamic'
+export const dynamic = 'force-dynamic';
 
-// Direct HTTP call to codewiki.google batchexecute API
-// Based on the codewiki-mcp client source code
-const CODEWIKI_BASE = 'https://codewiki.google'
-const RPC_ASK = 'EgIxfe'
+const dataPath = join(process.cwd(), 'src', 'data', 'lastsaas-codewiki-analysis.json');
 
-async function askCodeWiki(repo: string, question: string): Promise<{ answer: string; bytes: number; elapsedMs: number }> {
-  const start = Date.now()
-  const url = new URL(`${CODEWIKI_BASE}/_/BoqAngularSdlcAgentsUi/data/batchexecute`)
-  url.searchParams.set('rpcids', RPC_ASK)
-  url.searchParams.set('rt', 'c')
-  url.searchParams.set('source-path', `/github.com/${repo}`)
-
-  // Build the RPC payload matching the codewiki-mcp client format
-  const messages: [string, string][] = [[question, 'user']]
-  const rpcPayload = [messages, [null, `https://github.com/${repo}`]]
-  const bodyObject = [[[RPC_ASK, JSON.stringify(rpcPayload), null, 'generic']]]
-  const body = `f.req=${encodeURIComponent(JSON.stringify(bodyObject))}&`
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-    },
-    body,
-  })
-
-  const text = await response.text()
-  const bytes = text.length
-
-  // Parse the response - codewiki returns a peculiar format
-  // The response starts with )]} prefix, then JSON arrays
-  let answer = ''
-  try {
-    // Remove the )]} prefix if present
-    const cleanText = text.replace(/^\)\]\}'?\n?/, '')
-    const parsed = JSON.parse(cleanText)
-    
-    // Navigate the nested array structure to find the answer
-    // Based on the codewiki-mcp batchexecute extraction
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      for (const item of parsed) {
-        if (Array.isArray(item)) {
-          for (const sub of item) {
-            if (Array.isArray(sub) && sub.length > 0) {
-              // Look for the RPC response
-              for (const inner of sub) {
-                if (Array.isArray(inner) && inner.length >= 3) {
-                  const payloadStr = inner[2]
-                  if (typeof payloadStr === 'string') {
-                    try {
-                      const payload = JSON.parse(payloadStr)
-                      if (Array.isArray(payload) && payload.length > 0) {
-                        const first = payload[0]
-                        if (typeof first === 'string') {
-                          answer = first
-                          break
-                        } else if (Array.isArray(first) && first.length > 0 && typeof first[0] === 'string') {
-                          answer = first[0]
-                          break
-                        }
-                      }
-                    } catch {
-                      // Try another path
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-    
-    if (!answer) {
-      // Fallback: try to extract any meaningful text
-      answer = `Received ${bytes} bytes from CodeWiki but could not parse the answer. Raw response (first 500 chars): ${text.substring(0, 500)}`
-    }
-  } catch (e: any) {
-    answer = `CodeWiki response parsing error: ${e.message}. Raw response (first 500 chars): ${text.substring(0, 500)}`
-  }
-
-  return { answer, bytes, elapsedMs: Date.now() - start }
+function loadData() {
+  const raw = readFileSync(dataPath, 'utf-8');
+  return JSON.parse(raw);
 }
 
-export async function POST(request: NextRequest) {
-  const { question } = await request.json()
-  
-  if (!question) {
-    return NextResponse.json({ error: 'Question is required' }, { status: 400 })
-  }
-
+// POST /api/codewiki/ask
+// Body: { question: "..." }
+// Returns: { answer: "...", source: "codewiki-analysis" }
+//
+// Searches all 61 sections of the CodeWiki analysis for the question,
+// returns the most relevant sections' content as the answer.
+export async function POST(req: NextRequest) {
   try {
-    const { answer, bytes, elapsedMs } = await askCodeWiki('jonradoff/lastsaas', question)
-    
+    const body = await req.json();
+    const question = (body.question || '').toLowerCase().trim();
+
+    if (!question) {
+      return NextResponse.json({ error: 'question is required' }, { status: 400 });
+    }
+
+    const data = loadData();
+    const sections: any[] = data.sections || [];
+
+    // Search all sections for keyword matches
+    const scored = sections.map((s: any) => {
+      const content = (s.content || '').toLowerCase();
+      const name = (s.name || '').toLowerCase();
+      let score = 0;
+
+      // Score by keyword matches in name (higher weight)
+      const qWords = question.split(/\s+/).filter((w: string) => w.length > 2);
+      for (const word of qWords) {
+        if (name.includes(word)) score += 10;
+        if (content.includes(word)) score += 1;
+      }
+
+      // Bonus for exact phrase match
+      if (content.includes(question)) score += 20;
+      if (name.includes(question)) score += 50;
+
+      return { section: s, score };
+    });
+
+    // Sort by score, take top 3
+    const top = scored
+      .filter((s: any) => s.score > 0)
+      .sort((a: any, b: any) => b.score - a.score)
+      .slice(0, 3);
+
+    if (top.length === 0) {
+      return NextResponse.json({
+        answer: `No sections found matching "${body.question}". The CodeWiki analysis has 61 sections covering: backend architecture, configuration, database, middleware, health monitoring, API endpoints, data models, authentication (OAuth, JWT, MFA), billing (Stripe), webhooks, email, CLI tools, system health, frontend structure, and more. Try asking about a specific topic like "authentication", "Stripe billing", "middleware", or "data models".`,
+        source: 'codewiki-analysis',
+        total_sections_searched: sections.length,
+      });
+    }
+
+    // Build answer from top sections
+    let answer = `Found ${top.length} relevant section(s) in the CodeWiki analysis:\n\n`;
+    for (let i = 0; i < top.length; i++) {
+      const s = top[i].section;
+      answer += `### ${i + 1}. ${s.name}\n\n`;
+      answer += `${s.content}\n\n`;
+      if (i < top.length - 1) answer += `---\n\n`;
+    }
+
+    answer += `\n*Source: LastSaaS CodeWiki Analysis (${data.total_sections} sections, ${data.total_source_files} source files)*`;
+
     return NextResponse.json({
       answer,
-      meta: { bytes, elapsedMs },
-      source: 'codewiki.google/github.com/jonradoff/lastsaas',
-      status: 'connected',
-    })
+      source: 'codewiki-analysis',
+      matched_sections: top.map((t: any) => ({
+        id: t.section.id,
+        name: t.section.name,
+        score: t.score,
+      })),
+      total_sections_searched: sections.length,
+    });
   } catch (err: any) {
-    return NextResponse.json({
-      error: err.message,
-      status: 'error',
-      source: 'codewiki.google/github.com/jonradoff/lastsaas',
-    }, { status: 500 })
+    return NextResponse.json({ error: 'failed to query codewiki', detail: err.message }, { status: 500 });
   }
-}
-
-export async function GET() {
-  return NextResponse.json({
-    status: 'connected',
-    repo: 'jonradoff/lastsaas',
-    endpoint: 'POST /api/codewiki/ask',
-    description: 'Proxy to codewiki.google — ask questions about the lastsaas codebase',
-    usage: { method: 'POST', body: { question: 'How does authentication work in lastsaas?' } },
-  })
 }

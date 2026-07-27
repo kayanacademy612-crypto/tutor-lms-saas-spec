@@ -332,130 +332,115 @@ function AISearchSection({ aiQuestion, setAiQuestion, aiAnswer, aiLoading, aiSou
 // INTERACTIVE COMPARISON SECTION
 // ════════════════════════════════════════════════════════════════
 // ============================================================
-// CODEWIKI ANALYSIS — LastSaaS codebase analysis (61 sections)
+// CODEWIKI — Full CodeWiki HTML in iframe + AI chat panel
 // ============================================================
 function CodeWikiSection({ data, searchQuery }: { data: any; searchQuery: string }) {
-  const [expanded, setExpanded] = useState<string | null>(null)
-  const allSections: any[] = data.sections || []
-  const filtered = searchQuery
-    ? allSections.filter((s: any) => `${s.name} ${s.summary}`.toLowerCase().includes(searchQuery.toLowerCase()))
-    : allSections
+  const [chatOpen, setChatOpen] = useState(true)
+  const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([
+    { role: 'assistant', content: 'I have access to the full LastSaaS CodeWiki analysis (61 sections, 177 source files). Ask me anything about the lastsaas codebase architecture, models, API routes, middleware, auth, billing, webhooks, frontend, or how it connects to the LMS compendium plan.' }
+  ])
+  const [chatInput, setChatInput] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+
+  const sendChat = async () => {
+    if (!chatInput.trim() || chatLoading) return
+    const q = chatInput
+    setChatInput('')
+    setChatMessages(prev => [...prev, { role: 'user', content: q }])
+    setChatLoading(true)
+    try {
+      // Query our AI search endpoint which has access to the codewiki data
+      const res = await fetch('/api/codewiki/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: q })
+      })
+      const d = await res.json()
+      setChatMessages(prev => [...prev, { role: 'assistant', content: d.answer || d.error || 'No response' }])
+    } catch (e: any) {
+      setChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${e.message}` }])
+    }
+    setChatLoading(false)
+  }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-start gap-3">
-        <FileText className="w-8 h-8 text-blue-500 shrink-0 mt-1" />
-        <div className="flex-1">
-          <h1 className="text-3xl font-bold">LastSaaS CodeWiki Analysis</h1>
-          <p className="text-muted-foreground mt-1">
-            {data.total_sections} sections analyzing the lastsaas codebase (Go backend + React frontend).
-            {data.total_source_files} source files referenced. This is the foundation we build our LMS SaaS on top of.
-          </p>
+    <div className="flex h-[calc(100vh-8rem)] gap-0 -mx-4 md:-mx-8">
+      {/* Main content — full CodeWiki HTML in iframe */}
+      <div className="flex-1 relative">
+        <div className="absolute top-2 right-2 z-10 flex gap-2">
+          <a href="/codewiki.html" target="_blank" rel="noopener noreferrer">
+            <Button variant="outline" size="sm" className="text-xs bg-white/90 dark:bg-zinc-800/90 backdrop-blur shadow-sm">
+              Open in new tab ↗
+            </Button>
+          </a>
+          <Button
+            variant={chatOpen ? "default" : "outline"}
+            size="sm"
+            className="text-xs bg-white/90 dark:bg-zinc-800/90 backdrop-blur shadow-sm"
+            onClick={() => setChatOpen(!chatOpen)}
+          >
+            <Brain className="w-3 h-3 mr-1" />
+            {chatOpen ? 'Hide Chat' : 'AI Chat'}
+          </Button>
         </div>
-        <Badge variant="outline" className="bg-blue-500/10 text-blue-600 dark:text-blue-400">
-          {data.total_source_files} files
-        </Badge>
+        <iframe
+          src="/codewiki.html"
+          className="w-full h-full border-0"
+          title="LastSaaS CodeWiki"
+        />
       </div>
 
-      <Card className="border-blue-500/20 bg-blue-500/5">
-        <CardContent className="p-4 text-xs space-y-2">
-          <div className="font-semibold text-blue-600 dark:text-blue-400">How This Connects to the Compendium → SaaS Plan</div>
-          <p className="text-muted-foreground">
-            The CodeWiki analysis tells us what lastsaas <strong>already provides</strong> (auth, billing, multi-tenancy, webhooks, health monitoring, CLI tools).
-            The Compendium → SaaS plan tells us what we <strong>need to build</strong> on top of it (courses, quizzes, lessons, eCommerce, certificates, addons).
-            Together they form the complete build plan: lastsaas is the foundation, the LMS layer is what we add.
-          </p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
-            <div className="flex items-center gap-1.5"><Server className="w-3 h-3 text-blue-500" /><span>Go backend (22 packages)</span></div>
-            <div className="flex items-center gap-1.5"><FileText className="w-3 h-3 text-blue-500" /><span>22 data models</span></div>
-            <div className="flex items-center gap-1.5"><Code2 className="w-3 h-3 text-blue-500" /><span>133 API routes</span></div>
-            <div className="flex items-center gap-1.5"><Zap className="w-3 h-3 text-blue-500" /><span>22 events</span></div>
-            <div className="flex items-center gap-1.5"><CreditCard className="w-3 h-3 text-blue-500" /><span>Stripe billing</span></div>
-            <div className="flex items-center gap-1.5"><Plug className="w-3 h-3 text-blue-500" /><span>Webhooks + email</span></div>
-            <div className="flex items-center gap-1.5"><CheckCircle className="w-3 h-3 text-blue-500" /><span>Health monitoring</span></div>
-            <div className="flex items-center gap-1.5"><BookOpen className="w-3 h-3 text-blue-500" /><span>CLI tools</span></div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* API Access — how AI agents can read the full analysis */}
-      <Card className="border-purple-500/20 bg-purple-500/5">
-        <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Plug className="w-4 h-4 text-purple-500" /> API Access — Full Text for AI Agents</CardTitle></CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-xs text-muted-foreground">Any AI agent can read the complete analysis via 3 endpoints. The full text of all 61 sections is served — not summaries.</p>
-          <div className="space-y-2">
-            <div className="flex items-start gap-2 p-2 rounded border bg-background">
-              <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] shrink-0">JSON</Badge>
-              <div className="flex-1 min-w-0">
-                <code className="text-xs text-amber-600 dark:text-amber-400 block">GET /api/codewiki-analysis</code>
-                <p className="text-[10px] text-muted-foreground mt-0.5">Full JSON with all 61 sections + their complete content + 177 source files. ~194KB.</p>
-              </div>
-              <a href="/api/codewiki-analysis" target="_blank" rel="noopener noreferrer"><Button variant="ghost" size="sm" className="text-xs">Open ↗</Button></a>
+      {/* AI Chat panel — right side */}
+      {chatOpen && (
+        <div className="w-96 shrink-0 border-l bg-background flex flex-col">
+          <div className="p-3 border-b bg-blue-500/5">
+            <div className="flex items-center gap-2">
+              <Brain className="w-4 h-4 text-blue-500" />
+              <span className="text-sm font-semibold">CodeWiki AI Assistant</span>
             </div>
-            <div className="flex items-start gap-2 p-2 rounded border bg-background">
-              <Badge variant="outline" className="bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] shrink-0">TEXT</Badge>
-              <div className="flex-1 min-w-0">
-                <code className="text-xs text-amber-600 dark:text-amber-400 block">GET /api/codewiki-analysis?format=text</code>
-                <p className="text-[10px] text-muted-foreground mt-0.5">Plain text — all 61 sections as readable markdown. Best for AI agents. ~157KB.</p>
-              </div>
-              <a href="/api/codewiki-analysis?format=text" target="_blank" rel="noopener noreferrer"><Button variant="ghost" size="sm" className="text-xs">Open ↗</Button></a>
-            </div>
-            <div className="flex items-start gap-2 p-2 rounded border bg-background">
-              <Badge variant="outline" className="bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 text-[10px] shrink-0">SINGLE</Badge>
-              <div className="flex-1 min-w-0">
-                <code className="text-xs text-amber-600 dark:text-amber-400 block">GET /api/codewiki-analysis?section=cw-5</code>
-                <p className="text-[10px] text-muted-foreground mt-0.5">Single section by ID (cw-1 through cw-61). Returns full content of that section only.</p>
-              </div>
-            </div>
+            <p className="text-[10px] text-muted-foreground mt-1">Ask anything about the lastsaas codebase analysis. 61 sections, 177 source files, 50 architecture diagrams.</p>
           </div>
-          <div className="text-[10px] text-muted-foreground pt-2 border-t">
-            <strong>MCP access:</strong> POST /api/mcp with tool <code>search_spec</code> and query "codewiki" also returns this data.
-            <br />
-            <strong>Cross-reference:</strong> The Compendium → SaaS plan (GET /api/compendium-saas) shows what to build on top of this foundation.
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="space-y-2">
-        {filtered.map((s: any, i: number) => {
-          const isExpanded = expanded === s.id
-          return (
-            <Card key={s.id || `cw-${i}`}>
-              <div className="p-3">
-                <div className="flex items-center gap-3">
-                  <button onClick={() => setExpanded(isExpanded ? null : s.id)} className="shrink-0 p-1 hover:bg-muted rounded">
-                    {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                  </button>
-                  <span className="text-xs text-muted-foreground shrink-0">#{i + 1}</span>
-                  <h3 className="font-medium text-sm flex-1">{s.name}</h3>
-                  <Badge variant="outline" className="text-[10px] shrink-0">{s.content_length.toLocaleString()} chars</Badge>
-                </div>
-                {!isExpanded && <p className="text-xs text-muted-foreground mt-1.5 ml-8 line-clamp-2">{s.summary}</p>}
-                {isExpanded && s.content && (
-                  <div className="mt-3 ml-8">
-                    <pre className="text-xs whitespace-pre-wrap break-words bg-muted/30 dark:bg-zinc-900/50 border rounded-md p-3 max-h-[500px] overflow-y-auto font-sans leading-relaxed">{s.content}</pre>
+          <ScrollArea className="flex-1 p-3">
+            <div className="space-y-3">
+              {chatMessages.map((msg, i) => (
+                <div key={`msg-${i}`} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[85%] rounded-lg p-2.5 text-xs ${
+                    msg.role === 'user'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-muted text-foreground'
+                  }`}>
+                    <div className="whitespace-pre-wrap break-words">{msg.content}</div>
                   </div>
-                )}
-              </div>
-            </Card>
-          )
-        })}
-      </div>
-
-      {data.source_files && data.source_files.length > 0 && (
-        <Card>
-          <CardHeader><CardTitle className="text-sm">Source Files Referenced ({data.source_files.length})</CardTitle></CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-1 max-h-60 overflow-y-auto">
-              {data.source_files.map((f: string, i: number) => (
-                <code key={`sf-${i}`} className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400">{f}</code>
+                </div>
               ))}
+              {chatLoading && (
+                <div className="flex justify-start">
+                  <div className="bg-muted rounded-lg p-2.5 flex items-center gap-2 text-xs">
+                    <Loader2 className="w-3 h-3 animate-spin" /> Searching CodeWiki...
+                  </div>
+                </div>
+              )}
             </div>
-          </CardContent>
-        </Card>
+          </ScrollArea>
+          <div className="p-3 border-t">
+            <div className="flex gap-2">
+              <Input
+                placeholder="Ask about the codebase..."
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') sendChat() }}
+                className="text-xs h-9"
+              />
+              <Button size="sm" onClick={sendChat} disabled={chatLoading} className="shrink-0">
+                <ArrowRight className="w-3 h-3" />
+              </Button>
+            </div>
+            <div className="text-[9px] text-muted-foreground mt-1.5">
+              API: POST /api/codewiki/ask · Also: GET /api/codewiki-analysis?format=text
+            </div>
+          </div>
+        </div>
       )}
-
-      <p className="text-xs text-muted-foreground">Showing {filtered.length} of {data.total_sections} analysis sections from the CodeWiki.</p>
     </div>
   )
 }
@@ -1912,11 +1897,9 @@ export default function Home() {
       return <TutorDocsSection data={apiData} searchQuery={search} />
     }
 
-    // === CODEWIKI ANALYSIS ===
+    // === CODEWIKI ===
     if (active === 'codewiki') {
-      if (loading) return <div className="flex items-center gap-2 p-8"><Loader2 className="w-5 h-5 animate-spin text-blue-500" /><span>Loading CodeWiki analysis...</span></div>
-      if (!apiData) return <div className="p-8 text-muted-foreground">Loading...</div>
-      return <CodeWikiSection data={apiData} searchQuery={search} />
+      return <CodeWikiSection data={null} searchQuery={search} />
     }
 
     // === TUTOR KB ===
