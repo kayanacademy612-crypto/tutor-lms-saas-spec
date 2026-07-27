@@ -33,6 +33,7 @@ const SECTIONS = [
   { id: 'tutor-kb', label: 'Tutor LMS Knowledge', icon: FileText, group: 'tutor' },
   { id: 'tutor-docs', label: 'Tutor Docs (295)', icon: BookOpen, group: 'tutor' },
   { id: 'comparison', label: 'Comparison', icon: GitCompare, group: 'comparison' },
+  { id: 'compendium-saas', label: 'Compendium → SaaS', icon: Map, group: 'comparison' },
   { id: 'visual-ui', label: 'Visual UI (197 imgs)', icon: ImageIcon, group: 'comparison' },
   { id: 'screens', label: 'Screen Inventory (429)', icon: Folder, group: 'comparison' },
   { id: 'feature-comparison', label: 'Feature Comparison (13)', icon: GitCompare, group: 'comparison' },
@@ -707,6 +708,299 @@ function TutorDocsSection({ data, searchQuery }: { data: any; searchQuery: strin
   )
 }
 
+// ============================================================
+// COMPENDIUM → SAAS BUILD PLAN
+// Maps each of 27 Tutor LMS docs sections to SaaS implementation
+// Shows: what to build, which sidebar items get affected, status, phase
+// ============================================================
+function CompendiumSaaSSection({ data, searchQuery }: { data: any; searchQuery: string }) {
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [phaseFilter, setPhaseFilter] = useState<string>('all')
+
+  const allSections: any[] = data.sections || []
+  const summary = data.summary || {}
+
+  const filtered = allSections.filter((s: any) => {
+    if (statusFilter !== 'all' && s.status !== statusFilter) return false
+    if (phaseFilter !== 'all' && s.phase !== phaseFilter) return false
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase()
+      if (!`${s.name} ${s.saas_implementation} ${s.phase} ${s.status}`.toLowerCase().includes(q)) return false
+    }
+    return true
+  })
+
+  const statusColors: Record<string, string> = {
+    'done': 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+    'in-progress': 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+    'planned': 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
+    'skipped': 'bg-gray-500/10 text-gray-500 line-through',
+    'reference': 'bg-purple-500/10 text-purple-600 dark:text-purple-400',
+  }
+
+  const phaseColors: Record<string, string> = {
+    'Phase 0': 'bg-gray-500/10 text-gray-600 dark:text-gray-400',
+    'Phase 1': 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+    'Phase 2': 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400',
+    'Phase 3': 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400',
+    'Phase 4': 'bg-pink-500/10 text-pink-600 dark:text-pink-400',
+    'Phase 5': 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+    'skipped': 'bg-gray-500/10 text-gray-400',
+    'reference': 'bg-purple-500/10 text-purple-400',
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-start gap-3">
+        <Map className="w-8 h-8 text-purple-500 shrink-0 mt-1" />
+        <div className="flex-1">
+          <h1 className="text-3xl font-bold">Compendium → SaaS Build Plan</h1>
+          <p className="text-muted-foreground mt-1">
+            Maps each of the <strong>{data.total_sections} Tutor LMS docs sections</strong> (the compendium) to its SaaS implementation.
+            Shows exactly what to build and how it affects every sidebar item (Data Model, API Reference, Events, Settings, Email Triggers, Tickets, Screens).
+          </p>
+        </div>
+        <Badge variant="outline" className="bg-purple-500/10 text-purple-600 dark:text-purple-400 text-sm">
+          {summary.overall_progress}% complete
+        </Badge>
+      </div>
+
+      {/* Overall progress bar */}
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium">Overall Build Progress</span>
+            <span className="text-2xl font-bold text-purple-600 dark:text-purple-400">{summary.overall_progress}%</span>
+          </div>
+          <div className="w-full h-3 bg-muted rounded-full overflow-hidden">
+            <div className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all" style={{ width: `${summary.overall_progress}%` }} />
+          </div>
+          <div className="grid grid-cols-3 md:grid-cols-6 gap-3 mt-4 text-xs">
+            <Stat label="Done" value={summary.status_counts?.done || 0} color="text-emerald-600" />
+            <Stat label="In Progress" value={summary.status_counts?.['in-progress'] || 0} color="text-amber-600" />
+            <Stat label="Planned" value={summary.status_counts?.planned || 0} color="text-blue-600" />
+            <Stat label="Skipped" value={summary.status_counts?.skipped || 0} color="text-gray-500" />
+            <Stat label="Reference" value={summary.status_counts?.reference || 0} color="text-purple-600" />
+            <Stat label="Total" value={data.total_sections} color="text-foreground" />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Sidebar impact summary */}
+      <Card className="border-purple-500/20">
+        <CardHeader><CardTitle className="text-base flex items-center gap-2"><Layers className="w-4 h-4 text-purple-500" /> Total Impact on Sidebar Items</CardTitle></CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
+            <ImpactStat icon={Database} label="Collections to Build" value={summary.totals?.collections_to_build || 0} color="text-amber-600" />
+            <ImpactStat icon={Code2} label="Endpoints to Build" value={summary.totals?.endpoints_to_build || 0} color="text-emerald-600" />
+            <ImpactStat icon={Zap} label="Events to Fire" value={summary.totals?.events_to_build || 0} color="text-pink-600" />
+            <ImpactStat icon={Mail} label="Settings to Add" value={summary.totals?.settings_to_build || 0} color="text-purple-600" />
+            <ImpactStat icon={Mail} label="Email Triggers" value={summary.totals?.email_triggers_to_build || 0} color="text-cyan-600" />
+            <ImpactStat icon={Ticket} label="Tickets" value={summary.totals?.tickets || 0} color="text-indigo-600" />
+            <ImpactStat icon={Monitor} label="Screens to Build" value={summary.totals?.screens_to_build || 0} color="text-orange-600" />
+            <ImpactStat icon={HelpCircle} label="Quiz Types" value={summary.totals?.quiz_types || 0} color="text-yellow-600" />
+            <ImpactStat icon={CreditCard} label="Payment Gateways" value={summary.totals?.gateways || 0} color="text-green-600" />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-muted-foreground">Status:</span>
+        {['all', 'done', 'in-progress', 'planned', 'skipped', 'reference'].map(s => (
+          <button key={s} onClick={() => setStatusFilter(s)} className={`px-2 py-1 rounded text-xs border transition-colors ${statusFilter === s ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/30' : 'border-border text-muted-foreground hover:bg-muted'}`}>
+            {s} <span className="opacity-60">({s === 'all' ? data.total_sections : (summary.status_counts?.[s] || 0)})</span>
+          </button>
+        ))}
+        <span className="text-xs text-muted-foreground ml-3">Phase:</span>
+        {['all', 'Phase 0', 'Phase 1', 'Phase 2', 'Phase 3', 'Phase 4', 'Phase 5', 'skipped', 'reference'].map(p => (
+          <button key={p} onClick={() => setPhaseFilter(p)} className={`px-2 py-1 rounded text-xs border transition-colors ${phaseFilter === p ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/30' : 'border-border text-muted-foreground hover:bg-muted'}`}>
+            {p}
+          </button>
+        ))}
+      </div>
+
+      {/* Sections list */}
+      <div className="space-y-3">
+        {filtered.map((s: any, i: number) => {
+          const isExpanded = expanded === s.id
+          const impact = s.impact || {}
+          const sidebarEffects = s.sidebar_effects || {}
+          return (
+            <Card key={s.id || `cs-${i}`} className={s.status === 'skipped' ? 'opacity-60' : ''}>
+              <div className="p-4">
+                {/* Header row */}
+                <div className="flex items-start gap-3">
+                  <button onClick={() => setExpanded(isExpanded ? null : s.id)} className="shrink-0 p-1 hover:bg-muted rounded mt-0.5">
+                    {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-semibold text-base">{s.name}</h3>
+                      <Badge variant="outline" className={`text-xs ${statusColors[s.status] || ''}`}>{s.status}</Badge>
+                      <Badge variant="outline" className={`text-xs ${phaseColors[s.phase] || ''}`}>{s.phase}</Badge>
+                      <Badge variant="secondary" className="text-xs">{s.doc_count} docs</Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{s.saas_implementation}</p>
+                  </div>
+                </div>
+
+                {/* Quick impact badges (always visible) */}
+                <div className="flex flex-wrap gap-1.5 mt-3 ml-8">
+                  {impact.collections?.length > 0 && (
+                    <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                      <Database className="w-2.5 h-2.5 mr-0.5" />{impact.collections.length} collections
+                    </Badge>
+                  )}
+                  {impact.endpoints?.length > 0 && (
+                    <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                      <Code2 className="w-2.5 h-2.5 mr-0.5" />{impact.endpoints.length} endpoints
+                    </Badge>
+                  )}
+                  {impact.events?.length > 0 && (
+                    <Badge variant="outline" className="text-[10px] bg-pink-500/10 text-pink-600 dark:text-pink-400">
+                      <Zap className="w-2.5 h-2.5 mr-0.5" />{impact.events.length} events
+                    </Badge>
+                  )}
+                  {impact.settings?.length > 0 && (
+                    <Badge variant="outline" className="text-[10px] bg-purple-500/10 text-purple-600 dark:text-purple-400">
+                      <Mail className="w-2.5 h-2.5 mr-0.5" />{impact.settings.length} settings
+                    </Badge>
+                  )}
+                  {impact.email_triggers?.length > 0 && (
+                    <Badge variant="outline" className="text-[10px] bg-cyan-500/10 text-cyan-600 dark:text-cyan-400">
+                      <Mail className="w-2.5 h-2.5 mr-0.5" />{impact.email_triggers.length} emails
+                    </Badge>
+                  )}
+                  {impact.tickets?.length > 0 && (
+                    <Badge variant="outline" className="text-[10px] bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                      <Ticket className="w-2.5 h-2.5 mr-0.5" />{impact.tickets.length} tickets
+                    </Badge>
+                  )}
+                  {impact.screens?.length > 0 && (
+                    <Badge variant="outline" className="text-[10px] bg-orange-500/10 text-orange-600 dark:text-orange-400">
+                      <Monitor className="w-2.5 h-2.5 mr-0.5" />{impact.screens.length} screens
+                    </Badge>
+                  )}
+                  {impact.quiz_types?.length > 0 && (
+                    <Badge variant="outline" className="text-[10px] bg-yellow-500/10 text-yellow-600 dark:text-yellow-400">
+                      <HelpCircle className="w-2.5 h-2.5 mr-0.5" />{impact.quiz_types.length} quiz types
+                    </Badge>
+                  )}
+                  {impact.gateways?.length > 0 && (
+                    <Badge variant="outline" className="text-[10px] bg-green-500/10 text-green-600 dark:text-green-400">
+                      <CreditCard className="w-2.5 h-2.5 mr-0.5" />{impact.gateways.length} gateways
+                    </Badge>
+                  )}
+                </div>
+
+                {/* Expanded detail */}
+                {isExpanded && (
+                  <div className="mt-4 ml-8 space-y-4">
+                    {/* Full implementation description */}
+                    <div>
+                      <div className="text-xs font-semibold uppercase text-purple-600 dark:text-purple-400 mb-1">SaaS Implementation</div>
+                      <p className="text-sm text-foreground leading-relaxed">{s.saas_implementation}</p>
+                    </div>
+
+                    {/* Detailed impact lists */}
+                    <div className="grid md:grid-cols-2 gap-4">
+                      {impact.collections?.length > 0 && (
+                        <ImpactList icon={Database} label="Collections" items={impact.collections} color="text-amber-600" />
+                      )}
+                      {impact.endpoints?.length > 0 && (
+                        <ImpactList icon={Code2} label="Endpoints" items={impact.endpoints} color="text-emerald-600" />
+                      )}
+                      {impact.events?.length > 0 && (
+                        <ImpactList icon={Zap} label="Events" items={impact.events} color="text-pink-600" />
+                      )}
+                      {impact.settings?.length > 0 && (
+                        <ImpactList icon={Mail} label="Settings" items={impact.settings} color="text-purple-600" />
+                      )}
+                      {impact.email_triggers?.length > 0 && (
+                        <ImpactList icon={Mail} label="Email Triggers" items={impact.email_triggers} color="text-cyan-600" />
+                      )}
+                      {impact.tickets?.length > 0 && (
+                        <ImpactList icon={Ticket} label="Tickets" items={impact.tickets} color="text-indigo-600" />
+                      )}
+                      {impact.screens?.length > 0 && (
+                        <ImpactList icon={Monitor} label="Screens" items={impact.screens} color="text-orange-600" />
+                      )}
+                      {impact.quiz_types?.length > 0 && (
+                        <ImpactList icon={HelpCircle} label="Quiz Types" items={impact.quiz_types} color="text-yellow-600" />
+                      )}
+                      {impact.gateways?.length > 0 && (
+                        <ImpactList icon={CreditCard} label="Gateways" items={impact.gateways} color="text-green-600" />
+                      )}
+                    </div>
+
+                    {/* Sidebar effects — the key part: how this section affects each sidebar item */}
+                    <div>
+                      <div className="text-xs font-semibold uppercase text-purple-600 dark:text-purple-400 mb-2">Effects on Sidebar Items</div>
+                      <div className="space-y-1.5">
+                        {Object.entries(sidebarEffects).map(([key, val]: [string, any]) => (
+                          <div key={key} className="flex items-start gap-2 p-2 rounded border border-purple-500/10 bg-purple-500/5 text-xs">
+                            <Badge variant="outline" className="shrink-0 text-[10px] bg-purple-500/10 text-purple-600 dark:text-purple-400">{key}</Badge>
+                            <span className="text-muted-foreground">{val}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Card>
+          )
+        })}
+      </div>
+
+      {filtered.length === 0 && (
+        <div className="text-center py-12 text-muted-foreground">
+          <Map className="w-12 h-12 mx-auto mb-3 opacity-30" />
+          <p>No sections match the current filters.</p>
+        </div>
+      )}
+
+      <p className="text-xs text-muted-foreground">Showing {filtered.length} of {data.total_sections} compendium sections. Click any section to expand its full impact on every sidebar item.</p>
+    </div>
+  )
+}
+
+function Stat({ label, value, color }: { label: string; value: number; color: string }) {
+  return <div className="text-center"><div className={`text-lg font-bold ${color}`}>{value}</div><div className="text-muted-foreground">{label}</div></div>
+}
+
+function ImpactStat({ icon: Icon, label, value, color }: { icon: any; label: string; value: number; color: string }) {
+  return (
+    <div className="flex items-center gap-2 p-2 rounded border">
+      <Icon className={`w-4 h-4 ${color} shrink-0`} />
+      <div className="min-w-0">
+        <div className={`font-bold ${color}`}>{value}</div>
+        <div className="text-muted-foreground truncate">{label}</div>
+      </div>
+    </div>
+  )
+}
+
+function ImpactList({ icon: Icon, label, items, color }: { icon: any; label: string; items: string[]; color: string }) {
+  return (
+    <div>
+      <div className="flex items-center gap-1.5 mb-1.5">
+        <Icon className={`w-3.5 h-3.5 ${color}`} />
+        <span className="text-xs font-semibold uppercase" style={{ color: undefined }}>{label} ({items.length})</span>
+      </div>
+      <div className="flex flex-wrap gap-1">
+        {items.slice(0, 20).map((item: string, i: number) => (
+          <code key={`${label}-${i}`} className={`text-[10px] px-1.5 py-0.5 rounded bg-muted ${color}`}>{item}</code>
+        ))}
+        {items.length > 20 && <span className="text-[10px] text-muted-foreground">+{items.length - 20} more</span>}
+      </div>
+    </div>
+  )
+}
+
 function VisualUISection({ data, searchQuery }: { data: any; searchQuery: string }) {
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [systemFilter, setSystemFilter] = useState('all')
@@ -1268,6 +1562,7 @@ export default function Home() {
       'tutor-kb': '/api/tutor-kb/addons',
       'tutor-docs': '/api/tutor-docs',
       'comparison': '/api/comparison',
+      'compendium-saas': '/api/compendium-saas',
       'visual-ui': '/api/screenshots',
       'screens': '/api/screens',
       'feature-comparison': '/api/feature-comparison',
@@ -1591,6 +1886,13 @@ export default function Home() {
       if (loading) return <div className="flex items-center gap-2 p-8"><Loader2 className="w-5 h-5 animate-spin text-yellow-500" /><span>Loading comparison...</span></div>
       if (!apiData) return <div className="p-8 text-muted-foreground">Loading...</div>
       return <ComparisonSection data={apiData} searchQuery={search} />
+    }
+
+    // === COMPENDIUM → SAAS BUILD PLAN ===
+    if (active === 'compendium-saas') {
+      if (loading) return <div className="flex items-center gap-2 p-8"><Loader2 className="w-5 h-5 animate-spin text-purple-500" /><span>Loading build plan...</span></div>
+      if (!apiData) return <div className="p-8 text-muted-foreground">Loading...</div>
+      return <CompendiumSaaSSection data={apiData} searchQuery={search} />
     }
 
     // === VISUAL UI (real screenshots gallery) ===
