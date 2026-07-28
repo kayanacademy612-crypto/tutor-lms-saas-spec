@@ -13,11 +13,11 @@ export const lastsaasSummary = {
   "totalGoFiles": 134,
   "totalTSFiles": 91,
   "packages": 22,
-  "collections": 38,
-  "apiRoutes": 133,
+  "collections": 72,
+  "apiRoutes": 190,
   "middleware": 10,
   "models": 22,
-  "events": 22,
+  "events": 102,
   "frontendPages": 52,
   "frontendComponents": 18,
   "frontendContexts": 4,
@@ -515,6 +515,211 @@ export const lastsaasCollections: LastSaaSCollection[] = [
     "accessor": "MongoDB.EventDefinitions()",
     "source": "lastsaas/backend/internal/db/mongodb.go",
     "confidence": "confirmed"
+  },
+  // === LMS v2 collections (from compendium-saas-plan.json) ===
+  {
+    "name": "courses",
+    "accessor": "MongoDB.Courses()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "topics",
+    "accessor": "MongoDB.Topics()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "lessons",
+    "accessor": "MongoDB.Lessons()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "course_meta",
+    "accessor": "MongoDB.CourseMeta()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "instructors",
+    "accessor": "MongoDB.Instructors()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "course_categories",
+    "accessor": "MongoDB.CourseCategories()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "course_tags",
+    "accessor": "MongoDB.CourseTags()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "attachments",
+    "accessor": "MongoDB.Attachments()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "quizzes",
+    "accessor": "MongoDB.Quizzes()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "questions",
+    "accessor": "MongoDB.Questions()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "quiz_attempts",
+    "accessor": "MongoDB.QuizAttempts()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "quiz_settings",
+    "accessor": "MongoDB.QuizSettings()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "question_answers",
+    "accessor": "MongoDB.QuestionAnswers()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "quiz_imports",
+    "accessor": "MongoDB.QuizImports()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "question_meta",
+    "accessor": "MongoDB.QuestionMeta()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "enrollments",
+    "accessor": "MongoDB.Enrollments()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "lesson_progress",
+    "accessor": "MongoDB.LessonProgress()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "assignment_submissions",
+    "accessor": "MongoDB.AssignmentSubmissions()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "qa_questions",
+    "accessor": "MongoDB.QaQuestions()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "qa_answers",
+    "accessor": "MongoDB.QaAnswers()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "course_reviews",
+    "accessor": "MongoDB.CourseReviews()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "student_notes",
+    "accessor": "MongoDB.StudentNotes()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "course_completions",
+    "accessor": "MongoDB.CourseCompletions()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "live_classes",
+    "accessor": "MongoDB.LiveClasses()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "resources",
+    "accessor": "MongoDB.Resources()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "discussions",
+    "accessor": "MongoDB.Discussions()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "discussion_replies",
+    "accessor": "MongoDB.DiscussionReplies()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "calendar_events",
+    "accessor": "MongoDB.CalendarEvents()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "student_preferences",
+    "accessor": "MongoDB.StudentPreferences()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "kids_mode_settings",
+    "accessor": "MongoDB.KidsModeSettings()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "instructor_stats",
+    "accessor": "MongoDB.InstructorStats()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "instructor_notifications",
+    "accessor": "MongoDB.InstructorNotifications()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "instructor_payouts",
+    "accessor": "MongoDB.InstructorPayouts()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "instructor_settings",
+    "accessor": "MongoDB.InstructorSettings()",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
   }
 ]
 
@@ -1449,6 +1654,406 @@ export const lastsaasRoutes: LastSaaSRoute[] = [
     "handler": "brandingHandler.DeletePage",
     "source": "lastsaas/backend/cmd/server/main.go",
     "confidence": "confirmed"
+  },
+  // === LMS v2 routes (from compendium-saas-plan.json) — /api/lms/* ===
+  {
+    "method": "GET",
+    "path": "/api/lms/courses",
+    "handler": "lmsHandler.Courses",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "POST",
+    "path": "/api/lms/courses",
+    "handler": "lmsHandler.Courses",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "GET",
+    "path": "/api/lms/courses/:id",
+    "handler": "lmsHandler.Courses",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/lms/courses/:id",
+    "handler": "lmsHandler.Courses",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/lms/courses/:id",
+    "handler": "lmsHandler.Courses",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "POST",
+    "path": "/api/lms/courses/:id/publish",
+    "handler": "lmsHandler.CoursesPublish",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "GET",
+    "path": "/api/lms/courses/:courseId/topics",
+    "handler": "lmsHandler.CoursesTopics",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "POST",
+    "path": "/api/lms/courses/:courseId/topics",
+    "handler": "lmsHandler.CoursesTopics",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/lms/topics/:id",
+    "handler": "lmsHandler.Topics",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/lms/topics/:id",
+    "handler": "lmsHandler.Topics",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "GET",
+    "path": "/api/lms/topics/:topicId/lessons",
+    "handler": "lmsHandler.TopicsLessons",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "POST",
+    "path": "/api/lms/topics/:topicId/lessons",
+    "handler": "lmsHandler.TopicsLessons",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/lms/lessons/:id",
+    "handler": "lmsHandler.Lessons",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/lms/lessons/:id",
+    "handler": "lmsHandler.Lessons",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "POST",
+    "path": "/api/lms/lessons/:lessonId/progress",
+    "handler": "lmsHandler.LessonsProgress",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "POST",
+    "path": "/api/lms/courses/:id/ai-generate",
+    "handler": "lmsHandler.CoursesAiGenerate",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "GET",
+    "path": "/api/lms/topics/:topicId/quizzes",
+    "handler": "lmsHandler.TopicsQuizzes",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "POST",
+    "path": "/api/lms/topics/:topicId/quizzes",
+    "handler": "lmsHandler.TopicsQuizzes",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/lms/quizzes/:id",
+    "handler": "lmsHandler.Quizzes",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/lms/quizzes/:id",
+    "handler": "lmsHandler.Quizzes",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "POST",
+    "path": "/api/lms/quizzes/:quizId/attempts",
+    "handler": "lmsHandler.QuizzesAttempts",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "POST",
+    "path": "/api/lms/quizzes/attempts/:id/submit",
+    "handler": "lmsHandler.QuizzesAttemptsSubmit",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "POST",
+    "path": "/api/lms/quizzes/:quizId/questions",
+    "handler": "lmsHandler.QuizzesQuestions",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/lms/questions/:id",
+    "handler": "lmsHandler.Questions",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/lms/questions/:id",
+    "handler": "lmsHandler.Questions",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "POST",
+    "path": "/api/lms/quizzes/export",
+    "handler": "lmsHandler.QuizzesExport",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "POST",
+    "path": "/api/lms/quizzes/import",
+    "handler": "lmsHandler.QuizzesImport",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "GET",
+    "path": "/api/lms/questions/:id/preview",
+    "handler": "lmsHandler.QuestionsPreview",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "GET",
+    "path": "/api/lms/enrollments",
+    "handler": "lmsHandler.Enrollments",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "POST",
+    "path": "/api/lms/courses/:courseId/enroll",
+    "handler": "lmsHandler.CoursesEnroll",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "POST",
+    "path": "/api/lms/assignments/:id/submit",
+    "handler": "lmsHandler.AssignmentsSubmit",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "GET",
+    "path": "/api/lms/courses/:courseId/qa",
+    "handler": "lmsHandler.CoursesQa",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "POST",
+    "path": "/api/lms/courses/:courseId/qa",
+    "handler": "lmsHandler.CoursesQa",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "GET",
+    "path": "/api/lms/courses/:courseId/reviews",
+    "handler": "lmsHandler.CoursesReviews",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "POST",
+    "path": "/api/lms/courses/:courseId/reviews",
+    "handler": "lmsHandler.CoursesReviews",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "GET",
+    "path": "/api/lms/notes",
+    "handler": "lmsHandler.Notes",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "POST",
+    "path": "/api/lms/notes",
+    "handler": "lmsHandler.Notes",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "GET",
+    "path": "/api/lms/courses/:courseId/announcements",
+    "handler": "lmsHandler.CoursesAnnouncements",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "POST",
+    "path": "/api/lms/courses/:courseId/complete",
+    "handler": "lmsHandler.CoursesComplete",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "GET",
+    "path": "/api/lms/courses/:courseId/gradebook",
+    "handler": "lmsHandler.CoursesGradebook",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "GET",
+    "path": "/api/lms/courses/:courseId/resources",
+    "handler": "lmsHandler.CoursesResources",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "GET",
+    "path": "/api/lms/dashboard/student",
+    "handler": "lmsHandler.DashboardStudent",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "GET",
+    "path": "/api/lms/student/courses",
+    "handler": "lmsHandler.StudentCourses",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/lms/notes/:id",
+    "handler": "lmsHandler.Notes",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/lms/notes/:id",
+    "handler": "lmsHandler.Notes",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "GET",
+    "path": "/api/lms/discussions",
+    "handler": "lmsHandler.Discussions",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "POST",
+    "path": "/api/lms/discussions",
+    "handler": "lmsHandler.Discussions",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "GET",
+    "path": "/api/lms/calendar",
+    "handler": "lmsHandler.Calendar",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "GET",
+    "path": "/api/lms/student/profile",
+    "handler": "lmsHandler.StudentProfile",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/lms/student/profile",
+    "handler": "lmsHandler.StudentProfile",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "POST",
+    "path": "/api/lms/student/kids-mode",
+    "handler": "lmsHandler.StudentKidsMode",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "GET",
+    "path": "/api/lms/student/preferences",
+    "handler": "lmsHandler.StudentPreferences",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/lms/student/preferences",
+    "handler": "lmsHandler.StudentPreferences",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "GET",
+    "path": "/api/lms/dashboard/instructor",
+    "handler": "lmsHandler.DashboardInstructor",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "GET",
+    "path": "/api/lms/instructor/courses",
+    "handler": "lmsHandler.InstructorCourses",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "GET",
+    "path": "/api/lms/instructor/analytics",
+    "handler": "lmsHandler.InstructorAnalytics",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "method": "GET",
+    "path": "/api/lms/instructor/statements",
+    "handler": "lmsHandler.InstructorStatements",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
   }
 ]
 
@@ -1915,6 +2520,487 @@ export const lastsaasEvents: LastSaaSEvent[] = [
     "constant": "EventAPIKeyRevoked",
     "source": "lastsaas/backend/internal/events/emitter.go",
     "confidence": "confirmed"
+  },
+  // === LMS v2 events (from compendium-saas-plan.json) ===
+  {
+    "name": "course.created",
+    "constant": "EventCourseCreated",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "course.updated",
+    "constant": "EventCourseUpdated",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "course.published",
+    "constant": "EventCoursePublished",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "course.drafted",
+    "constant": "EventCourseDrafted",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "course.deleted",
+    "constant": "EventCourseDeleted",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "topic.created",
+    "constant": "EventTopicCreated",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "topic.reordered",
+    "constant": "EventTopicReordered",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "topic.deleted",
+    "constant": "EventTopicDeleted",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "lesson.created",
+    "constant": "EventLessonCreated",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "lesson.updated",
+    "constant": "EventLessonUpdated",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "lesson.deleted",
+    "constant": "EventLessonDeleted",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "lesson.video.uploaded",
+    "constant": "EventLessonVideoUploaded",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "quiz.created",
+    "constant": "EventQuizCreated",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "quiz.updated",
+    "constant": "EventQuizUpdated",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "quiz.deleted",
+    "constant": "EventQuizDeleted",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "quiz.attempt.started",
+    "constant": "EventQuizAttemptStarted",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "quiz.attempt.submitted",
+    "constant": "EventQuizAttemptSubmitted",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "quiz.attempt.graded",
+    "constant": "EventQuizAttemptGraded",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "question.created",
+    "constant": "EventQuestionCreated",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "question.updated",
+    "constant": "EventQuestionUpdated",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "question.deleted",
+    "constant": "EventQuestionDeleted",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "quiz.exported",
+    "constant": "EventQuizExported",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "quiz.imported",
+    "constant": "EventQuizImported",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "question.type.multiple_choice.created",
+    "constant": "EventQuestionTypeMultipleChoiceCreated",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "question.type.true_false.created",
+    "constant": "EventQuestionTypeTrueFalseCreated",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "question.type.open_ended.created",
+    "constant": "EventQuestionTypeOpenEndedCreated",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "question.type.fill_blanks.created",
+    "constant": "EventQuestionTypeFillBlanksCreated",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "question.type.short_answer.created",
+    "constant": "EventQuestionTypeShortAnswerCreated",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "question.type.matching.created",
+    "constant": "EventQuestionTypeMatchingCreated",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "question.type.image_answering.created",
+    "constant": "EventQuestionTypeImageAnsweringCreated",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "question.type.ordering.created",
+    "constant": "EventQuestionTypeOrderingCreated",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "question.type.puzzle.created",
+    "constant": "EventQuestionTypePuzzleCreated",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "question.type.scale.created",
+    "constant": "EventQuestionTypeScaleCreated",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "question.type.coordinates.created",
+    "constant": "EventQuestionTypeCoordinatesCreated",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "question.type.pin_image.created",
+    "constant": "EventQuestionTypePinImageCreated",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "question.type.draw_image.created",
+    "constant": "EventQuestionTypeDrawImageCreated",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "enrollment.created",
+    "constant": "EventEnrollmentCreated",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "enrollment.completed",
+    "constant": "EventEnrollmentCompleted",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "enrollment.cancelled",
+    "constant": "EventEnrollmentCancelled",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "lesson.started",
+    "constant": "EventLessonStarted",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "lesson.completed",
+    "constant": "EventLessonCompleted",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "lesson.progress.updated",
+    "constant": "EventLessonProgressUpdated",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "assignment.submitted",
+    "constant": "EventAssignmentSubmitted",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "assignment.graded",
+    "constant": "EventAssignmentGraded",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "qa.question.asked",
+    "constant": "EventQaQuestionAsked",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "qa.question.answered",
+    "constant": "EventQaQuestionAnswered",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "announcement.posted",
+    "constant": "EventAnnouncementPosted",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "review.submitted",
+    "constant": "EventReviewSubmitted",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "course.completed",
+    "constant": "EventCourseCompleted",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "course.progress.milestone",
+    "constant": "EventCourseProgressMilestone",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "note.created",
+    "constant": "EventNoteCreated",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "note.updated",
+    "constant": "EventNoteUpdated",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "note.deleted",
+    "constant": "EventNoteDeleted",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "discussion.posted",
+    "constant": "EventDiscussionPosted",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "discussion.replied",
+    "constant": "EventDiscussionReplied",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "kids_mode.enabled",
+    "constant": "EventKidsModeEnabled",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "kids_mode.disabled",
+    "constant": "EventKidsModeDisabled",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "profile.updated",
+    "constant": "EventProfileUpdated",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "instructor.course.approved",
+    "constant": "EventInstructorCourseApproved",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "instructor.payout.requested",
+    "constant": "EventInstructorPayoutRequested",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "instructor.payout.processed",
+    "constant": "EventInstructorPayoutProcessed",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "instructor.notification.sent",
+    "constant": "EventInstructorNotificationSent",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "cart.item.added",
+    "constant": "EventCartItemAdded",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "cart.item.removed",
+    "constant": "EventCartItemRemoved",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "checkout.started",
+    "constant": "EventCheckoutStarted",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "checkout.completed",
+    "constant": "EventCheckoutCompleted",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "checkout.failed",
+    "constant": "EventCheckoutFailed",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "order.created",
+    "constant": "EventOrderCreated",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "order.paid",
+    "constant": "EventOrderPaid",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "order.refunded",
+    "constant": "EventOrderRefunded",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "order.cancelled",
+    "constant": "EventOrderCancelled",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "coupon.applied",
+    "constant": "EventCouponApplied",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "coupon.redeemed",
+    "constant": "EventCouponRedeemed",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "gateway.connected",
+    "constant": "EventGatewayConnected",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "gateway.disconnected",
+    "constant": "EventGatewayDisconnected",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "webhook.received",
+    "constant": "EventWebhookReceived",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "gateway.stripe.connected",
+    "constant": "EventGatewayStripeConnected",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "gateway.paypal.connected",
+    "constant": "EventGatewayPaypalConnected",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "gateway.paddle.connected",
+    "constant": "EventGatewayPaddleConnected",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
+  },
+  {
+    "name": "gateway.authorize.connected",
+    "constant": "EventGatewayAuthorizeConnected",
+    "source": "saas-plan/compendium-saas-plan.json (LMS v2)",
+    "confidence": "planned"
   }
 ]
 

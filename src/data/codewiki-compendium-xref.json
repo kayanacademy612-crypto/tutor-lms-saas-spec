@@ -1,0 +1,1126 @@
+{
+  "generated_at": "2026-07-28T19:14:45.794676+00:00",
+  "source_files": [
+    "src/data/codewiki-sections.json (61 sections)",
+    "src/data/compendium-saas-plan.json (28 sections)"
+  ],
+  "description": "Bidirectional cross-reference between CodeWiki analysis sections (lastsaas capabilities) and Compendium SaaS plan sections (Tutor LMS features that depend on those capabilities). Built from a concept table that groups capability → dependency relationships; see the \"concepts\" array for the reasoning behind each group.",
+  "totals": {
+    "codewiki_sections": 61,
+    "compendium_sections": 28,
+    "concepts": 21,
+    "mappings": 301,
+    "codewiki_sections_with_mappings": 61,
+    "compendium_sections_with_mappings": 24
+  },
+  "concepts": [
+    {
+      "id": "dev-env-and-server",
+      "reason": "LastSaaS dev environment, backend server architecture, and process management are the foundation that Getting Started, Developer Guides, and the Admin Panel build on.",
+      "cw_sections": [
+        "cw-1",
+        "cw-2",
+        "cw-3",
+        "cw-32",
+        "cw-60"
+      ],
+      "compendium_sections": [
+        "getting-started",
+        "developer-guides",
+        "admin-panel"
+      ]
+    },
+    {
+      "id": "config-and-settings",
+      "reason": "LastSaaS config store + dynamic reloading backs the 66 Tutor LMS settings (13 pages) and the admin config panel.",
+      "cw_sections": [
+        "cw-4",
+        "cw-35"
+      ],
+      "compendium_sections": [
+        "tutor-lms-settings",
+        "getting-started",
+        "admin-panel"
+      ]
+    },
+    {
+      "id": "database-and-models",
+      "reason": "MongoDB connectivity + the 22 base data models are the schema foundation every LMS collection extends.",
+      "cw_sections": [
+        "cw-5",
+        "cw-12"
+      ],
+      "compendium_sections": [
+        "getting-started",
+        "developer-guides",
+        "admin-panel"
+      ]
+    },
+    {
+      "id": "middleware-stack",
+      "reason": "HTTP middleware (auth, RBAC, rate-limit, body-limit, security, tenant, requestid, metrics) wraps every LMS API route — referenced by Getting Started and Developer Guides.",
+      "cw_sections": [
+        "cw-6",
+        "cw-18"
+      ],
+      "compendium_sections": [
+        "getting-started",
+        "developer-guides"
+      ]
+    },
+    {
+      "id": "api-endpoints-and-routing",
+      "reason": "The 133-route lastsaas API surface + the structured API overview are what Developer Guides documents and the Admin Panel / Course Builder / Quiz Builder extend.",
+      "cw_sections": [
+        "cw-11",
+        "cw-61"
+      ],
+      "compendium_sections": [
+        "developer-guides",
+        "admin-panel",
+        "course-builder",
+        "quiz-builder",
+        "quiz-question-types"
+      ]
+    },
+    {
+      "id": "authentication",
+      "reason": "Auth & authorization (password, JWT, OAuth, MFA, HTTP auth middleware, token refresh, auth flow pages, auth UI components) is the foundation for student / instructor / admin login across every user-facing Compendium section.",
+      "cw_sections": [
+        "cw-13",
+        "cw-14",
+        "cw-15",
+        "cw-16",
+        "cw-17",
+        "cw-18",
+        "cw-51",
+        "cw-55",
+        "cw-59"
+      ],
+      "compendium_sections": [
+        "getting-started",
+        "student-learning-experience",
+        "learner-dashboard",
+        "instructor-dashboard",
+        "admin-panel",
+        "tutorials"
+      ]
+    },
+    {
+      "id": "billing-and-payments",
+      "reason": "Stripe billing (service init, customer/product sync, subscription lifecycle, invoice numbers) is the foundation for every monetization Compendium section — native eCommerce, all 11 payment gateways, subscriptions, memberships, gift course, course bundles.",
+      "cw_sections": [
+        "cw-19",
+        "cw-20",
+        "cw-21",
+        "cw-22",
+        "cw-24"
+      ],
+      "compendium_sections": [
+        "native-ecommerce",
+        "payment-gateways",
+        "subscriptions",
+        "memberships",
+        "gift-course",
+        "course-bundle"
+      ]
+    },
+    {
+      "id": "webhooks",
+      "reason": "Secure webhook handling (signature verification, dispatch + retry, secret management) backs payment-gateway webhooks and all third-party Integrations.",
+      "cw_sections": [
+        "cw-23",
+        "cw-25",
+        "cw-26",
+        "cw-27"
+      ],
+      "compendium_sections": [
+        "integrations",
+        "payment-gateways",
+        "developer-guides",
+        "native-ecommerce"
+      ]
+    },
+    {
+      "id": "email-service",
+      "reason": "Resend email service backs all 53 email triggers across course-builder, certificates, student/instructor notifications, and the email-template settings page.",
+      "cw_sections": [
+        "cw-28"
+      ],
+      "compendium_sections": [
+        "course-builder",
+        "certificate-builder",
+        "student-learning-experience",
+        "instructor-dashboard",
+        "troubleshooting",
+        "tutor-lms-settings",
+        "tutor-lms-addons"
+      ]
+    },
+    {
+      "id": "events-system",
+      "reason": "Internal event emitter (22 base events) is the action-hook foundation Developer Guides documents and every LMS feature extends.",
+      "cw_sections": [
+        "cw-10"
+      ],
+      "compendium_sections": [
+        "developer-guides",
+        "course-builder",
+        "student-learning-experience",
+        "instructor-dashboard",
+        "admin-panel",
+        "tutor-lms-addons"
+      ]
+    },
+    {
+      "id": "health-monitoring",
+      "reason": "System health, node heartbeat, metric collection, integration health, and health-data querying back the admin Health page, instructor analytics, and the troubleshooting QA checklist.",
+      "cw_sections": [
+        "cw-7",
+        "cw-36",
+        "cw-37",
+        "cw-38",
+        "cw-39",
+        "cw-40"
+      ],
+      "compendium_sections": [
+        "admin-panel",
+        "troubleshooting",
+        "instructor-dashboard",
+        "integrations"
+      ]
+    },
+    {
+      "id": "metrics-and-reporting",
+      "reason": "Daily metrics (DAU/WAU/MAU, revenue, ARR) + financial reporting aggregation feed the instructor dashboard analytics + admin financial page.",
+      "cw_sections": [
+        "cw-8",
+        "cw-34"
+      ],
+      "compendium_sections": [
+        "instructor-dashboard",
+        "admin-panel"
+      ]
+    },
+    {
+      "id": "datadog-and-telemetry",
+      "reason": "Async DataDog integration + client-side telemetry are the observability layer for Integrations and Troubleshooting.",
+      "cw_sections": [
+        "cw-9",
+        "cw-46"
+      ],
+      "compendium_sections": [
+        "integrations",
+        "troubleshooting",
+        "developer-guides"
+      ]
+    },
+    {
+      "id": "system-administration",
+      "reason": "cmdDoctor diagnostics, log management, MCP integration, and system admin CLI tools back the Admin Panel and the Troubleshooting QA checklist.",
+      "cw_sections": [
+        "cw-29",
+        "cw-30",
+        "cw-31",
+        "cw-33"
+      ],
+      "compendium_sections": [
+        "admin-panel",
+        "troubleshooting",
+        "developer-guides"
+      ]
+    },
+    {
+      "id": "frontend-architecture",
+      "reason": "Frontend application structure, global state (React Context), API communication + interceptors, routing + access control, and the frontend API client are the SPA foundation every frontend Compendium section (course builder, student experience, dashboards) builds on.",
+      "cw_sections": [
+        "cw-41",
+        "cw-42",
+        "cw-43",
+        "cw-44",
+        "cw-57"
+      ],
+      "compendium_sections": [
+        "course-builder",
+        "quiz-builder",
+        "student-learning-experience",
+        "learner-dashboard",
+        "instructor-dashboard",
+        "certificate-builder",
+        "advanced-customization",
+        "tutor-lms-shortcodes"
+      ]
+    },
+    {
+      "id": "branding-and-theming",
+      "reason": "Dynamic branding + theming (BrandingContext, BrandingThemeInjector, dynamic header) back the Advanced Customization override system, the Design settings page, and admin theme management.",
+      "cw_sections": [
+        "cw-45",
+        "cw-52",
+        "cw-58"
+      ],
+      "compendium_sections": [
+        "advanced-customization",
+        "tutor-lms-settings",
+        "admin-panel"
+      ]
+    },
+    {
+      "id": "frontend-components",
+      "reason": "Foundational UI components, core app layouts + navigation, and the full component library are what Course Builder, Quiz Builder / Quiz Question Types (13 React renderers), dashboards, and the Customization override system compose.",
+      "cw_sections": [
+        "cw-48",
+        "cw-49",
+        "cw-50"
+      ],
+      "compendium_sections": [
+        "course-builder",
+        "quiz-builder",
+        "quiz-question-types",
+        "student-learning-experience",
+        "learner-dashboard",
+        "instructor-dashboard",
+        "advanced-customization",
+        "certificate-builder"
+      ]
+    },
+    {
+      "id": "frontend-pages",
+      "reason": "User-facing app pages, public-facing content pages, and the structured admin/auth/public page tree map directly to the student experience, learner dashboard, instructor dashboard, admin panel, and the shortcode→route migration.",
+      "cw_sections": [
+        "cw-53",
+        "cw-54",
+        "cw-56"
+      ],
+      "compendium_sections": [
+        "learner-dashboard",
+        "student-learning-experience",
+        "instructor-dashboard",
+        "admin-panel",
+        "tutor-lms-shortcodes",
+        "course-builder"
+      ]
+    },
+    {
+      "id": "error-handling",
+      "reason": "Comprehensive frontend + backend error handling + service-unavailable handling back the Troubleshooting QA patterns.",
+      "cw_sections": [
+        "cw-47",
+        "cw-60"
+      ],
+      "compendium_sections": [
+        "troubleshooting",
+        "student-learning-experience"
+      ]
+    },
+    {
+      "id": "structured-api-endpoints",
+      "reason": "Structured API endpoint overview (cw-61) is the master reference for Developer Guides (REST API docs) and the Admin Panel API page. Includes the 3 inline brand icons rendered as part of the API reference UI.",
+      "cw_sections": [
+        "cw-61"
+      ],
+      "compendium_sections": [
+        "developer-guides",
+        "admin-panel"
+      ]
+    },
+    {
+      "id": "data-migration-and-import",
+      "reason": "System administration CLI tools (cmdDoctor, cmdLogs, cmdConfig) + database/schema management + the structured API surface are the infrastructure the Migration tools (WooCommerce/LearnDash/LifterLMS/LearnPress → Tutor LMS) run on top of for batch import/export with progress tracking.",
+      "cw_sections": [
+        "cw-5",
+        "cw-12",
+        "cw-29",
+        "cw-30",
+        "cw-31",
+        "cw-11",
+        "cw-61"
+      ],
+      "compendium_sections": [
+        "migration",
+        "admin-panel",
+        "developer-guides"
+      ]
+    }
+  ],
+  "codewiki_to_compendium": {
+    "cw-1": [
+      "getting-started",
+      "developer-guides",
+      "admin-panel"
+    ],
+    "cw-2": [
+      "getting-started",
+      "developer-guides",
+      "admin-panel"
+    ],
+    "cw-3": [
+      "getting-started",
+      "developer-guides",
+      "admin-panel"
+    ],
+    "cw-4": [
+      "tutor-lms-settings",
+      "getting-started",
+      "admin-panel"
+    ],
+    "cw-5": [
+      "getting-started",
+      "developer-guides",
+      "admin-panel",
+      "migration"
+    ],
+    "cw-6": [
+      "getting-started",
+      "developer-guides"
+    ],
+    "cw-7": [
+      "admin-panel",
+      "troubleshooting",
+      "instructor-dashboard",
+      "integrations"
+    ],
+    "cw-8": [
+      "instructor-dashboard",
+      "admin-panel"
+    ],
+    "cw-9": [
+      "integrations",
+      "troubleshooting",
+      "developer-guides"
+    ],
+    "cw-10": [
+      "developer-guides",
+      "course-builder",
+      "student-learning-experience",
+      "instructor-dashboard",
+      "admin-panel",
+      "tutor-lms-addons"
+    ],
+    "cw-11": [
+      "developer-guides",
+      "admin-panel",
+      "course-builder",
+      "quiz-builder",
+      "quiz-question-types",
+      "migration"
+    ],
+    "cw-12": [
+      "getting-started",
+      "developer-guides",
+      "admin-panel",
+      "migration"
+    ],
+    "cw-13": [
+      "getting-started",
+      "student-learning-experience",
+      "learner-dashboard",
+      "instructor-dashboard",
+      "admin-panel",
+      "tutorials"
+    ],
+    "cw-14": [
+      "getting-started",
+      "student-learning-experience",
+      "learner-dashboard",
+      "instructor-dashboard",
+      "admin-panel",
+      "tutorials"
+    ],
+    "cw-15": [
+      "getting-started",
+      "student-learning-experience",
+      "learner-dashboard",
+      "instructor-dashboard",
+      "admin-panel",
+      "tutorials"
+    ],
+    "cw-16": [
+      "getting-started",
+      "student-learning-experience",
+      "learner-dashboard",
+      "instructor-dashboard",
+      "admin-panel",
+      "tutorials"
+    ],
+    "cw-17": [
+      "getting-started",
+      "student-learning-experience",
+      "learner-dashboard",
+      "instructor-dashboard",
+      "admin-panel",
+      "tutorials"
+    ],
+    "cw-18": [
+      "getting-started",
+      "developer-guides",
+      "student-learning-experience",
+      "learner-dashboard",
+      "instructor-dashboard",
+      "admin-panel",
+      "tutorials"
+    ],
+    "cw-19": [
+      "native-ecommerce",
+      "payment-gateways",
+      "subscriptions",
+      "memberships",
+      "gift-course",
+      "course-bundle"
+    ],
+    "cw-20": [
+      "native-ecommerce",
+      "payment-gateways",
+      "subscriptions",
+      "memberships",
+      "gift-course",
+      "course-bundle"
+    ],
+    "cw-21": [
+      "native-ecommerce",
+      "payment-gateways",
+      "subscriptions",
+      "memberships",
+      "gift-course",
+      "course-bundle"
+    ],
+    "cw-22": [
+      "native-ecommerce",
+      "payment-gateways",
+      "subscriptions",
+      "memberships",
+      "gift-course",
+      "course-bundle"
+    ],
+    "cw-23": [
+      "integrations",
+      "payment-gateways",
+      "developer-guides",
+      "native-ecommerce"
+    ],
+    "cw-24": [
+      "native-ecommerce",
+      "payment-gateways",
+      "subscriptions",
+      "memberships",
+      "gift-course",
+      "course-bundle"
+    ],
+    "cw-25": [
+      "integrations",
+      "payment-gateways",
+      "developer-guides",
+      "native-ecommerce"
+    ],
+    "cw-26": [
+      "integrations",
+      "payment-gateways",
+      "developer-guides",
+      "native-ecommerce"
+    ],
+    "cw-27": [
+      "integrations",
+      "payment-gateways",
+      "developer-guides",
+      "native-ecommerce"
+    ],
+    "cw-28": [
+      "course-builder",
+      "certificate-builder",
+      "student-learning-experience",
+      "instructor-dashboard",
+      "troubleshooting",
+      "tutor-lms-settings",
+      "tutor-lms-addons"
+    ],
+    "cw-29": [
+      "admin-panel",
+      "troubleshooting",
+      "developer-guides",
+      "migration"
+    ],
+    "cw-30": [
+      "admin-panel",
+      "troubleshooting",
+      "developer-guides",
+      "migration"
+    ],
+    "cw-31": [
+      "admin-panel",
+      "troubleshooting",
+      "developer-guides",
+      "migration"
+    ],
+    "cw-32": [
+      "getting-started",
+      "developer-guides",
+      "admin-panel"
+    ],
+    "cw-33": [
+      "admin-panel",
+      "troubleshooting",
+      "developer-guides"
+    ],
+    "cw-34": [
+      "instructor-dashboard",
+      "admin-panel"
+    ],
+    "cw-35": [
+      "tutor-lms-settings",
+      "getting-started",
+      "admin-panel"
+    ],
+    "cw-36": [
+      "admin-panel",
+      "troubleshooting",
+      "instructor-dashboard",
+      "integrations"
+    ],
+    "cw-37": [
+      "admin-panel",
+      "troubleshooting",
+      "instructor-dashboard",
+      "integrations"
+    ],
+    "cw-38": [
+      "admin-panel",
+      "troubleshooting",
+      "instructor-dashboard",
+      "integrations"
+    ],
+    "cw-39": [
+      "admin-panel",
+      "troubleshooting",
+      "instructor-dashboard",
+      "integrations"
+    ],
+    "cw-40": [
+      "admin-panel",
+      "troubleshooting",
+      "instructor-dashboard",
+      "integrations"
+    ],
+    "cw-41": [
+      "course-builder",
+      "quiz-builder",
+      "student-learning-experience",
+      "learner-dashboard",
+      "instructor-dashboard",
+      "certificate-builder",
+      "advanced-customization",
+      "tutor-lms-shortcodes"
+    ],
+    "cw-42": [
+      "course-builder",
+      "quiz-builder",
+      "student-learning-experience",
+      "learner-dashboard",
+      "instructor-dashboard",
+      "certificate-builder",
+      "advanced-customization",
+      "tutor-lms-shortcodes"
+    ],
+    "cw-43": [
+      "course-builder",
+      "quiz-builder",
+      "student-learning-experience",
+      "learner-dashboard",
+      "instructor-dashboard",
+      "certificate-builder",
+      "advanced-customization",
+      "tutor-lms-shortcodes"
+    ],
+    "cw-44": [
+      "course-builder",
+      "quiz-builder",
+      "student-learning-experience",
+      "learner-dashboard",
+      "instructor-dashboard",
+      "certificate-builder",
+      "advanced-customization",
+      "tutor-lms-shortcodes"
+    ],
+    "cw-45": [
+      "advanced-customization",
+      "tutor-lms-settings",
+      "admin-panel"
+    ],
+    "cw-46": [
+      "integrations",
+      "troubleshooting",
+      "developer-guides"
+    ],
+    "cw-47": [
+      "troubleshooting",
+      "student-learning-experience"
+    ],
+    "cw-48": [
+      "course-builder",
+      "quiz-builder",
+      "quiz-question-types",
+      "student-learning-experience",
+      "learner-dashboard",
+      "instructor-dashboard",
+      "advanced-customization",
+      "certificate-builder"
+    ],
+    "cw-49": [
+      "course-builder",
+      "quiz-builder",
+      "quiz-question-types",
+      "student-learning-experience",
+      "learner-dashboard",
+      "instructor-dashboard",
+      "advanced-customization",
+      "certificate-builder"
+    ],
+    "cw-50": [
+      "course-builder",
+      "quiz-builder",
+      "quiz-question-types",
+      "student-learning-experience",
+      "learner-dashboard",
+      "instructor-dashboard",
+      "advanced-customization",
+      "certificate-builder"
+    ],
+    "cw-51": [
+      "getting-started",
+      "student-learning-experience",
+      "learner-dashboard",
+      "instructor-dashboard",
+      "admin-panel",
+      "tutorials"
+    ],
+    "cw-52": [
+      "advanced-customization",
+      "tutor-lms-settings",
+      "admin-panel"
+    ],
+    "cw-53": [
+      "learner-dashboard",
+      "student-learning-experience",
+      "instructor-dashboard",
+      "admin-panel",
+      "tutor-lms-shortcodes",
+      "course-builder"
+    ],
+    "cw-54": [
+      "learner-dashboard",
+      "student-learning-experience",
+      "instructor-dashboard",
+      "admin-panel",
+      "tutor-lms-shortcodes",
+      "course-builder"
+    ],
+    "cw-55": [
+      "getting-started",
+      "student-learning-experience",
+      "learner-dashboard",
+      "instructor-dashboard",
+      "admin-panel",
+      "tutorials"
+    ],
+    "cw-56": [
+      "learner-dashboard",
+      "student-learning-experience",
+      "instructor-dashboard",
+      "admin-panel",
+      "tutor-lms-shortcodes",
+      "course-builder"
+    ],
+    "cw-57": [
+      "course-builder",
+      "quiz-builder",
+      "student-learning-experience",
+      "learner-dashboard",
+      "instructor-dashboard",
+      "certificate-builder",
+      "advanced-customization",
+      "tutor-lms-shortcodes"
+    ],
+    "cw-58": [
+      "advanced-customization",
+      "tutor-lms-settings",
+      "admin-panel"
+    ],
+    "cw-59": [
+      "getting-started",
+      "student-learning-experience",
+      "learner-dashboard",
+      "instructor-dashboard",
+      "admin-panel",
+      "tutorials"
+    ],
+    "cw-60": [
+      "getting-started",
+      "developer-guides",
+      "admin-panel",
+      "troubleshooting",
+      "student-learning-experience"
+    ],
+    "cw-61": [
+      "developer-guides",
+      "admin-panel",
+      "course-builder",
+      "quiz-builder",
+      "quiz-question-types",
+      "migration"
+    ]
+  },
+  "compendium_to_codewiki": {
+    "getting-started": [
+      "cw-1",
+      "cw-2",
+      "cw-3",
+      "cw-32",
+      "cw-60",
+      "cw-4",
+      "cw-35",
+      "cw-5",
+      "cw-12",
+      "cw-6",
+      "cw-18",
+      "cw-13",
+      "cw-14",
+      "cw-15",
+      "cw-16",
+      "cw-17",
+      "cw-51",
+      "cw-55",
+      "cw-59"
+    ],
+    "course-builder": [
+      "cw-11",
+      "cw-61",
+      "cw-28",
+      "cw-10",
+      "cw-41",
+      "cw-42",
+      "cw-43",
+      "cw-44",
+      "cw-57",
+      "cw-48",
+      "cw-49",
+      "cw-50",
+      "cw-53",
+      "cw-54",
+      "cw-56"
+    ],
+    "quiz-builder": [
+      "cw-11",
+      "cw-61",
+      "cw-41",
+      "cw-42",
+      "cw-43",
+      "cw-44",
+      "cw-57",
+      "cw-48",
+      "cw-49",
+      "cw-50"
+    ],
+    "quiz-question-types": [
+      "cw-11",
+      "cw-61",
+      "cw-48",
+      "cw-49",
+      "cw-50"
+    ],
+    "student-learning-experience": [
+      "cw-13",
+      "cw-14",
+      "cw-15",
+      "cw-16",
+      "cw-17",
+      "cw-18",
+      "cw-51",
+      "cw-55",
+      "cw-59",
+      "cw-28",
+      "cw-10",
+      "cw-41",
+      "cw-42",
+      "cw-43",
+      "cw-44",
+      "cw-57",
+      "cw-48",
+      "cw-49",
+      "cw-50",
+      "cw-53",
+      "cw-54",
+      "cw-56",
+      "cw-47",
+      "cw-60"
+    ],
+    "learner-dashboard": [
+      "cw-13",
+      "cw-14",
+      "cw-15",
+      "cw-16",
+      "cw-17",
+      "cw-18",
+      "cw-51",
+      "cw-55",
+      "cw-59",
+      "cw-41",
+      "cw-42",
+      "cw-43",
+      "cw-44",
+      "cw-57",
+      "cw-48",
+      "cw-49",
+      "cw-50",
+      "cw-53",
+      "cw-54",
+      "cw-56"
+    ],
+    "instructor-dashboard": [
+      "cw-13",
+      "cw-14",
+      "cw-15",
+      "cw-16",
+      "cw-17",
+      "cw-18",
+      "cw-51",
+      "cw-55",
+      "cw-59",
+      "cw-28",
+      "cw-10",
+      "cw-7",
+      "cw-36",
+      "cw-37",
+      "cw-38",
+      "cw-39",
+      "cw-40",
+      "cw-8",
+      "cw-34",
+      "cw-41",
+      "cw-42",
+      "cw-43",
+      "cw-44",
+      "cw-57",
+      "cw-48",
+      "cw-49",
+      "cw-50",
+      "cw-53",
+      "cw-54",
+      "cw-56"
+    ],
+    "native-ecommerce": [
+      "cw-19",
+      "cw-20",
+      "cw-21",
+      "cw-22",
+      "cw-24",
+      "cw-23",
+      "cw-25",
+      "cw-26",
+      "cw-27"
+    ],
+    "payment-gateways": [
+      "cw-19",
+      "cw-20",
+      "cw-21",
+      "cw-22",
+      "cw-24",
+      "cw-23",
+      "cw-25",
+      "cw-26",
+      "cw-27"
+    ],
+    "subscriptions": [
+      "cw-19",
+      "cw-20",
+      "cw-21",
+      "cw-22",
+      "cw-24"
+    ],
+    "memberships": [
+      "cw-19",
+      "cw-20",
+      "cw-21",
+      "cw-22",
+      "cw-24"
+    ],
+    "gift-course": [
+      "cw-19",
+      "cw-20",
+      "cw-21",
+      "cw-22",
+      "cw-24"
+    ],
+    "course-bundle": [
+      "cw-19",
+      "cw-20",
+      "cw-21",
+      "cw-22",
+      "cw-24"
+    ],
+    "certificate-builder": [
+      "cw-28",
+      "cw-41",
+      "cw-42",
+      "cw-43",
+      "cw-44",
+      "cw-57",
+      "cw-48",
+      "cw-49",
+      "cw-50"
+    ],
+    "tutor-lms-addons": [
+      "cw-28",
+      "cw-10"
+    ],
+    "integrations": [
+      "cw-23",
+      "cw-25",
+      "cw-26",
+      "cw-27",
+      "cw-7",
+      "cw-36",
+      "cw-37",
+      "cw-38",
+      "cw-39",
+      "cw-40",
+      "cw-9",
+      "cw-46"
+    ],
+    "elementor-integration": [],
+    "divi-integration": [],
+    "oxygen-builder-integration": [],
+    "tutorials": [
+      "cw-13",
+      "cw-14",
+      "cw-15",
+      "cw-16",
+      "cw-17",
+      "cw-18",
+      "cw-51",
+      "cw-55",
+      "cw-59"
+    ],
+    "migration": [
+      "cw-5",
+      "cw-12",
+      "cw-29",
+      "cw-30",
+      "cw-31",
+      "cw-11",
+      "cw-61"
+    ],
+    "tutor-lms-shortcodes": [
+      "cw-41",
+      "cw-42",
+      "cw-43",
+      "cw-44",
+      "cw-57",
+      "cw-53",
+      "cw-54",
+      "cw-56"
+    ],
+    "advanced-customization": [
+      "cw-41",
+      "cw-42",
+      "cw-43",
+      "cw-44",
+      "cw-57",
+      "cw-45",
+      "cw-52",
+      "cw-58",
+      "cw-48",
+      "cw-49",
+      "cw-50"
+    ],
+    "troubleshooting": [
+      "cw-28",
+      "cw-7",
+      "cw-36",
+      "cw-37",
+      "cw-38",
+      "cw-39",
+      "cw-40",
+      "cw-9",
+      "cw-46",
+      "cw-29",
+      "cw-30",
+      "cw-31",
+      "cw-33",
+      "cw-47",
+      "cw-60"
+    ],
+    "developer-guides": [
+      "cw-1",
+      "cw-2",
+      "cw-3",
+      "cw-32",
+      "cw-60",
+      "cw-5",
+      "cw-12",
+      "cw-6",
+      "cw-18",
+      "cw-11",
+      "cw-61",
+      "cw-23",
+      "cw-25",
+      "cw-26",
+      "cw-27",
+      "cw-10",
+      "cw-9",
+      "cw-46",
+      "cw-29",
+      "cw-30",
+      "cw-31",
+      "cw-33"
+    ],
+    "admin-panel": [
+      "cw-1",
+      "cw-2",
+      "cw-3",
+      "cw-32",
+      "cw-60",
+      "cw-4",
+      "cw-35",
+      "cw-5",
+      "cw-12",
+      "cw-11",
+      "cw-61",
+      "cw-13",
+      "cw-14",
+      "cw-15",
+      "cw-16",
+      "cw-17",
+      "cw-18",
+      "cw-51",
+      "cw-55",
+      "cw-59",
+      "cw-10",
+      "cw-7",
+      "cw-36",
+      "cw-37",
+      "cw-38",
+      "cw-39",
+      "cw-40",
+      "cw-8",
+      "cw-34",
+      "cw-29",
+      "cw-30",
+      "cw-31",
+      "cw-33",
+      "cw-45",
+      "cw-52",
+      "cw-58",
+      "cw-53",
+      "cw-54",
+      "cw-56"
+    ],
+    "tutor-lms-settings": [
+      "cw-4",
+      "cw-35",
+      "cw-28",
+      "cw-45",
+      "cw-52",
+      "cw-58"
+    ],
+    "uncategorized": []
+  }
+}

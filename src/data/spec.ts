@@ -1,22 +1,22 @@
 // Spec data — typed and comprehensive but stable for compilation
 
 export const specStats = {
-  collections: 40, endpoints: 171, events: 290, tickets: 100,
-  settings: 185, emailTriggers: 42, quizTypes: 13, gateways: 11,
+  collections: 119, endpoints: 209, events: 175, tickets: 84,
+  settings: 153, emailTriggers: 53, quizTypes: 13, gateways: 11,
   phases: 6, devDays: 137.5, calendarWeeks: 24, teamSize: 5,
 }
 
 export const navSections = [
   { id: 'overview', label: 'Overview', icon: 'BookOpen' },
-  { id: 'collections', label: 'Data Model (40)', icon: 'Database' },
-  { id: 'endpoints', label: 'API Reference (171)', icon: 'Code2' },
-  { id: 'events', label: 'Events (290)', icon: 'Zap' },
+  { id: 'collections', label: 'Data Model (119)', icon: 'Database' },
+  { id: 'endpoints', label: 'API Reference (209)', icon: 'Code2' },
+  { id: 'events', label: 'Events (175)', icon: 'Zap' },
   { id: 'phases', label: 'Build Roadmap (6)', icon: 'Map' },
-  { id: 'tickets', label: 'Tickets (100)', icon: 'Ticket' },
+  { id: 'tickets', label: 'Tickets (84)', icon: 'Ticket' },
   { id: 'quiz-types', label: 'Quiz Types (13)', icon: 'HelpCircle' },
   { id: 'gateways', label: 'Payment Gateways (11)', icon: 'CreditCard' },
-  { id: 'settings', label: 'Settings (185)', icon: 'Settings' },
-  { id: 'email-triggers', label: 'Email Triggers (42)', icon: 'Mail' },
+  { id: 'settings', label: 'Settings (153)', icon: 'Settings' },
+  { id: 'email-triggers', label: 'Email Triggers (53)', icon: 'Mail' },
   { id: 'mcp', label: 'MCP + API Access', icon: 'Plug' },
 ]
 

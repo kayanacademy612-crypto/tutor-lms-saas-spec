@@ -20,15 +20,16 @@ import { useTheme } from 'next-themes'
 const SECTIONS = [
   { id: 'overview', label: 'Overview', icon: BookOpen, group: 'general' },
   { id: 'files', label: 'Files & Resources', icon: Folder, group: 'general' },
-  { id: 'collections', label: 'Data Model (91)', icon: Database, group: 'general' },
-  { id: 'endpoints', label: 'API Reference (172)', icon: Code2, group: 'general' },
-  { id: 'events', label: 'Events (480)', icon: Zap, group: 'general' },
+  { id: 'collections', label: 'Data Model (119)', icon: Database, group: 'general' },
+  { id: 'endpoints', label: 'API Reference (209)', icon: Code2, group: 'general' },
+  { id: 'events', label: 'Events (175)', icon: Zap, group: 'general' },
   { id: 'phases', label: 'Build Roadmap (6)', icon: Map, group: 'general' },
-  { id: 'tickets', label: 'Tickets (100)', icon: Ticket, group: 'general' },
+  { id: 'tickets', label: 'Tickets (84)', icon: Ticket, group: 'general' },
   { id: 'quiz-types', label: 'Quiz Types (13)', icon: HelpCircle, group: 'general' },
   { id: 'gateways', label: 'Payment Gateways (11)', icon: CreditCard, group: 'general' },
-  { id: 'settings', label: 'Settings (66)', icon: Mail, group: 'general' },
-  { id: 'email-triggers', label: 'Email Triggers (54)', icon: Mail, group: 'general' },
+  { id: 'settings', label: 'Settings (153)', icon: Mail, group: 'general' },
+  { id: 'email-triggers', label: 'Email Triggers (53)', icon: Mail, group: 'general' },
+  { id: 'saas-plan', label: 'SaaS Plan Data', icon: Database, group: 'general' },
   { id: 'lastsaas', label: 'LastSaaS Architecture', icon: Server, group: 'lastsaas' },
   { id: 'codewiki', label: 'CodeWiki Analysis', icon: FileText, group: 'lastsaas' },
   { id: 'tutor-kb', label: 'Tutor LMS Knowledge', icon: FileText, group: 'tutor' },
@@ -1751,6 +1752,7 @@ export default function Home() {
       'user-flows': '/api/user-flows',
       'frontend-gaps': '/api/gaps/frontend',
       'backend-gaps': '/api/gaps/backend',
+      'saas-plan': '/api/saas-plan',
     }
     return map[active] || null
   })()
@@ -1783,12 +1785,12 @@ export default function Home() {
     // === OVERVIEW ===
     if (active === 'overview') {
       const stats = [
-        { label: 'Collections', value: 91, icon: Database, color: 'text-amber-500' },
-        { label: 'Endpoints', value: 172, icon: Code2, color: 'text-emerald-500' },
-        { label: 'Events', value: 480, icon: Zap, color: 'text-pink-500' },
-        { label: 'Tickets', value: 100, icon: Ticket, color: 'text-cyan-500' },
-        { label: 'Settings', value: 66, icon: Mail, color: 'text-purple-500' },
-        { label: 'LastSaaS Routes', value: 133, icon: Server, color: 'text-blue-500' },
+        { label: 'Collections', value: 119, icon: Database, color: 'text-amber-500' },
+        { label: 'Endpoints', value: 209, icon: Code2, color: 'text-emerald-500' },
+        { label: 'Events', value: 175, icon: Zap, color: 'text-pink-500' },
+        { label: 'Tickets', value: 84, icon: Ticket, color: 'text-cyan-500' },
+        { label: 'Settings', value: 153, icon: Mail, color: 'text-purple-500' },
+        { label: 'LastSaaS Routes', value: 190, icon: Server, color: 'text-blue-500' },
         { label: 'Tutor Classes', value: 89, icon: FileText, color: 'text-orange-500' },
         { label: 'Comparisons', value: 25, icon: GitCompare, color: 'text-yellow-500' },
         { label: 'Phases', value: 6, icon: Map, color: 'text-indigo-500' },
@@ -1810,7 +1812,7 @@ export default function Home() {
             )})}
           </div>
           <div className="grid md:grid-cols-3 gap-4">
-            <Card className="border-blue-500/20"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Server className="w-4 h-4 text-blue-500" /> LastSaaS</CardTitle><CardDescription>CodeWiki + MCP connected</CardDescription></CardHeader><CardContent className="text-sm text-muted-foreground space-y-1"><div>134 Go files · 91 TS files</div><div>22 packages · 38 collections</div><div>133 API routes · 10 middleware</div><div>22 models · 22 events</div><Badge variant="outline" className="mt-2 bg-blue-500/10 text-blue-600 dark:text-blue-400">CodeWiki: Connected</Badge></CardContent></Card>
+            <Card className="border-blue-500/20"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Server className="w-4 h-4 text-blue-500" /> LastSaaS</CardTitle><CardDescription>CodeWiki + MCP connected</CardDescription></CardHeader><CardContent className="text-sm text-muted-foreground space-y-1"><div>134 Go files · 91 TS files</div><div>22 packages · 72 collections</div><div>190 API routes · 10 middleware</div><div>22 models · 102 events</div><Badge variant="outline" className="mt-2 bg-blue-500/10 text-blue-600 dark:text-blue-400">CodeWiki: Connected</Badge></CardContent></Card>
             <Card className="border-orange-500/20"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><FileText className="w-4 h-4 text-orange-500" /> Tutor LMS</CardTitle><CardDescription>Source code indexed</CardDescription></CardHeader><CardContent className="text-sm text-muted-foreground space-y-1"><div>636 PHP files (free) · 1618 (Pro)</div><div>61 free classes · 28 Pro classes</div><div>16 models · 29 addons</div><div>54 email templates · 9 shortcodes</div><Badge variant="outline" className="mt-2 bg-orange-500/10 text-orange-600 dark:text-orange-400">Index: Complete</Badge></CardContent></Card>
             <Card className="border-purple-500/20"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Plug className="w-4 h-4 text-purple-500" /> AI Access</CardTitle><CardDescription>MCP + JSON API</CardDescription></CardHeader><CardContent className="text-sm text-muted-foreground space-y-1"><div><code className="text-purple-600 dark:text-purple-400 text-xs">POST /api/mcp</code> — MCP server</div><div><code className="text-purple-600 dark:text-purple-400 text-xs">POST /api/codewiki/ask</code> — CodeWiki proxy</div><div><code className="text-emerald-600 dark:text-emerald-400 text-xs">GET /api/spec/*</code> — 10 JSON endpoints</div><div><code className="text-emerald-600 dark:text-emerald-400 text-xs">GET /api/comparison</code> — Comparison data</div></CardContent></Card>
           </div>
@@ -1877,7 +1879,7 @@ export default function Home() {
                 { name: 'HTTP Layer (gorilla/mux)', components: ['main.go (router)', '10 middleware (auth, rbac, tenant, ratelimit, security, recovery, requestid, bodylimit, metrics, apiversion)'], source: 'lastsaas/backend/cmd/server/main.go', color: 'border-indigo-500/30' },
                 { name: 'API Handlers (24 files)', components: ['auth', 'tenant', 'billing', 'plans', 'webhooks', 'branding', 'admin', 'messages', 'announcements', 'config', 'health', 'telemetry', 'apikeys', 'logs', 'bundles', 'usage', 'pm', 'bootstrap', 'docs', 'openapi', 'promotions', 'helpers', 'event_definitions'], source: 'lastsaas/backend/internal/api/handlers/', color: 'border-blue-500/30' },
                 { name: 'Services (Business Logic)', components: ['auth', 'configstore', 'email (Resend)', 'events (Emitter)', 'health', 'metrics', 'planstore', 'stripe', 'telemetry', 'webhooks (Dispatcher)'], source: 'lastsaas/backend/internal/', color: 'border-cyan-500/30' },
-                { name: 'Data Layer (MongoDB)', components: ['38 collections (mongodb.go)', '16 schema validators (schema.go)', '22 model files (models/)'], source: 'lastsaas/backend/internal/db/, models/', color: 'border-emerald-500/30' },
+                { name: 'Data Layer (MongoDB)', components: ['72 collections (38 base + 34 LMS v2)', '16 schema validators (schema.go)', '22 model files (models/)'], source: 'lastsaas/backend/internal/db/, models/', color: 'border-emerald-500/30' },
               ].map((layer, i) => (
                 <div key={`layer-${i}`} className={`p-3 border rounded-lg ${layer.color}`}>
                   <div className="flex items-center gap-2 mb-1">
@@ -1898,7 +1900,7 @@ export default function Home() {
           <Card><CardHeader><CardTitle className="text-base">Module Relationships</CardTitle><CardDescription>How modules connect to each other — traced from source code</CardDescription></CardHeader>
             <CardContent><div className="space-y-1 max-h-[400px] overflow-y-auto">
               {[
-                { from: 'db', to: 'collections', type: 'owns', desc: 'The db package defines all 38 MongoDB collections via accessor methods in mongodb.go' },
+                { from: 'db', to: 'collections', type: 'owns', desc: 'The db package defines all 72 MongoDB collections (38 base + 34 LMS v2) via accessor methods in mongodb.go' },
                 { from: 'models', to: 'db', type: 'maps-to', desc: 'Each model struct maps to a MongoDB collection with bson tags' },
                 { from: 'api/handlers', to: 'models', type: 'uses', desc: 'API handlers import model structs for request/response serialization' },
                 { from: 'middleware/auth', to: 'models/user', type: 'validates', desc: 'Auth middleware validates JWT tokens against the users collection' },
@@ -2415,6 +2417,80 @@ export default function Home() {
             <Badge variant="outline" className={`text-xs ${PHASE_COLORS[t.phase] || ''}`}>{t.phase}</Badge>,
           ])} />
           <p className="text-xs text-muted-foreground">Showing {filtered.length} of {total} triggers</p>
+        </div>
+      )
+    }
+
+    if (active === 'saas-plan') {
+      if (loading) return <div className="flex items-center gap-2 p-8"><Loader2 className="w-5 h-5 animate-spin text-amber-500" /><span>Loading SaaS plan data...</span></div>
+      if (!apiData) return <div className="p-8 text-muted-foreground">Loading...</div>
+      const s = apiData.summary || {}
+      const totals = apiData.total || {}
+      const sections = [
+        { key: 'collections', label: 'Collections', items: apiData.collections || [], color: 'text-amber-500', icon: Database },
+        { key: 'endpoints', label: 'Endpoints', items: apiData.endpoints || [], color: 'text-emerald-500', icon: Code2 },
+        { key: 'events', label: 'Events', items: apiData.events || [], color: 'text-pink-500', icon: Zap },
+        { key: 'settings', label: 'Settings', items: apiData.settings || [], color: 'text-purple-500', icon: Mail },
+        { key: 'emailTriggers', label: 'Email Triggers', items: apiData.emailTriggers || [], color: 'text-cyan-500', icon: Mail },
+        { key: 'screens', label: 'Screens', items: apiData.screens || [], color: 'text-blue-500', icon: Monitor },
+      ]
+      const filteredSections = sections.map(sec => ({
+        ...sec,
+        filtered: filterData(sec.items.map((i: string) => ({ name: i }))),
+      }))
+      return (
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <Database className="w-8 h-8 text-amber-500" />
+            <div>
+              <h1 className="text-3xl font-bold">SaaS Plan Data (v2 Compendium)</h1>
+              <p className="text-muted-foreground">Extracted from compendium-saas-plan.json — {s.totalSections || 28} sections, version {s.version || 'v2'}</p>
+            </div>
+          </div>
+
+          {/* Summary stat cards */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            {sections.map((sec) => { const Icon = sec.icon; return (
+              <Card key={`sp-stat-${sec.key}`} className="p-3">
+                <Icon className={`w-4 h-4 ${sec.color} mb-1`} />
+                <div className="text-xl font-bold">{totals[sec.key] ?? sec.items.length}</div>
+                <div className="text-xs text-muted-foreground">{sec.label}</div>
+              </Card>
+            )})}
+          </div>
+
+          {/* Each section as a table */}
+          {filteredSections.map((sec) => { const Icon = sec.icon; return (
+            <Card key={`sp-${sec.key}`}>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Icon className={`w-4 h-4 ${sec.color}`} />
+                  {sec.label} ({sec.filtered.length} of {sec.items.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="border rounded-lg overflow-auto max-h-[300px]">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted/50 sticky top-0">
+                      <tr><th className="text-left p-2 font-medium">#</th><th className="text-left p-2 font-medium">Name</th></tr>
+                    </thead>
+                    <tbody>
+                      {sec.filtered.map((item: any, i: number) => (
+                        <tr key={`sp-${sec.key}-${i}`} className="border-t hover:bg-muted/30">
+                          <td className="p-2 text-muted-foreground font-mono text-xs">{i + 1}</td>
+                          <td className="p-2 font-mono text-xs text-amber-600 dark:text-amber-400 break-all">{item.name}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          )})}
+
+          {apiData.summary?.generatedAt && (
+            <p className="text-xs text-muted-foreground">Generated: {apiData.summary.generatedAt}</p>
+          )}
         </div>
       )
     }
