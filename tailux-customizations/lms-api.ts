@@ -17,6 +17,9 @@ import type {
   AddonConfig,
   Assignment,
   AssignmentCreateInput,
+  AssignmentGrade,
+  AssignmentGradeInput,
+  AssignmentListParams,
   AssignmentSubmission,
   AssignmentSubmissionInput,
   CalendarEvent,
@@ -24,6 +27,13 @@ import type {
   Category,
   CategoryCreateInput,
   Certificate,
+  CertificateAssignInput,
+  CertificateBackdrop,
+  CertificateLayer,
+  CertificateLayerCreateInput,
+  CertificateMedia,
+  CertificateMediaType,
+  CertificatePreviewInput,
   CertificateTemplate,
   CertificateTemplateCreateInput,
   CheckoutInput,
@@ -36,9 +46,13 @@ import type {
   CourseCreateInput,
   CourseGift,
   CourseGiftCreateInput,
+  CourseInstructor,
+  CourseInstructorCreateInput,
   CourseReview,
   CourseReviewCreateInput,
   CourseUpdateInput,
+  DripRule,
+  DripRuleCreateInput,
   EarningsSummary,
   Enrollment,
   InstructorPayout,
@@ -61,6 +75,8 @@ import type {
   PaginatedResponse,
   PaymentGatewayConfig,
   PaymentTransaction,
+  PrerequisiteChain,
+  PrerequisiteChainCreateInput,
   QAQuestion,
   QAQuestionCreateInput,
   Question,
@@ -574,6 +590,81 @@ export const certificateApi = {
   ): Promise<CertificateTemplate> {
     return unwrap(lmsAxios.post("/certificates/templates", input));
   },
+  /** `GET /api/lms/certificates/templates` — list all templates for the tenant. */
+  getTemplates(): Promise<CertificateTemplate[]> {
+    return unwrap(lmsAxios.get("/certificates/templates"));
+  },
+  /** `GET /api/lms/certificates/templates/{id}` — fetch a single template. */
+  getTemplate(id: string): Promise<CertificateTemplate> {
+    return unwrap(
+      lmsAxios.get(`/certificates/templates/${encodeURIComponent(id)}`),
+    );
+  },
+  /** `PATCH /api/lms/certificates/templates/{id}` — update a template. */
+  updateTemplate(
+    id: string,
+    input: CertificateTemplateCreateInput,
+  ): Promise<CertificateTemplate> {
+    return unwrap(
+      lmsAxios.patch(
+        `/certificates/templates/${encodeURIComponent(id)}`,
+        input,
+      ),
+    );
+  },
+  /** `DELETE /api/lms/certificates/templates/{id}` — remove a template. */
+  deleteTemplate(id: string): Promise<{ success: boolean }> {
+    return unwrap(
+      lmsAxios.delete(`/certificates/templates/${encodeURIComponent(id)}`),
+    );
+  },
+  /** `POST /api/lms/certificates/templates/{id}/duplicate` — clone a template. */
+  duplicateTemplate(id: string): Promise<CertificateTemplate> {
+    return unwrap(
+      lmsAxios.post(
+        `/certificates/templates/${encodeURIComponent(id)}/duplicate`,
+      ),
+    );
+  },
+  /** `POST /api/lms/certificates/templates/{id}/preview` — render a preview. */
+  previewTemplate(
+    input: CertificatePreviewInput,
+  ): Promise<{ previewUrl: string }> {
+    return unwrap(
+      lmsAxios.post(
+        `/certificates/templates/${encodeURIComponent(input.templateId)}/preview`,
+        input,
+      ),
+    );
+  },
+  /** `POST /api/lms/certificates/assign` — bind a template to a course. */
+  assignToCourse(
+    input: CertificateAssignInput,
+  ): Promise<{ success: boolean }> {
+    return unwrap(lmsAxios.post("/certificates/assign", input));
+  },
+  /** `GET /api/lms/certificates/{id}/download` — get the PDF download URL. */
+  download(id: string): Promise<{ pdfUrl: string }> {
+    return unwrap(
+      lmsAxios.get(`/certificates/${encodeURIComponent(id)}/download`),
+    );
+  },
+  /** `GET /api/lms/certificates/verify/{code}` — public verification lookup. */
+  verify(
+    code: string,
+  ): Promise<{ valid: boolean; certificate?: Certificate }> {
+    return unwrap(
+      lmsAxios.get(`/certificates/verify/${encodeURIComponent(code)}`),
+    );
+  },
+  /** `POST /api/lms/certificates/{id}/revoke` — revoke an issued certificate. */
+  revoke(id: string, reason?: string): Promise<Certificate> {
+    return unwrap(
+      lmsAxios.post(`/certificates/${encodeURIComponent(id)}/revoke`, {
+        reason,
+      }),
+    );
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -1054,6 +1145,283 @@ export const gatewayApi = {
   },
 };
 
+// ===========================================================================
+// Phase 4 — Pro Authoring resource groups
+// ===========================================================================
+
+// --- Certificate Layers (visual canvas editor) -----------------------------
+
+export const certificateLayerApi = {
+  /** `GET /api/lms/certificates/templates/{templateId}/layers`. */
+  list(templateId: string): Promise<CertificateLayer[]> {
+    return unwrap(
+      lmsAxios.get(
+        `/certificates/templates/${encodeURIComponent(templateId)}/layers`,
+      ),
+    );
+  },
+  /** `POST /api/lms/certificates/layers`. */
+  create(input: CertificateLayerCreateInput): Promise<CertificateLayer> {
+    return unwrap(lmsAxios.post("/certificates/layers", input));
+  },
+  /** `PATCH /api/lms/certificates/layers/{id}`. */
+  update(
+    id: string,
+    input: Partial<CertificateLayerCreateInput>,
+  ): Promise<CertificateLayer> {
+    return unwrap(
+      lmsAxios.patch(`/certificates/layers/${encodeURIComponent(id)}`, input),
+    );
+  },
+  /** `DELETE /api/lms/certificates/layers/{id}`. */
+  delete(id: string): Promise<{ success: boolean }> {
+    return unwrap(
+      lmsAxios.delete(`/certificates/layers/${encodeURIComponent(id)}`),
+    );
+  },
+  /** `POST /api/lms/certificates/templates/{templateId}/layers/reorder`. */
+  reorder(
+    templateId: string,
+    layerIds: string[],
+  ): Promise<CertificateLayer[]> {
+    return unwrap(
+      lmsAxios.post(
+        `/certificates/templates/${encodeURIComponent(templateId)}/layers/reorder`,
+        { layerIds },
+      ),
+    );
+  },
+};
+
+// --- Certificate Backdrops --------------------------------------------------
+
+export const certificateBackdropApi = {
+  /** `GET /api/lms/certificates/backdrops`. */
+  list(): Promise<CertificateBackdrop[]> {
+    return unwrap(lmsAxios.get("/certificates/backdrops"));
+  },
+  /** `POST /api/lms/certificates/backdrops`. */
+  create(input: {
+    name: string;
+    imageUrl: string;
+    orientation?: string;
+  }): Promise<CertificateBackdrop> {
+    return unwrap(lmsAxios.post("/certificates/backdrops", input));
+  },
+  /** `DELETE /api/lms/certificates/backdrops/{id}`. */
+  delete(id: string): Promise<{ success: boolean }> {
+    return unwrap(
+      lmsAxios.delete(`/certificates/backdrops/${encodeURIComponent(id)}`),
+    );
+  },
+};
+
+// --- Certificate Media ------------------------------------------------------
+
+export const certificateMediaApi = {
+  /** `GET /api/lms/certificates/media` — optionally filtered by mediaType. */
+  list(
+    mediaType?: CertificateMediaType,
+  ): Promise<CertificateMedia[]> {
+    return unwrap(
+      lmsAxios.get("/certificates/media", { params: { mediaType } }),
+    );
+  },
+  /** `POST /api/lms/certificates/media`. */
+  create(input: {
+    name: string;
+    imageUrl: string;
+    mediaType: CertificateMediaType;
+  }): Promise<CertificateMedia> {
+    return unwrap(lmsAxios.post("/certificates/media", input));
+  },
+  /** `DELETE /api/lms/certificates/media/{id}`. */
+  delete(id: string): Promise<{ success: boolean }> {
+    return unwrap(
+      lmsAxios.delete(`/certificates/media/${encodeURIComponent(id)}`),
+    );
+  },
+};
+
+// --- Drip Rules -------------------------------------------------------------
+
+export const dripRuleApi = {
+  /** `GET /api/lms/courses/{courseId}/drip-rules`. */
+  list(courseId: string): Promise<DripRule[]> {
+    return unwrap(
+      lmsAxios.get(`/courses/${encodeURIComponent(courseId)}/drip-rules`),
+    );
+  },
+  /** `GET /api/lms/drip-rules/{id}`. */
+  get(id: string): Promise<DripRule> {
+    return unwrap(lmsAxios.get(`/drip-rules/${encodeURIComponent(id)}`));
+  },
+  /** `POST /api/lms/drip-rules`. */
+  create(input: DripRuleCreateInput): Promise<DripRule> {
+    return unwrap(lmsAxios.post("/drip-rules", input));
+  },
+  /** `PATCH /api/lms/drip-rules/{id}`. */
+  update(
+    id: string,
+    input: Partial<DripRuleCreateInput>,
+  ): Promise<DripRule> {
+    return unwrap(
+      lmsAxios.patch(`/drip-rules/${encodeURIComponent(id)}`, input),
+    );
+  },
+  /** `DELETE /api/lms/drip-rules/{id}`. */
+  delete(id: string): Promise<{ success: boolean }> {
+    return unwrap(
+      lmsAxios.delete(`/drip-rules/${encodeURIComponent(id)}`),
+    );
+  },
+  /** `GET /api/lms/lessons/{lessonId}/drip-check` — runtime access check. */
+  checkAccess(
+    lessonId: string,
+  ): Promise<{ hasAccess: boolean; reason?: string; unlockAt?: string }> {
+    return unwrap(
+      lmsAxios.get(`/lessons/${encodeURIComponent(lessonId)}/drip-check`),
+    );
+  },
+};
+
+// --- Prerequisite Chains ----------------------------------------------------
+
+export const prerequisiteApi = {
+  /** `GET /api/lms/courses/{courseId}/prerequisites`. */
+  list(courseId: string): Promise<PrerequisiteChain[]> {
+    return unwrap(
+      lmsAxios.get(`/courses/${encodeURIComponent(courseId)}/prerequisites`),
+    );
+  },
+  /** `POST /api/lms/prerequisites`. */
+  create(input: PrerequisiteChainCreateInput): Promise<PrerequisiteChain> {
+    return unwrap(lmsAxios.post("/prerequisites", input));
+  },
+  /** `DELETE /api/lms/prerequisites/{id}`. */
+  delete(id: string): Promise<{ success: boolean }> {
+    return unwrap(
+      lmsAxios.delete(`/prerequisites/${encodeURIComponent(id)}`),
+    );
+  },
+  /** `GET /api/lms/courses/{courseId}/prerequisite-check` — eligibility probe. */
+  checkEligibility(
+    courseId: string,
+  ): Promise<{ eligible: boolean; missingPrerequisites: string[] }> {
+    return unwrap(
+      lmsAxios.get(
+        `/courses/${encodeURIComponent(courseId)}/prerequisite-check`,
+      ),
+    );
+  },
+};
+
+// --- Course Instructors (multi-instructor) ---------------------------------
+
+export const courseInstructorApi = {
+  /** `GET /api/lms/courses/{courseId}/instructors`. */
+  list(courseId: string): Promise<CourseInstructor[]> {
+    return unwrap(
+      lmsAxios.get(`/courses/${encodeURIComponent(courseId)}/instructors`),
+    );
+  },
+  /** `POST /api/lms/course-instructors`. */
+  add(input: CourseInstructorCreateInput): Promise<CourseInstructor> {
+    return unwrap(lmsAxios.post("/course-instructors", input));
+  },
+  /** `PATCH /api/lms/course-instructors/{id}`. */
+  update(
+    id: string,
+    input: Partial<CourseInstructorCreateInput>,
+  ): Promise<CourseInstructor> {
+    return unwrap(
+      lmsAxios.patch(
+        `/course-instructors/${encodeURIComponent(id)}`,
+        input,
+      ),
+    );
+  },
+  /** `DELETE /api/lms/course-instructors/{id}`. */
+  remove(id: string): Promise<{ success: boolean }> {
+    return unwrap(
+      lmsAxios.delete(`/course-instructors/${encodeURIComponent(id)}`),
+    );
+  },
+};
+
+// --- Assignment Grades ------------------------------------------------------
+
+export const assignmentGradeApi = {
+  /** `GET /api/lms/assignment-submissions/{submissionId}/grade`. */
+  get(submissionId: string): Promise<AssignmentGrade> {
+    return unwrap(
+      lmsAxios.get(
+        `/assignment-submissions/${encodeURIComponent(submissionId)}/grade`,
+      ),
+    );
+  },
+  /** `POST /api/lms/assignment-submissions/{submissionId}/grade`. */
+  create(
+    submissionId: string,
+    input: AssignmentGradeInput,
+  ): Promise<AssignmentGrade> {
+    return unwrap(
+      lmsAxios.post(
+        `/assignment-submissions/${encodeURIComponent(submissionId)}/grade`,
+        input,
+      ),
+    );
+  },
+  /** `PATCH /api/lms/assignment-grades/{gradeId}`. */
+  update(
+    gradeId: string,
+    input: Partial<AssignmentGradeInput>,
+  ): Promise<AssignmentGrade> {
+    return unwrap(
+      lmsAxios.patch(
+        `/assignment-grades/${encodeURIComponent(gradeId)}`,
+        input,
+      ),
+    );
+  },
+};
+
+// --- Assignments (extended) -------------------------------------------------
+// The legacy `assignmentApi` only exposes `create` + `submit`. This extended
+// surface adds list/get/listSubmissions/getSubmission for the Phase 4 grading
+// studio and the assignment manager page. The two objects coexist so existing
+// imports keep working — pick `lmsApi.assignment` for legacy `create`/`submit`
+// or `lmsApi.assignmentExtended` for the Phase 4 read paths.
+
+export const assignmentApiExtended = {
+  /** `GET /api/lms/assignments`. */
+  list(params?: AssignmentListParams): Promise<Assignment[]> {
+    return unwrap(lmsAxios.get("/assignments", { params }));
+  },
+  /** `GET /api/lms/assignments/{id}`. */
+  get(id: string): Promise<Assignment> {
+    return unwrap(lmsAxios.get(`/assignments/${encodeURIComponent(id)}`));
+  },
+  /** `GET /api/lms/assignments/{assignmentId}/submissions`. */
+  listSubmissions(
+    assignmentId: string,
+    params?: ListParams,
+  ): Promise<PaginatedResponse<AssignmentSubmission> | AssignmentSubmission[]> {
+    return unwrap(
+      lmsAxios.get(
+        `/assignments/${encodeURIComponent(assignmentId)}/submissions`,
+        { params: toQuery(params) },
+      ),
+    );
+  },
+  /** `GET /api/lms/assignment-submissions/{id}`. */
+  getSubmission(id: string): Promise<AssignmentSubmission> {
+    return unwrap(
+      lmsAxios.get(`/assignment-submissions/${encodeURIComponent(id)}`),
+    );
+  },
+};
+
 // ---------------------------------------------------------------------------
 // Barrel export
 // ---------------------------------------------------------------------------
@@ -1096,6 +1464,15 @@ export const lmsApi = {
   withdrawal: withdrawalApi,
   earnings: earningsApi,
   gateway: gatewayApi,
+  // Phase 4 — Pro Authoring
+  certificateLayer: certificateLayerApi,
+  certificateBackdrop: certificateBackdropApi,
+  certificateMedia: certificateMediaApi,
+  dripRule: dripRuleApi,
+  prerequisite: prerequisiteApi,
+  courseInstructor: courseInstructorApi,
+  assignmentGrade: assignmentGradeApi,
+  assignmentExtended: assignmentApiExtended,
 };
 
 export default lmsApi;

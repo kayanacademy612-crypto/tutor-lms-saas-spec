@@ -1239,6 +1239,55 @@ const protectedRoutes: RouteObject = {
                   .default,
               }),
             },
+            // Phase 4 — Pro Authoring
+            {
+              path: "certificate-builder",
+              lazy: async () => ({
+                Component: (
+                  await import("@/app/pages/apps/certificate-builder")
+                ).default,
+              }),
+            },
+            {
+              path: "certificate-builder/verify",
+              lazy: async () => ({
+                Component: (
+                  await import(
+                    "@/app/pages/apps/certificate-builder/CertificateVerify"
+                  )
+                ).default,
+              }),
+            },
+            {
+              path: "drip-manager",
+              lazy: async () => ({
+                Component: (await import("@/app/pages/apps/drip-manager"))
+                  .default,
+              }),
+            },
+            {
+              path: "prerequisite-manager",
+              lazy: async () => ({
+                Component: (
+                  await import("@/app/pages/apps/prerequisite-manager")
+                ).default,
+              }),
+            },
+            {
+              path: "multi-instructor",
+              lazy: async () => ({
+                Component: (await import("@/app/pages/apps/multi-instructor"))
+                  .default,
+              }),
+            },
+            {
+              path: "assignment-grading",
+              lazy: async () => ({
+                Component: (
+                  await import("@/app/pages/apps/assignment-grading")
+                ).default,
+              }),
+            },
           ],
         },
         {

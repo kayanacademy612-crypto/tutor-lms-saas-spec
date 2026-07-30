@@ -1371,3 +1371,249 @@ export interface PaymentGatewayConfig {
   createdAt: string;
   updatedAt: string;
 }
+
+// ===========================================================================
+// PHASE 4: PRO AUTHORING TYPES
+// ===========================================================================
+
+// --- Certificate Layers (visual canvas editor) -----------------------------
+
+export type CertificateLayerType =
+  | "text"
+  | "image"
+  | "shape"
+  | "signature"
+  | "qrcode";
+
+export type CertificateDataKey =
+  | "student_name"
+  | "course_title"
+  | "instructor_name"
+  | "issue_date"
+  | "score"
+  | "certificate_number"
+  | "completion_date";
+
+export interface CertificateLayer {
+  id: string;
+  tenantId: string;
+  templateId: string;
+  name: string;
+  layerType: CertificateLayerType;
+  sortOrder?: number;
+  positionX: number;
+  positionY: number;
+  width?: number;
+  height?: number;
+  rotation?: number;
+  opacity?: number;
+  // Text-specific
+  content?: string;
+  fontFamily?: string;
+  fontSize?: number;
+  fontWeight?: string;
+  fontStyle?: string;
+  textAlign?: string;
+  color?: string;
+  // Image-specific
+  imageUrl?: string;
+  // Shape-specific
+  shapeType?: "rect" | "circle" | "line";
+  fillColor?: string;
+  borderColor?: string;
+  borderWidth?: number;
+  // Data binding
+  dataKey?: CertificateDataKey;
+  isVisible: boolean;
+  isLocked?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CertificateLayerCreateInput {
+  templateId: string;
+  name: string;
+  layerType: CertificateLayerType;
+  positionX: number;
+  positionY: number;
+  width?: number;
+  height?: number;
+  content?: string;
+  fontFamily?: string;
+  fontSize?: number;
+  color?: string;
+  imageUrl?: string;
+  shapeType?: string;
+  fillColor?: string;
+  dataKey?: CertificateDataKey;
+  isVisible?: boolean;
+}
+
+// --- Certificate Backdrop --------------------------------------------------
+
+export interface CertificateBackdrop {
+  id: string;
+  tenantId: string;
+  name: string;
+  imageUrl: string;
+  orientation?: "landscape" | "portrait";
+  width?: number;
+  height?: number;
+  isDefault?: boolean;
+  createdAt: string;
+}
+
+// --- Certificate Media -----------------------------------------------------
+
+export type CertificateMediaType =
+  | "logo"
+  | "signature"
+  | "watermark"
+  | "stamp";
+
+export interface CertificateMedia {
+  id: string;
+  tenantId: string;
+  name: string;
+  mediaType: CertificateMediaType;
+  imageUrl: string;
+  width?: number;
+  height?: number;
+  createdAt: string;
+}
+
+// NOTE: `CertificateTemplateCreateInput` is already declared above (lines 742-753)
+// with the same field set — kept intentionally broad (`orientation?: string`)
+// so it accepts both the legacy free-form value and the Phase 4
+// `'landscape' | 'portrait'` literal without a duplicate-identifier error.
+
+// --- Content Drip ----------------------------------------------------------
+
+export type DripRuleType =
+  | "schedule"
+  | "prerequisite"
+  | "enrollment_days"
+  | "sequence";
+
+export interface DripRule {
+  id: string;
+  tenantId: string;
+  courseId: string;
+  lessonId: string;
+  ruleType: DripRuleType;
+  unlockAt?: string;
+  prerequisiteLessonId?: string;
+  prerequisiteTopicId?: string;
+  daysAfterEnrollment?: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DripRuleCreateInput {
+  courseId: string;
+  lessonId: string;
+  ruleType: DripRuleType;
+  unlockAt?: string;
+  prerequisiteLessonId?: string;
+  daysAfterEnrollment?: number;
+  isActive?: boolean;
+}
+
+// --- Prerequisite Chain ----------------------------------------------------
+
+export interface PrerequisiteChain {
+  id: string;
+  tenantId: string;
+  courseId: string;
+  prerequisiteCourseId: string;
+  isRequired: boolean;
+  createdAt: string;
+}
+
+export interface PrerequisiteChainCreateInput {
+  courseId: string;
+  prerequisiteCourseId: string;
+  isRequired?: boolean;
+}
+
+// --- Course Instructor (multi-instructor) ----------------------------------
+
+export type CourseInstructorRole =
+  | "primary"
+  | "co_instructor"
+  | "assistant";
+
+export interface CourseInstructor {
+  id: string;
+  tenantId: string;
+  courseId: string;
+  instructorId: string;
+  /** Populated from the user record on the server side. */
+  instructorName?: string;
+  instructorEmail?: string;
+  instructorAvatar?: string;
+  role?: CourseInstructorRole;
+  revenueSharePercent: number;
+  isPrimary: boolean;
+  addedAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CourseInstructorCreateInput {
+  courseId: string;
+  instructorId: string;
+  role?: CourseInstructorRole;
+  revenueSharePercent?: number;
+  isPrimary?: boolean;
+}
+
+// --- Assignment Grade ------------------------------------------------------
+
+export interface AssignmentGrade {
+  id: string;
+  tenantId: string;
+  assignmentId: string;
+  submissionId: string;
+  studentId: string;
+  instructorId: string;
+  score: number;
+  maxScore: number;
+  feedback?: string;
+  isPass: boolean;
+  gradedAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AssignmentGradeInput {
+  score: number;
+  maxScore: number;
+  feedback?: string;
+  isPass?: boolean;
+}
+
+// --- Assignment list params ------------------------------------------------
+
+export interface AssignmentListParams {
+  courseId?: string;
+  topicId?: string;
+  status?: string;
+}
+
+// --- Certificate assign / preview inputs -----------------------------------
+
+export interface CertificateAssignInput {
+  courseId: string;
+  templateId: string;
+  autoIssue?: boolean;
+}
+
+export interface CertificatePreviewInput {
+  templateId: string;
+  studentName?: string;
+  courseTitle?: string;
+  instructorName?: string;
+  score?: number;
+}
