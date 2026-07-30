@@ -1189,6 +1189,10 @@ func main() {
 
         quit := make(chan os.Signal, 1)
         signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+        // Ignore SIGHUP so the backend survives terminal/session hangup.
+        // This is critical in sandboxed environments where the parent bash
+        // process exits and sends SIGHUP to child processes.
+        signal.Ignore(syscall.SIGHUP)
         <-quit
 
         slog.Info("Shutting down server")
