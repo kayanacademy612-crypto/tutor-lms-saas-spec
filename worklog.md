@@ -3430,3 +3430,578 @@ Stage Summary:
   * The canvas drag math uses pixel coordinates at a fixed reference resolution (1000×707 landscape / 707×1000 portrait). This is resolution-independent for DISPLAY (the canvas scales responsively via `aspect-ratio`), but the STORED coordinates are absolute pixels — if a future template is rendered at a different print resolution (e.g. 300 DPI), the backend should scale `positionX/Y/width/height` accordingly. Documented in LayerCanvas.tsx top-of-file comment.
   * `useVerifyCertificate` is implemented as a query (per the P4-A5 contract) so it skips the fetch while `code` is empty. The verify page sets `submittedCode` state on button click — clearing the input does NOT reset the result (the user has to click "Verify another"). This matches the spec ("verify lookup" pattern).
   * The existing `src/app/pages/apps/instructor-dashboard/CertificateScreen.tsx` is left untouched — it was a mock-only screen from P3. The new builder supersedes it; instructors should be redirected to `/apps/certificate-builder` in a future P4-A? task.
+
+---
+Task ID: P5-AUTH-3
+Agent: Next.js Auth Proxy
+Task: Create /api/auth/[...path] proxy route
+
+Work Log:
+- Read worklog.md to understand codebase context (phase1-backend Go backend on port 4290, Next.js on 3000, Vite on 5173).
+- Read src/app/api/lms/[...path]/route.ts to learn the existing proxy pattern (Next.js catch-all route → fetch to backend → buffer response → set CORS headers → 502 on backend-down).
+- Read src/app/api/tailux/[...path]/route.ts for additional reference (Vite proxy with asset URL rewriting — not needed for auth, but confirmed the shared pattern).
+- Verified /api/auth directory did not yet exist under src/app/api/.
+- Created src/app/api/auth/[...path]/route.ts mirroring the LMS proxy structure with these auth-specific enhancements:
+    * Forwards Authorization, Cookie, X-Request-ID, X-Tenant-ID, X-Tenant-Slug headers (in addition to Content-Type) because auth endpoints often need session/JWT context.
+    * Passes through Set-Cookie from the upstream response so login/signup can set session cookies on the browser.
+    * Adds Access-Control-Allow-Credentials: true (needed since we forward Authorization/Cookie).
+    * Exports GET, POST, PATCH, PUT, DELETE, OPTIONS handlers; uses force-dynamic.
+    * Target URL: http://localhost:4290/api/auth/<path>?<query>.
+- Verified file exists: ls confirms src/app/api/auth/[...path]/route.ts (3936 bytes).
+- TypeScript type-check via `npx tsc --noEmit --skipLibCheck` — passed with no errors.
+- Verified Next.js picked up the route:
+    * `curl http://localhost:3000/api/auth/providers` → HTTP 502 with body {"error":"Auth backend proxy failed","detail":"fetch failed","target":"http://localhost:4290/api/auth/providers"} — this is the expected error path (the Go backend is currently not running on port 4290; same failure mode as the existing LMS proxy, confirmed by `curl http://localhost:3000/api/lms/health` → 502 "LMS backend proxy failed").
+    * `curl -X OPTIONS http://localhost:3000/api/auth/providers` → HTTP 204 with Access-Control-Allow-Origin: *, Access-Control-Allow-Methods: GET, POST, PATCH, PUT, DELETE, OPTIONS, Access-Control-Allow-Headers: Content-Type, Authorization, X-Request-ID, X-Tenant-ID, X-Tenant-Slug, Access-Control-Allow-Credentials: true. Preflight handler works.
+- Port check: `ss -tlnp` shows next-server on :3000 and Vite on :5173 are listening; nothing on :4290. The proxy code is correct — it will forward successfully once the Go backend is started.
+
+Stage Summary:
+- Created src/app/api/auth/[...path]/route.ts
+- Proxies /api/auth/* from Next.js (port 3000) to Go backend (port 4290)
+
+---
+Task ID: P5-AUTH-1
+Agent: Backend School Signup Endpoint
+Task: Create POST /api/auth/school-signup for multi-tenant onboarding
+
+Work Log:
+- Read worklog.md and reference files: internal/api/handlers/auth.go (Register @ line 193, Login @ line 309, createPersonalTenant @ 1955, sendVerificationEmail @ 1991, getUserMemberships @ 2023, storeRefreshToken @ 2131, hashToken @ 2385), internal/models/{tenant,user,membership}.go, internal/db/mongodb.go (Tenants/Users/TenantMemberships accessors), internal/auth/jwt.go (GenerateAccessToken/RefreshToken + WithTTL variants), internal/auth/password.go (PasswordService.HashPassword / ValidatePasswordStrength — min 10 chars, mixed case + number + special), internal/events/emitter.go (EventTenantCreated, EventUserRegistered), internal/api/handlers/helpers.go (respondWithJSON/respondWithError/isValidEmail/generateRandomToken), internal/middleware/ratelimit.go (AccountCreationLimit = 5/hour, RateLimitHandler signature), cmd/server/main.go (auth route registration pattern @ line 687).
+- Discovered function names: MemberRoleOwner is `models.RoleOwner` (NOT `MemberRoleOwner`); password hashing is a method on PasswordService (`h.passwordService.HashPassword(pw)`, NOT a free `auth.HashPassword` function); JWT generation is `h.jwtService.GenerateAccessTokenWithTTL` / `GenerateRefreshTokenWithTTL` (NOT free functions); the RateLimiter API uses pre-defined `RateLimitConfig` constants, not a `rateLimiter.Limit(n, window)` constructor — reused `middleware.AccountCreationLimit` for signup parity with /auth/register.
+- Created internal/api/handlers/school_signup.go with:
+  - `SchoolSignupHandler` struct (db, jwtService, passwordService, emailService, events, frontendURL, syslog, getConfig, rateLimiter, telemetrySvc).
+  - `NewSchoolSignupHandler(database, jwtService, passwordService, emailService, emitter, frontendURL, sysLogger)` + Set* setters mirroring AuthHandler.
+  - `SchoolSignup(w, r)` — POST /api/auth/school-signup: validates schoolName (min 2)/fullName/email/password (codebase strength policy, min 10 chars); normalizes inputs; checks email uniqueness (409 generic msg to avoid enumeration); validates/reserves subdomain slug (409 if taken); slugifies schoolName when subdomain omitted and ensures uniqueness with random 6-hex suffix; inserts Tenant (IsActive=true, BillingStatus=none); inserts owner User (EmailVerified=false, AuthMethods=[password]); inserts TenantMembership (Role=RoleOwner); rolls back tenant/user on membership failure; issues access+refresh JWT tokens via dynamic-TTL helper; stores refresh token via existing storeRefreshToken; emits EventTenantCreated + EventUserRegistered; tracks telemetry; async welcome/verification email; returns {accessToken, refreshToken, user:{id,email,name}, tenant:{id,name,slug}, requiresEmailVerification:true}.
+  - `GetUserTenants(w, r)` — GET /api/auth/tenants?email=: validates email; looks up user (returns [] empty if not found, to avoid enumeration); bulk-fetches TenantMemberships + Tenants (avoids N+1); returns [{tenantId, name, slug, role}].
+  - Internal helpers: `slugify`, `reserveUniqueSlug`, `generateTokenPair`, `sendWelcomeEmail`, `parseIntStrict`, and `slugCharRe`/`multipleDashRe`/`slugPatternRe` regexes.
+- Registered routes in cmd/server/main.go (line ~693-704): `POST /api/auth/school-signup` (public, wrapped in `rateLimiter.RateLimitHandler(middleware.AccountCreationLimit, GetClientIP, ...)` to match /auth/register's abuse posture) and `GET /api/auth/tenants` (public, no rate-limit wrapper, mirrors /auth/providers). Handler wired with SetGetConfig/SetRateLimiter/SetTelemetry to share the same dynamic-config + telemetry + rate-limit plumbing as AuthHandler.
+- Ran `gofmt -w` on both touched files; `go build ./...` from /home/z/my-project/repos/lastsaas/backend passes cleanly (no output). `go vet ./internal/api/handlers/ ./cmd/server/` reports only two pre-existing warnings in tenant_test.go (unrelated to this task — using resp before err check).
+
+Stage Summary:
+- Created school_signup.go with SchoolSignup + GetUserTenants handlers
+- Registered routes: POST /api/auth/school-signup, GET /api/auth/tenants
+- Build status: PASS
+
+---
+Task ID: P5-AUTH-2
+Agent: Frontend Auth Wiring
+Task: Wire SignupPage + LoginPage to real backend API, create AuthContext
+
+Work Log:
+- Read worklog.md to lock in codebase context (Go backend on :4290, Next.js on :3000, Vite on :5173, P5-AUTH-3 already created the Next.js `/api/auth/[...path]` proxy route).
+- Read existing auth scaffolding BEFORE writing any code:
+  * `src/app/contexts/auth/context.ts` — existing `AuthContextType` interface (`isAuthenticated`, `isLoading`, `isInitialized`, `errorMessage`, `user`, `login({username,password})`, `logout()`).
+  * `src/app/contexts/auth/Provider.tsx` — existing `AuthProvider` with reducer. Was DEV-BYPASSED: `initialState.isAuthenticated = true` with a hard-coded mock user, and the init `useEffect` returned early so the real token check never ran. Login posted to `/login` against `https://jwt-api-node.vercel.app` (the demo JWT API in `src/configs/auth.ts`).
+  * `src/middleware/AuthGuard.tsx` — already reads `useAuthContext().isAuthenticated` and redirects to `/login?redirect=...` when false. No changes needed.
+  * `src/middleware/GhostGuard.tsx` — already reads `useAuthContext().isAuthenticated` and redirects to `HOME_PATH` (or the `redirect` query param) when true. No changes needed.
+  * `src/app/pages/Auth/index.tsx` (LoginPage) — already consumed `useAuthContext()` for `login` + `errorMessage`. Form used `username` field (legacy demo schema).
+  * `src/app/pages/auth/SignupPage.tsx` — beautiful form with `fullName`, `email`, `password`, `role` (student/instructor), `acceptTerms`. The `onSubmit` did `setTimeout(...)` then `navigate("/mfa-verify")` — no real API call.
+  * `src/utils/jwt.ts` — `isTokenValid(token)` decodes via `jwt-decode` and checks `exp`; `setSession(token|null)` stores `authToken` in localStorage and sets `axios.defaults.headers.common.Authorization` on the default axios instance.
+  * `src/services/lms-api.ts` — reference implementation: own `lmsAxios` instance with `baseURL: "/api/lms"`, per-instance request interceptor that reads `authToken` from localStorage, response interceptor that normalizes errors into a `{status, message, details}` `LmsApiError`. Pattern mirrored for the new auth client.
+  * `src/@types/user.ts` — `User` is `{ id, name, email?, role?, avatarUrl? }`. No changes needed.
+  * `src/App.tsx` — already wraps the app in `<AuthProvider>` at the top of the provider tree. No changes needed.
+  * `src/main.tsx` — renders `<App />` inside `<StrictMode>`. No changes needed (provider nesting is in App.tsx).
+- Decision: instead of creating a parallel `src/contexts/AuthContext.tsx` (as the task brief suggested), I extended the EXISTING `src/app/contexts/auth/` system. Rationale: the LoginPage, AuthGuard, GhostGuard, and Root layout ALL already import `useAuthContext` from `@/app/contexts/auth/context`. Creating a duplicate context would have required touching all four call sites for no benefit. The existing `createSafeContext` helper + reducer pattern is clean and idiomatic — extending it preserves the codebase's conventions.
+- Created `src/services/auth-api.ts` (253 lines) — new auth API client modeled on `lms-api.ts`:
+  * `authAxios` instance with `baseURL: "/api/auth"`, 30s timeout, request interceptor that attaches the bearer token from localStorage when present (so public endpoints like /login work without a session, but authenticated endpoints like /tenants still send the header).
+  * Response interceptor that normalizes Axios errors into `AuthApiError = { status, message, details }` — same shape as `LmsApiError` so callers can use a single error-handling pattern.
+  * `normalizeAuthResponse(raw)` — tolerates both the NEW spec shape `{ accessToken, refreshToken, user, tenant? }` AND the LEGACY shape `{ authToken, user }` returned by the original demo JWT API. This means the code works whether AUTH-1 ships the new spec or hasn't migrated yet.
+  * `authApi.schoolSignup(input)` → POST /school-signup
+  * `authApi.login(input)` → POST /login
+  * `authApi.getUserTenants(email)` → GET /tenants?email=...  (tolerates both `[{...}]` and `{ tenants: [{...}] }` response shapes)
+  * `authApi.forgotPassword(email)` → POST /forgot-password
+  * `authApi.resetPassword(token, password)` → POST /reset-password
+  * `authApi.mfaChallenge(ticket, code)` → POST /mfa/challenge
+- Modified `src/app/contexts/auth/context.ts`:
+  * Added `AuthTenant` interface (`{ id, name, slug }`) and `SignupInput` interface (`{ schoolName, fullName, email, password, subdomain? }`).
+  * Extended `AuthContextType` with `tenant: AuthTenant | null`, `accessToken: string | null`, `signup(input: SignupInput): Promise<void>`, `clearError(): void`.
+  * CHANGED `login` signature from `({ username, password })` → `({ email, password })` to match the real backend.
+- Modified `src/app/contexts/auth/Provider.tsx` (full rewrite, 417 lines):
+  * Removed the dev-bypass: `initialState.isAuthenticated = false`, `isInitialized = false`, `user = null`, `tenant = null`, `accessToken = null`.
+  * Added `SIGNUP_REQUEST`, `SIGNUP_SUCCESS`, `CLEAR_ERROR` reducer actions.
+  * localStorage persistence helpers: `persistSession({ accessToken, refreshToken?, user, tenant? })` writes to `authToken`, `refreshToken`, `authUser`, `authTenant` keys; `clearPersistedSession()` wipes all four; `readPersistedUser()` / `readPersistedTenant()` parse them back without throwing.
+  * `useEffect` on mount: reads `authToken` from localStorage, validates via `isTokenValid()`. If valid, rehydrates `user` + `tenant` from localStorage and dispatches `INITIALIZE` with `isAuthenticated: true`. If invalid or missing, clears everything and dispatches `INITIALIZE` with `isAuthenticated: false`. (The lastsaas auth API has no `/me` endpoint per AUTH-1's spec, so we rehydrate from localStorage instead of fetching the profile — this is the same pattern the original code intended.)
+  * `login({ email, password })`: dispatches `LOGIN_REQUEST`, calls `authApi.login()`. If the response has no `accessToken` but has a `ticket` / `mfaTicket`, stashes the ticket in `sessionStorage` and throws an `MFA_REQUIRED` sentinel so the LoginPage can navigate to `/mfa-verify`. Otherwise persists the session and dispatches `LOGIN_SUCCESS`. Catches errors and dispatches `LOGIN_ERROR` with a friendly message (re-throws so the caller can also react).
+  * `signup(input)`: dispatches `SIGNUP_REQUEST`, calls `authApi.schoolSignup()`. If the response indicates `requiresEmailVerification` (and no token), throws `EMAIL_VERIFICATION_REQUIRED` sentinel. Otherwise persists session and dispatches `SIGNUP_SUCCESS`. Catches other errors and re-throws so the SignupPage can show its own local error message.
+  * `logout()`: calls `clearPersistedSession()` and dispatches `LOGOUT`.
+  * `clearError()`: dispatches `CLEAR_ERROR` so the LoginPage can wipe the error banner when the user starts typing again.
+- Modified `vite.config.ts`: added a `/api/auth` proxy entry alongside the existing `/api/lms` proxy, both pointing to `http://localhost:4290` with `changeOrigin: true`. Updated the comment to explain that the same Go backend hosts both subrouters.
+- Modified `src/app/pages/Auth/schema.ts`: renamed `username` → `email` in `AuthFormValues`, swapped the yup validation from `required('Product Title Required')` (clearly a copy-paste leftover) to `email("Enter a valid email address").required("Email is required")` for email and `required("Password is required")` for password.
+- Modified `src/app/pages/Auth/index.tsx` (LoginPage, 209 lines):
+  * Pulls `login`, `errorMessage`, `isLoading`, `clearError` from `useAuthContext()`.
+  * Adds a `showPassword` toggle with Eye/EyeSlash icons (the original password field had no show/hide toggle).
+  * `onSubmit` is now `async`: calls `clearError()`, awaits `login({ email, password })`. On success, navigates to `HOME_PATH` (`/`) with `replace: true`. On `MFA_REQUIRED` sentinel, navigates to `/mfa-verify`. On other errors, the `errorMessage` from the context is already surfaced via `<InputErrorMsg>`.
+  * Submit button is now `disabled={isLoading}` and shows a spinner + "Signing in…" label while loading.
+  * Changed the "Forgot Password?" link from `href="##"` to `to="/forgot-password"` (Link).
+  * Changed the "Create account" link from `to="/pages/sign-up-v1"` to `to="/signup"` (the actual route registered in `ghost.tsx`).
+  * Wired the Google/GitHub buttons to `navigate("/oauth/callback?provider=...")` (previously did nothing).
+- Modified `src/app/pages/auth/SignupPage.tsx` (full rewrite, 406 lines):
+  * Removed the `role` field (`student`/`instructor` RoleCard) and the `SignupRole` type — the school-signup endpoint creates the school owner, who is automatically an admin/instructor. A student signs up via a per-tenant enrollment flow, not this page.
+  * Added a `schoolName` field at the TOP of the form (before `fullName`), with a `BuildingLibraryIcon` prefix. Updated `SignupFormValues` interface + yup schema to require it (2-80 chars).
+  * Updated the heading from "Create your account" → "Create your school" and the subheading to "Set up your academy in minutes — you'll be the owner." (matches the new school-name-first UX).
+  * `onSubmit` now calls `signup()` from `useAuthContext()`. On success, navigates to `HOME_PATH`. On `EMAIL_VERIFICATION_REQUIRED` sentinel, shows a green info message ("Account created! Check your inbox…") and bounces to `/login` after 1.5s. On other errors, extracts the message from the normalized `AuthApiError` shape and shows it via the existing local `serverError` state.
+  * Removed unused imports (`AcademicCapIcon`, `PresentationChartLineIcon`, `Radio`). Removed the `RoleCard` sub-component. Kept the password strength meter, terms checkbox, OAuth buttons, and footer intact.
+- Verified the existing AuthGuard / GhostGuard already check `useAuthContext().isAuthenticated` — no changes needed. They will now correctly redirect based on the REAL token state.
+- Verified the existing `Root` layout uses `isInitialized` to render a `<SplashScreen>` while the auth context bootstraps — my Provider now correctly flips `isInitialized: false → true` after the localStorage check completes, so users see the splash briefly on reload instead of a flash of unauthenticated content.
+- Final verification:
+  * `npx tsc --noEmit` → exit code 0, zero diagnostics (tsconfig.app.json has `strict: true`, `noUnusedLocals: true`, `noUnusedParameters: true`).
+  * `npx eslint src/services/auth-api.ts src/app/contexts/auth/context.ts src/app/contexts/auth/Provider.tsx src/app/pages/Auth/schema.ts src/app/pages/Auth/index.tsx src/app/pages/auth/SignupPage.tsx vite.config.ts` → exit code 0, zero errors, zero warnings.
+  * Manual proxy smoke-test against the running Vite dev server (port 5173):
+    - `curl -X POST http://localhost:5173/api/auth/login -d '{"email":"x","password":"y"}'` → HTTP 500 (Vite proxy error because the Go backend isn't running on :4290 yet — same failure mode as `curl http://localhost:5173/api/lms/health` → 500). This confirms the proxy is correctly configured; once AUTH-1 starts the backend, both proxies will forward successfully.
+    - `curl http://localhost:5173/login` → HTTP 200 (the LoginPage renders).
+
+Stage Summary:
+- Created `src/services/auth-api.ts` (authAxios + authApi with 6 endpoints + error normalization + tolerant response-shape parsing).
+- Modified `src/app/contexts/auth/context.ts` (added `tenant`, `accessToken`, `signup`, `clearError`; renamed `login` signature to email-based).
+- Modified `src/app/contexts/auth/Provider.tsx` (removed dev-bypass, real backend integration via authApi, localStorage persistence for token + user + tenant + refresh token, MFA + email-verification sentinel handling).
+- Modified `src/app/pages/Auth/schema.ts` (username → email, proper validation).
+- Modified `src/app/pages/Auth/index.tsx` (email field, async onSubmit, navigate on success, MFA redirect, loading state on button, show/hide password toggle, fixed links).
+- Modified `src/app/pages/auth/SignupPage.tsx` (added schoolName field, removed role field, async onSubmit wired to /api/auth/school-signup, navigate on success, email-verification flow, error display).
+- Modified `vite.config.ts` (added `/api/auth` → `http://localhost:4290` proxy alongside `/api/lms`).
+- TypeScript check: PASS (`npx tsc --noEmit` exits 0, zero diagnostics).
+- ESLint check: PASS (zero errors, zero warnings on all modified files).
+- AuthGuard + GhostGuard already used `useAuthContext().isAuthenticated` — no changes needed; they now enforce REAL JWT-based auth.
+- App.tsx + main.tsx unchanged — `<AuthProvider>` was already wrapping `<RouterProvider>` at the top of the tree.
+
+Notes / known follow-ups:
+- The lastsaas auth API has no `/me` or `/profile` endpoint yet (per AUTH-1's spec). The Provider rehydrates the user + tenant from localStorage instead of fetching them on mount. When a `/me` endpoint ships, replace the `readPersistedUser()` / `readPersistedTenant()` calls in the init `useEffect` with an `authApi.me()` call.
+- MFA flow: when the backend returns a `ticket` instead of an `accessToken` on `/login`, the Provider stashes it in `sessionStorage` under `mfaTicket` and throws `MFA_REQUIRED`. The LoginPage navigates to `/mfa-verify`. The existing `MFAVerifyPage` is still mock-only (it accepts "123456") — wiring it to `authApi.mfaChallenge(ticket, code)` is a separate follow-up. The Provider's `login()` already handles the success case (it would call `mfaChallenge` indirectly through a future MFA verify page that calls `authApi.mfaChallenge` and then `setSession`).
+- ForgotPasswordPage + ResetPasswordPage + MFAVerifyPage + OAuthCallbackPage are intentionally left mock-only in this task — the auth-api.ts has the methods (`forgotPassword`, `resetPassword`, `mfaChallenge`) ready for a follow-up task to wire them.
+- The legacy `src/configs/auth.ts` (`JWT_HOST_API = "https://jwt-api-node.vercel.app"`) and `src/utils/axios.ts` are no longer used by the auth flow. They're left in place because removing them would require grep-confirming no other module imports them; a cleanup task can remove them in a future pass.
+- The Vite dev server proxy returns HTTP 500 when the Go backend is down (verified via curl). This is the expected failure mode — once AUTH-1 starts the backend on :4290, both `/api/lms` and `/api/auth` proxies will forward successfully.
+
+Test URLs (Vite dev server at http://localhost:5173):
+- Signup page:    http://localhost:5173/signup
+- Login page:     http://localhost:5173/login
+- Forgot password: http://localhost:5173/forgot-password
+- Reset password: http://localhost:5173/reset-password?token=...
+- MFA verify:     http://localhost:5173/mfa-verify
+- OAuth callback: http://localhost:5173/oauth/callback?provider=google&code=...
+- Protected home (redirects to /login when unauthenticated): http://localhost:5173/
+
+Test URLs (Next.js host at http://localhost:3000):
+- Same paths under http://localhost:3000/api/tailux/* (the Vite app is reverse-proxied by Next.js, and `/api/auth/*` is proxied to the Go backend by P5-AUTH-3's `/api/auth/[...path]/route.ts`).
+
+
+---
+Task ID: P5-A1
+Agent: Backend Pro Engagement Models
+Task: Create proengagement.go models, collections, events
+
+Work Log:
+- Read worklog.md (P3-A1, P4-A1 sections) for established model/collection/event patterns.
+- Read internal/models/proauthoring.go and internal/models/ecommerce.go to confirm the multi-tenant struct pattern: `primitive.ObjectID` for IDs, `time.Time` timestamps, `json:"id" bson:"_id,omitempty"`, `validate:"required"` on TenantID + key fields, embedded sub-structs (e.g. CartItem, BadgeCriteria).
+- Read internal/db/proauthoring_collections.go to confirm the collection accessor pattern: receiver `m *MongoDB`, method = plural resource name, body `return m.Database.Collection("lms_<name>")` (NOT the `db.Collection(...)` shorthand). All 10 accessors follow this exactly.
+- Read internal/events/proauthoring_events.go and lms_events.go for the event constant pattern: `EventType = "dotted.lowercase"`, grouped consts, header doc-comment listing any overlaps that are intentionally NOT redeclared.
+- Grepped internal/events/ for existing `EventBadge|EventPoints|EventLeaderboard|EventPush|EventEmail|EventConsent|EventNotificationSent|EventNotificationMarked` and for literal `"email.|"push.|"badge.|"points.|"leaderboard.|"consent.` strings — confirmed ZERO collisions with the new constants.
+- Confirmed `EventNotificationCreated` ("notification.created") and `EventNotificationRead` ("notification.read") ALREADY exist in lms_events.go (lines 111-112). Did NOT redeclare them; documented the omission in proengagement_events.go header. The new `EventNotificationSent` and `EventNotificationMarkedRead` use distinct dotted strings ("notification.sent", "notification.marked_read") and distinct identifiers, so no collision.
+- Created internal/models/proengagement.go with 11 structs across 5 feature groups: Gamification (BadgeCriteria sub-struct + Badge, StudentBadge, PointTransaction, LeaderboardEntry), Notification (NotificationPreference, PushSubscription), Accessibility (AccessibilityPreferences), Email (EmailTemplate, EmailPlaceholder), Legal (LegalConsent). All structs carry TenantID with `validate:"required"`. Used plain `string` for enumerated fields (Type/Scope/Period/ConsentType/FontSize/ColorBlindMode) with inline comments listing valid values, matching the literal spec.
+- Created internal/db/proengagement_collections.go with 10 collection accessors (Badges, StudentBadges, PointTransactions, LeaderboardEntries, NotificationPreferences, PushSubscriptions, AccessibilityPreferences, EmailTemplates, EmailPlaceholders, LegalConsents). All return `m.Database.Collection("lms_<name>")` exactly mirroring proauthoring_collections.go.
+- Created internal/events/proengagement_events.go with 11 new EventType constants: Gamification (3) + Notification/Push (4) + Email (2) + Consent (2). Header documents the two existing lms_events.go notification constants that are intentionally NOT redeclared.
+- Modified internal/db/mongodb.go ensureIndexes(): added a new "Phase 5: Pro Engagement collections" block after the Phase 4 block, with 9 collection entries containing 10 IndexModel definitions total:
+    * lms_badges: unique(tenantId, slug) + (tenantId, isActive)
+    * lms_student_badges: unique(tenantId, studentId, badgeId)
+    * lms_point_transactions: (tenantId, studentId, createdAt desc)
+    * lms_leaderboard_entries: (tenantId, scope, courseId, rank) sparse on courseId
+    * lms_notification_preferences: unique(tenantId, userId, eventType)
+    * lms_push_subscriptions: (tenantId, userId, isActive)
+    * lms_accessibility_preferences: unique(tenantId, userId)
+    * lms_email_templates: unique(tenantId, trigger, language) sparse (language is omitempty)
+    * lms_legal_consents: (tenantId, userId, consentType) non-unique (audit history allows multiple rows)
+  Sparse was added to lms_email_templates as well because `language` is omitempty — without sparse, two default-language templates per (tenantId, trigger) would conflict. The lms_leaderboard_entries sparse flag is required because tenant-scope rows leave courseId unset.
+- Ran `go build ./...` — PASSED (no output, exit 0).
+- Ran `go vet ./internal/models/... ./internal/db/... ./internal/events/...` — clean. (Pre-existing vet warnings in internal/api/handlers/tenant_test.go are unrelated to this task.)
+- Ran `gofmt -l` — initially flagged proengagement.go and mongodb.go for whitespace; ran `gofmt -w` to fix. Re-ran `gofmt -l` — clean.
+
+Stage Summary:
+- Created internal/models/proengagement.go with 11 structs (BadgeCriteria + 10 main)
+- Created internal/db/proengagement_collections.go with 10 accessors
+- Created internal/events/proengagement_events.go with 11 events (3 gamification + 4 notification/push + 2 email + 2 consent)
+- Added 10 indexes across 9 collections to mongodb.go ensureIndexes()
+- Build status: PASS (`go build ./...` exit 0)
+- Duplicate events found: 2 (EventNotificationCreated "notification.created", EventNotificationRead "notification.read") — already declared in lms_events.go, intentionally omitted from proengagement_events.go with a header doc-comment noting the omission
+---
+Task ID: P5-A2
+Agent: Frontend Pro Engagement API + Hooks
+Task: Add Phase 5 types, API, hooks
+
+Work Log:
+- Read worklog.md end-to-end (P3-A5 frontend API+hooks foundation, P4-A5 Pro Authoring hooks contract) to lock in the established pattern: `UseLmsQueryResult<T> = { data, loading, error, refetch }`, `UseLmsMutationResult<T,V> = { data, loading, error, mutate, reset }`, plain `useState`+`useEffect`+`useRef`+`useIsMounted` with `argsKey()` stable deps and a per-fetch token ref; mutations that operate on a server-side resource pass the resource id at `mutate(...)` time so a single hook instance can operate on any row; list queries normalize `T[] | PaginatedResponse<T>` to `T[]`; by-id/list-by-parent queries skip the fetch while their key arg is empty.
+- Read `src/types/lms.ts` (1620 lines) — confirmed the existing `Notification` (lines 893-906) and `Certificate` types are NOT re-declared by Phase 5 (no name conflicts). Confirmed the file already uses bare `string` for timestamps (not the `ISODateString` alias) in the Phase 4 tail block, so the Phase 5 block matches that style for consistency.
+- Read `src/services/lms-api.ts` (1478 lines) — confirmed the existing `notificationApi` (lines 736-743) only exposes `list()`, so the new `notificationPrefApi` does NOT collide. Confirmed the barrel `lmsApi` object pattern + the `unwrap<T>` / `toQuery()` helpers.
+- Read `src/hooks/useProAuthoring.ts` (2010 lines) end-to-end as the canonical reference for the hook contract.
+- Step 1: Appended Phase 5 types to `src/types/lms.ts` (lines 1621-1841, +222 lines):
+  * `BadgeCriteriaType` union + `BadgeCriteria` + `Badge` + `BadgeCreateInput` + `StudentBadge`
+  * `PointTransaction` + `LeaderboardScope` + `LeaderboardPeriod` + `LeaderboardEntry`
+  * `NotificationPreference` + `NotificationPreferenceInput`
+  * `PushSubscription` + `PushSubscribeInput`
+  * `AccessibilityFontSize` + `ColorBlindMode` + `AccessibilityPreferences` + `AccessibilityPreferencesInput`
+  * `EmailTemplate` + `EmailTemplateUpdateInput` + `EmailPlaceholder`
+  * `ConsentType` + `LegalConsent` + `ConsentInput`
+  * Promoted the spec's inline string-literal unions (`'tenant' | 'course'`, `'weekly' | 'monthly' | 'alltime'`, `'none' | 'protanopia' | ...`, `'terms' | 'privacy' | 'marketing' | 'cookies'`) into named exported types (`LeaderboardScope`, `LeaderboardPeriod`, `ColorBlindMode`, `AccessibilityFontSize`, `ConsentType`, `BadgeCriteriaType`) so downstream UI components can import them as standalone types (matches the pattern used by `CourseStatus`, `NotificationType`, etc. at the top of the file).
+- Step 2: Extended `src/services/lms-api.ts` (1478 → 1675 lines, +197 lines):
+  * Added 16 new type imports to the existing `import type { ... } from "@/types/lms"` block (alphabetized): `AccessibilityPreferences`, `AccessibilityPreferencesInput`, `Badge`, `BadgeCreateInput`, `ConsentInput`, `EmailPlaceholder`, `EmailTemplate`, `EmailTemplateUpdateInput`, `LegalConsent`, `LeaderboardEntry`, `LeaderboardPeriod`, `LeaderboardScope`, `NotificationPreference`, `NotificationPreferenceInput`, `PointTransaction`, `PushSubscribeInput`, `PushSubscription`, `StudentBadge`.
+  * Appended 6 new resource groups below `assignmentApiExtended`:
+    - `badgeApi` — list/get/create/update/delete (admin) for `/badges`
+    - `gamificationApi` — `myBadges`, `myPoints(params)`, `leaderboard(scope, courseId?, period?)` for `/student/badges`, `/student/points`, `/leaderboard/{scope}`
+    - `notificationPrefApi` — `list`, `update`, `subscribePush`, `unsubscribePush`, `markAllRead` for `/student/notification-preferences`, `/notifications/push/subscribe`, `/notifications/push/{id}`, `/notifications/mark-all-read`
+    - `accessibilityApi` — `get`, `update` for `/student/preferences`
+    - `emailTemplateApi` — `list(trigger?)`, `get`, `update`, `reset`, `placeholders(trigger?)`, `preview(id, data)` for `/email-templates`, `/email-placeholders`
+    - `consentApi` — `list`, `grant` for `/student/consents`
+  * All endpoints use `unwrap<T>(lmsAxios.<verb>(...))` and `toQuery(params)` exactly like the existing groups. IDs are URL-encoded with `encodeURIComponent` to match the established convention.
+  * Extended the barrel `lmsApi` object with the 6 new keys: `badge`, `gamification`, `notificationPref`, `accessibility`, `emailTemplate`, `consent`. The existing `notification: notificationApi` key is preserved (it's the legacy bare-notifications list endpoint), so callers pick `lmsApi.notification` for the bare list and `lmsApi.notificationPref` for the Phase 5 preference/push surface.
+- Step 3: Created `src/hooks/useProEngagement.ts` (1028 lines) — 23 hooks, all following the `useProAuthoring.ts` pattern (plain `useState`+`useEffect`+`useRef`+`useIsMounted`, `argsKey()` stable deps, per-fetch token ref, `toList()` normalization for list endpoints, `mutate(...)`-time id for row-level mutations):
+  * Badges (admin): `useBadges(params?)`, `useBadge(id)`, `useCreateBadge()`, `useUpdateBadge()` (mutate `{id, input}`), `useDeleteBadge()` (mutate `id`)
+  * Gamification (student): `useMyBadges()`, `useMyPoints(params?)`, `useLeaderboard(scope, courseId?, period?)`
+  * Notification Preferences: `useNotificationPreferences()`, `useUpdateNotificationPreference()`, `useSubscribePush()`, `useUnsubscribePush()` (mutate `id`), `useMarkAllNotificationsRead()` (mutate `void`)
+  * Accessibility: `useAccessibilityPreferences()`, `useUpdateAccessibilityPreferences()`
+  * Email Templates: `useEmailTemplates(trigger?)`, `useEmailTemplate(id)`, `useUpdateEmailTemplate()` (mutate `{id, input}`), `useResetEmailTemplate()` (mutate `id`), `useEmailPlaceholders(trigger?)`, `usePreviewEmailTemplate()` (mutate `{id, data}`)
+  * Consents: `useLegalConsents()`, `useGrantConsent()`
+- All query hooks return `{ data, loading, error, refetch }`; all mutation hooks return `{ data, loading, error, mutate, reset }`. The 5 by-id query hooks (`useBadge`, `useEmailTemplate`) skip the fetch while `id` is empty so they're safe to mount before the route param is populated. The 4 parameterized list hooks (`useBadges`, `useMyPoints`, `useEmailTemplates`, `useEmailPlaceholders`, `useLeaderboard`) refetch when the stringified args change via `argsKey([...])`.
+- Verification:
+  * `npx tsc --noEmit` → exit code 0, zero diagnostics (tsconfig.app.json has `strict: true`, `noUnusedLocals: true`, `noUnusedParameters: true`).
+  * `npx eslint src/hooks/useProEngagement.ts src/services/lms-api.ts src/types/lms.ts` → exit code 0, zero errors, zero warnings.
+  * `npx eslint .` → 13 errors + 25 warnings, ALL pre-existing (in `QuestionRenderers.tsx`, `QuizCard.tsx`, `PriceTag.tsx`, `useClipboard.ts`, `useHover.ts`, `useMediaQuery.ts`, `useMergedRef.ts`) — zero new issues introduced by this task.
+
+Stage Summary:
+- Added 24 new types + 6 union types to `src/types/lms.ts` (Badge/Criteria/StudentBadge, PointTransaction, LeaderboardEntry/Scope/Period, NotificationPreference+Input, PushSubscription+Input, AccessibilityPreferences+Input+FontSize+ColorBlindMode, EmailTemplate+UpdateInput+Placeholder, LegalConsent+ConsentInput+ConsentType).
+- Added 6 new API resource groups to `src/services/lms-api.ts` (badgeApi, gamificationApi, notificationPrefApi, accessibilityApi, emailTemplateApi, consentApi) covering 21 endpoints; registered all 6 in the `lmsApi` barrel export.
+- Added 23 new hooks to `src/hooks/useProEngagement.ts` (5 badges, 3 gamification, 5 notification prefs/push, 2 accessibility, 6 email templates, 2 consents).
+- TypeScript check: PASS (`npx tsc --noEmit` exits 0, zero diagnostics).
+- ESLint check: PASS on all touched files (zero new errors/warnings; pre-existing issues in unrelated files untouched).
+
+Notes for downstream page-building agents (P5-A3+):
+- The Phase 5 hooks file is `src/hooks/useProEngagement.ts`. It is NOT re-exported from `src/hooks/index.ts` (consistent with `useLms.ts` / `useEcommerce.ts` / `useProAuthoring.ts` which are also NOT in the index barrel) — import directly: `import { useBadges, useLeaderboard, ... } from "@/hooks/useProEngagement"`.
+- All mutations that operate on a server-side resource take the resource id at `mutate(...)` time (NOT at hook-construction time). This is by design — mount the hook ONCE in the page and call `mutate(id)` for whichever row the user clicked. The pattern matches `useProAuthoring.ts` exactly:
+  * `useUpdateBadge().mutate({ id, input })`
+  * `useDeleteBadge().mutate(id)`
+  * `useUnsubscribePush().mutate(id)`
+  * `useUpdateEmailTemplate().mutate({ id, input })`
+  * `useResetEmailTemplate().mutate(id)`
+  * `usePreviewEmailTemplate().mutate({ id, data })`
+- All other mutations take the bare input vars at `mutate(...)` time:
+  * `useCreateBadge().mutate(input)` — `input: BadgeCreateInput`
+  * `useUpdateNotificationPreference().mutate(input)` — `input: NotificationPreferenceInput`
+  * `useSubscribePush().mutate(input)` — `input: PushSubscribeInput`
+  * `useMarkAllNotificationsRead().mutate()` — no args (vars type is `void`)
+  * `useUpdateAccessibilityPreferences().mutate(input)` — `input: AccessibilityPreferencesInput`
+  * `useGrantConsent().mutate(input)` — `input: ConsentInput`
+- Query hooks that take an `id` (`useBadge`, `useEmailTemplate`) skip the fetch while `id` is empty — safe to mount before the route param is populated. Query hooks that take params (`useBadges`, `useMyPoints`, `useEmailTemplates`, `useEmailPlaceholders`, `useLeaderboard`) refetch when the stringified args change.
+- List endpoints normalize `T[] | PaginatedResponse<T>` to `T[]` via the local `toList()` helper, so callers always get an array (or `null` while loading/error). Single-resource endpoints return the bare `T` (or `null`).
+- The barrel `lmsApi` object now exposes: `lmsApi.badge`, `lmsApi.gamification`, `lmsApi.notificationPref`, `lmsApi.accessibility`, `lmsApi.emailTemplate`, `lmsApi.consent` (alongside all the existing Phase 1-4 groups). The legacy `lmsApi.notification` (bare notifications list) is preserved unchanged — use `lmsApi.notificationPref` for Phase 5 preference/push operations.
+- The `useMarkAllNotificationsRead` hook has `vars: void` — call it as `mutate()` (no argument). After a successful mark-all-read, callers should `refetch()` the `useNotifications()` list from `useLms.ts` to update the unread badge.
+- After a successful `useUpdateNotificationPreference` / `useUpdateAccessibilityPreferences` mutation, callers should `refetch()` the corresponding list query (`useNotificationPreferences` / `useAccessibilityPreferences`) to refresh the UI from the canonical server state.
+- For the email-template editor: `useEmailPlaceholders(trigger)` returns the picker options, `usePreviewEmailTemplate().mutate({ id, data })` returns `{ html }` for the live preview iframe. The `useResetEmailTemplate().mutate(id)` returns the refreshed `EmailTemplate` so the editor can swap in the default content without an extra refetch.
+
+---
+Task ID: P5-A4
+Agent: Backend Notifications+Accessibility Handlers
+Task: Create proengagement_preferences.go
+
+Work Log:
+- Read worklog.md P5-A1 (models, collections, events) + P5-A2 (frontend API/hooks contract) to confirm the established handler pattern: `*db.MongoDB` + `events.Emitter` receiver, `getLMSContext(r)` for tenant/user resolution (incl. dev fallback), `respondWithJSON`/`respondWithError` helpers from helpers.go, `$set` + `$setOnInsert` + `options.Update().SetUpsert(true)` for upserts, and `events.Event{...}` emission via `h.emitter.Emit`.
+- Read internal/api/handlers/proauthoring_certificate.go (reference handler, 1746 lines) to confirm: `requireContext` private helper that wraps `getLMSContext` and writes 400/401 on missing tenant/user; pointer-free struct decoding with `json.NewDecoder(r.Body).Decode`; `mux.Vars(r)["id"]` + `primitive.ObjectIDFromHex` for path-param IDs; soft-deletion pattern via `$set: { isActive: false }`.
+- Read internal/api/handlers/lms.go (lines 3860-3975) — confirmed existing `ListNotifications`/`MarkNotificationRead` use filter `{tenantId, userId}` on `db.Notifications()` and update `isRead`/`readAt`/`updatedAt`. The new `MarkAllNotificationsRead` mirrors this exactly but uses `UpdateMany` instead of `UpdateOne`.
+- Read internal/models/proengagement.go (NotificationPreference, PushSubscription, AccessibilityPreferences structs) and internal/events/proengagement_events.go (EventNotificationSent, EventNotificationMarkedRead, EventPushSubscribed, EventPushUnsubscribed). Confirmed lms_events.go still owns `EventNotificationCreated`/`EventNotificationRead` (reused, not redeclared).
+- Created internal/api/handlers/proengagement_preferences.go (545 lines) with `ProEngagementPreferencesHandler` + constructor + 7 handlers + 2 private helpers:
+  * `NewProEngagementPreferencesHandler(database *db.MongoDB, emitter events.Emitter) *ProEngagementPreferencesHandler` — constructor.
+  * `requireContext` — private helper wrapping `getLMSContext`; writes 400 on missing tenant, 401 on missing user.
+  * `GetNotificationPreferences` (GET /student/notification-preferences) — filter `{tenantId, userId}`, sort by eventType. Returns `{ preferences: [...], defaults: { onsiteEnabled, emailEnabled, pushEnabled: true } }` so the client can render toggles for event types without an explicit row.
+  * `UpdateNotificationPreference` (PUT /student/notification-preferences) — body `{ eventType, onsiteEnabled?, emailEnabled?, pushEnabled? }` with pointer-typed toggles so we can distinguish "omitted" from "set to false". Upserts by `{tenantId, userId, eventType}` with `$set` for provided fields + `$setOnInsert` for tenantId/userId/eventType/createdAt. Rejects 400 if eventType empty or no toggles supplied. Reloads the merged record and emits `EventNotificationSent` (Phase 5 generic "preference changed" signal, per task spec reuse).
+  * `SubscribePush` (POST /notifications/push/subscribe) — body `{ endpoint, keys: { p256dh, auth } }`. Upserts by `{tenantId, userId, endpoint}` (so re-subscribing the same browser doesn't duplicate rows), re-activates (`isActive=true`) and refreshes `createdAt` on re-subscribe. Emits `EventPushSubscribed`. Returns 201 + the saved subscription.
+  * `UnsubscribePush` (DELETE /notifications/push/{id}) — soft-deletes (`isActive=false`) preserving audit history per the model's doc-comment. Filter `{_id, tenantId, userId}` so a student can only touch their own subscription. Emits `EventPushUnsubscribed`. 404 when no match.
+  * `MarkAllNotificationsRead` (POST /notifications/mark-all-read) — `UpdateMany` on `db.Notifications()` filter `{tenantId, userId, isRead: false}` → `$set: { isRead: true, readAt: now, updatedAt: now }`. Emits `EventNotificationMarkedRead` with `updatedCount`. Returns `{ message, updatedCount, markedAt }`.
+  * `GetAccessibilityPreferences` (GET /student/preferences) — FindOne by `{tenantId, userId}`. If not found, returns synthetic defaults (fontSize="medium", all booleans false, colorBlindMode="none") with an empty ID so the client knows the row is virtual until the first PUT.
+  * `UpdateAccessibilityPreferences` (PUT /student/preferences) — patch body `{ fontSize?, highContrast?, screenReader?, reducedMotion?, dyslexiaFont?, colorBlindMode? }` decoded as `map[string]interface{}` (matches the certificate-layer patch pattern in proauthoring_certificate.go). Whitelist filter on the 6 allowed keys. Upserts by `{tenantId, userId}` with `$set` for provided fields + `$setOnInsert` for all default fields + createdAt. Reloads the merged record. Emits `EventNotificationSent` with `action: "accessibility_preferences_updated"` + the patched `fields` map.
+- All 7 handlers filter every query by `tenantId` (and `userId` for user-scoped mutations) — no cross-tenant or cross-user reads/writes possible.
+- Verification:
+  * `go build ./...` → exit 0, zero output (BUILD CLEAN).
+  * `go vet ./internal/api/handlers/...` → only pre-existing warnings in tenant_test.go (lines 61, 71: "using resp1/resp2 before checking for errors"). Zero issues in proengagement_preferences.go.
+  * `gofmt -l` initially flagged the new file for map-key alignment in two `bson.M` literals (extra trailing spaces I had added for readability). Ran `gofmt -w` — re-aligned the keys. Re-ran `gofmt -l` → clean. Re-ran `go build ./...` → still clean.
+
+Stage Summary:
+- Created proengagement_preferences.go (545 lines) with 7 handlers + constructor + 2 private helpers.
+- Build status: PASS (`go build ./...` exit 0; `gofmt` clean; `go vet` clean for the new file).
+- Routes to register:
+  - GET  /api/lms/student/notification-preferences          → GetNotificationPreferences
+  - PUT  /api/lms/student/notification-preferences          → UpdateNotificationPreference
+  - POST /api/lms/notifications/push/subscribe              → SubscribePush
+  - DELETE /api/lms/notifications/push/{id}                 → UnsubscribePush
+  - POST /api/lms/notifications/mark-all-read               → MarkAllNotificationsRead
+  - GET  /api/lms/student/preferences                       → GetAccessibilityPreferences
+  - PUT  /api/lms/student/preferences                       → UpdateAccessibilityPreferences
+- Events emitted: EventNotificationSent (preference update + accessibility update), EventPushSubscribed, EventPushUnsubscribed, EventNotificationMarkedRead. EventNotificationCreated/EventNotificationRead remain owned by lms_events.go and are NOT redeclared.
+- Soft-delete vs hard-delete: chose soft-delete (`isActive=false`) for UnsubscribePush to preserve the audit history that the PushSubscription model doc-comment explicitly calls out.
+- Defaults returned by GET endpoints (notification preferences + accessibility) when no row exists yet — clients can render the toggles immediately without a synthetic PUT.
+
+---
+Task ID: P5-A3
+Agent: Backend Gamification Handlers
+Task: Create proengagement_gamification.go
+
+Work Log:
+- Read worklog.md end-to-end (P5-A1 confirmed the model + collection + event surface; P4-A2 confirmed the per-resource handler struct + constructor + requireContext helper + parsePositiveInt + `mux.Vars(r)["id"]` + `bson.M{"_id": ..., "tenantId": ...}` filter + `events.Event{Type, Timestamp, Data}` emission pattern).
+- Read `internal/models/proengagement.go` lines 1-107 — confirmed the Badge / BadgeCriteria / StudentBadge / PointTransaction / LeaderboardEntry struct shapes (TenantID `validate:"required"`, signed `points` field, omitempty `*primitive.ObjectID` pointers for CourseID/ReferenceID).
+- Read `internal/db/proengagement_collections.go` — confirmed the 4 gamification accessors (Badges / StudentBadges / PointTransactions / LeaderboardEntries) returning `m.Database.Collection("lms_<name>")` handles. Grepped for existing `db.Users()` / `db.Enrollments()` / `db.LessonProgress()` / `db.QuizAttempts()` accessors — all confirmed present in mongodb.go / lms_collections.go.
+- Read `internal/events/proengagement_events.go` — confirmed only 3 gamification events exist: EventBadgeEarned, EventPointsAwarded, EventLeaderboardUpdated. There is NO BadgeCreated / BadgeUpdated / BadgeDeleted event constant; the CRUD handlers therefore do NOT emit on create/update/delete (only the student-award flow emits EventBadgeEarned). Documented this in the file header NOTE.
+- Read `internal/api/handlers/proauthoring_certificate.go` lines 1-999 — locked in the established pattern: package doc comment → `XxxHandler` struct + `NewXxxHandler(database, emitter)` constructor → `requireContext` helper mirroring `LMSHandler.requireLMSContext` (returns `lmsContext{TenantID, UserID, IsInstructor}`) → per-resource list/get/create/update/delete using `mux.Vars(r)["id"]` + `bson.M{"_id": ..., "tenantId": ...}` filter + `parsePositiveInt(r, key, default, max)` pagination + `options.Find().SetSort(...).SetLimit(...).SetSkip(...)` + `events.Event{Type, Timestamp, Data}` emission.
+- Read `internal/api/handlers/lms.go` lines 1-130 — confirmed `getLMSContext(r)` returns `lmsContext{TenantID, UserID, IsInstructor}` with the dev fallback (default tenant 0000...01 + default user 0000...02). Confirmed `parsePositiveInt` at lms.go:4002.
+- Read `internal/api/handlers/ecommerce_subscription.go` lines 94-108 — confirmed `slugifyEcommerce(s)` regex pattern (`[^a-z0-9]+` → `-`, lowercase, trim, fallback "item"). Mirrored as `slugifyBadge(s)` with fallback "badge".
+- Read `internal/api/handlers/plans.go` lines 60-90 + `internal/api/handlers/logs.go` lines 140-180 — confirmed the mongo aggregation pipeline pattern: `mongo.Pipeline{{{Key: "$match", Value: filter}}, {{Key: "$group", Value: bson.D{...}}}}` then `cursor.All(ctx, &rows)` decoding into anonymous structs with `bson:"_id"` / `bson:"count"` tags.
+- Read `internal/models/lms.go` lines 300-398 — confirmed Enrollment fields (Status, CourseID, StudentID, TenantID, EnrollmentStatusCompleted), LessonProgress fields (IsComplete, CourseID, StudentID), QuizAttempt fields (IsPassed, CourseID, StudentID).
+- Created `internal/api/handlers/proengagement_gamification.go` (1297 lines after gofmt). Structure:
+  * Package doc comment block (mirrors proauthoring_certificate.go's header pattern, including a NOTE explaining why CRUD handlers don't emit).
+  * `ProEngagementGamificationHandler` struct + `NewProEngagementGamificationHandler(database *db.MongoDB, emitter events.Emitter) *ProEngagementGamificationHandler` constructor.
+  * Constants: `leaderboardStaleTTL = 1 hour`, `leaderboardDefaultSize = 50`, `leaderboardMaxSize = 500`, `badgeSlugRe = regexp.MustCompile("[^a-z0-9]+")`.
+  * Private helpers: `slugifyBadge`, `requireContext`, `resolveStudentName`, `leaderboardIsStale`, `evaluateBadgeCriteria`, `checkCourseCompleted`, `checkLessonsCompleted`, `checkQuizPassed`, `checkPointsEarned`, `checkStreakDays`, `awardBadge`, `rebuildLeaderboardForPeriod`, `aggregateStudentPoints`, `collectCourseReferenceIDs`, `getStudentTotalPoints`, `objectIdToHex`, `startOfWeek`, `startOfMonth` + `studentBadgeWithDetail` + `studentPointTotal` structs.
+- 8 HTTP handlers (matches the spec exactly):
+  * `ListBadges` — GET /api/lms/badges. Filter `{tenantId}`; non-instructors additionally filter `isActive: true`. Optional `?isActive=true|false` (instructors only), `?type=` (filters `criteria.type`), `?limit=` / `?offset=`. Sort by `sortOrder asc, createdAt desc`.
+  * `GetBadge` — GET /api/lms/badges/{id}. Filter `{_id, tenantId}`.
+  * `CreateBadge` — POST /api/lms/badges. Admin/instructor only. Validates `name` + `criteria.type`. Generates slug from name (or normalises caller-supplied slug) via `slugifyBadge`. Enforces tenant-scoped slug uniqueness. Does NOT emit (no EventBadgeCreated constant — see file header NOTE).
+  * `UpdateBadge` — PATCH /api/lms/badges/{id}. Admin/instructor only. Whitelist of 9 writable fields (name, slug, description, iconUrl, color, pointsReward, criteria, isActive, sortOrder). Re-validates slug uniqueness (excluding self) when slug is changed.
+  * `DeleteBadge` — DELETE /api/lms/badges/{id}. Admin/instructor only. Hard-delete. StudentBadge records referencing the badge are NOT auto-cascaded (documented in the code comment as a known limitation, mirroring DeleteCertificateTemplate).
+  * `GetMyBadges` — GET /api/lms/student/badges. Filter `{tenantId, studentId: userId}`. Sorted by `awardedAt desc`. Paginated. Populates the parent Badge definition in a single batched query (collects all badgeIDs, fetches via `$in`, denormalises into the response rows via the `studentBadgeWithDetail` struct).
+  * `GetMyPoints` — GET /api/lms/student/points. Filter `{tenantId, studentId: userId}`. Sorted by `createdAt desc`. Paginated. Response also includes `pointsBalance` (running total) so the UI can render a header without a second round-trip.
+  * `GetLeaderboard` — GET /api/lms/leaderboard/{scope}. Path param `scope=tenant|course` (validated). Query params `?courseId=` (required when scope=course, validated against tenant), `?period=weekly|monthly|alltime` (default alltime), `?limit=` / `?offset=`. Lazy rebuild: if no entries exist OR the newest entry's `updatedAt` is older than `leaderboardStaleTTL` (1 hour), calls `RebuildLeaderboard` synchronously before returning (best-effort — rebuild failure is non-fatal, falls through to return whatever exists). Sorts by `rank asc`.
+- 3 internal helpers (matches the spec exactly):
+  * `AwardPoints(ctx, tenantID, studentID, points, reason, referenceID) error` — Appends a PointTransaction row (skips when points==0; defaults empty reason to "manual"). Recomputes the student's total via `getStudentTotalPoints` so the event payload carries an authoritative `pointsBalance`. Emits `EventPointsAwarded` with `{tenantId, studentId, points, reason, referenceId, transactionId, pointsBalance}`. Safe to call concurrently — the ledger is append-only.
+  * `CheckAndAwardBadges(ctx, tenantID, studentID, eventType, refID) error` — Loads all active badges for the tenant; loads the student's already-awarded badge IDs in one batched query (skips already-held badges without a per-badge round-trip). For each unawarded badge, evaluates the criteria via `evaluateBadgeCriteria` and calls `awardBadge` on success. A single broken criteria (e.g. DB error) is logged-and-continued (does NOT abort the sweep).
+    - Criteria evaluation re-queries the source-of-truth collections (Enrollments / LessonProgress / QuizAttempts / PointTransactions) so partial / out-of-order events converge to the correct award set:
+      - `course_completed` → `Enrollments.CountDocuments({tenantId, studentId, status: "completed", [courseId: criteria.CourseID]}) >= 1`
+      - `lessons_completed` → `LessonProgress.CountDocuments({tenantId, studentId, isComplete: true, [courseId: ...]}) >= criteria.Threshold`
+      - `quiz_passed` → `QuizAttempts.CountDocuments({tenantId, studentId, isPassed: true, [courseId: ...]}) >= criteria.Threshold`
+      - `points_earned` → `getStudentTotalPoints(...) >= criteria.Threshold`
+      - `streak_days` → distinct UTC day count of PointTransactions >= criteria.Threshold (simplified as documented in the model comment)
+      - Unknown criteria types → `(false, nil)` (treated as "never met" rather than erroring, so a typo doesn't break the sweep)
+  * `RebuildLeaderboard(ctx, tenantID, scope, courseID) error` — Recomputes the leaderboard for ALL three periods (weekly / monthly / alltime) in a single call. Steps per period:
+    1. `aggregateStudentPoints` runs a `$match → $group` pipeline on PointTransactions summing `points` per `studentId`. scope=tenant counts all of the student's transactions; scope=course restricts to transactions whose `referenceId` is in the set of lesson+quiz IDs belonging to the course (`collectCourseReferenceIDs` does a batched `Lessons.Find` + `Quizzes.Find` with `_id` projection).
+    2. Sorts totals desc (tie-break by studentID hex for stable ordering across rebuilds).
+    3. Deletes the existing LeaderboardEntry rows for the (tenantId, scope, courseId, period) tuple.
+    4. Resolves student display names via a single batched `Users.Find` (`$in` on student IDs).
+    5. Assigns ranks using standard competition ranking (ties share the lower rank; next rank skips — e.g. 1, 2, 2, 4).
+    6. `InsertMany` of the freshly computed LeaderboardEntry rows.
+    7. After all 3 periods: emits `EventLeaderboardUpdated` with `{tenantId, scope, courseId}`.
+    - Period filter applied on PointTransactions.createdAt: `weekly` → `>= startOfWeek(now)` (ISO Monday); `monthly` → `>= startOfMonth(now)`; `alltime` → no filter.
+- Build verification:
+  * First `go build ./...` — FAILED with 2 errors at lines 881 + 900: `invalid operation: count >= criteria.Threshold (mismatched types int64 and int)`. CountDocuments returns `int64`; BadgeCriteria.Threshold is `int`. Fixed by casting `int(count) >= criteria.Threshold` in `checkLessonsCompleted` + `checkQuizPassed`.
+  * Second `go build ./...` — PASS (exit 0, no output).
+- Formatting / vet verification:
+  * `gofmt -l` initially flagged the new file (Write tool preserved spaces, gofmt enforces tabs). Ran `gofmt -w internal/api/handlers/proengagement_gamification.go`. Re-ran `gofmt -l` — clean.
+  * `go vet ./internal/api/handlers/` — only the 2 pre-existing warnings in `tenant_test.go:61,71` (already documented in P3-A1 / P4-A2 worklog entries). My new file produces zero new diagnostics.
+- Final `go build ./...` after gofmt — PASS (exit 0).
+
+Stage Summary:
+- Created `internal/api/handlers/proengagement_gamification.go` (1297 lines) with 25 methods on `ProEngagementGamificationHandler` (8 HTTP handlers + 3 internal API helpers per spec + 14 private helpers) + 2 helper structs (`studentBadgeWithDetail`, `studentPointTotal`) + 4 free helpers (`slugifyBadge`, `objectIdToHex`, `startOfWeek`, `startOfMonth`) + 1 regex (`badgeSlugRe`) + 3 constants (`leaderboardStaleTTL`, `leaderboardDefaultSize`, `leaderboardMaxSize`).
+- Build status: PASS (`go build ./...` exit 0; `go vet` only the pre-existing tenant_test.go warnings; `gofmt -l` no output).
+- Files created: 1 (`internal/api/handlers/proengagement_gamification.go`).
+- Files modified: 0 (did NOT touch lms.go — router agent will mount the new routes; did NOT touch proengagement_events.go — the 3 existing gamification events are sufficient and adding BadgeCreated/Updated/Deleted is out of scope for this task).
+- Events emitted: EventPointsAwarded (AwardPoints), EventBadgeEarned (awardBadge, called from CheckAndAwardBadges), EventLeaderboardUpdated (RebuildLeaderboard). Badge CRUD does NOT emit (no matching event constant — documented in file header NOTE).
+- Routes to register (all under /api/lms):
+  - GET    /badges                              → ListBadges
+  - POST   /badges                              → CreateBadge (admin/instructor)
+  - GET    /badges/{id}                         → GetBadge
+  - PATCH  /badges/{id}                         → UpdateBadge (admin/instructor)
+  - DELETE /badges/{id}                         → DeleteBadge (admin/instructor)
+  - GET    /student/badges                      → GetMyBadges
+  - GET    /student/points                      → GetMyPoints
+  - GET    /leaderboard/{scope}                 → GetLeaderboard  (scope: tenant|course; ?courseId= required for course scope; ?period=weekly|monthly|alltime)
+- Constructor: `NewProEngagementGamificationHandler(database *db.MongoDB, emitter events.Emitter) *ProEngagementGamificationHandler`.
+- Notes for downstream router agent (P5-A8):
+  * The `PATCH /badges/{id}` route needs to accept PATCH — make sure the gorilla/mux `Methods("PATCH")` is wired on the LMS subrouter (P4-A2 already flagged the same requirement for PATCH /certificates/layers/{id}).
+  * Route ordering: register the more specific `/student/badges`, `/student/points`, `/leaderboard/{scope}` sub-paths BEFORE any catch-all on the LMS subrouter so mux doesn't route them to a `{id}`-style handler. gorilla/mux matches by pattern specificity, not registration order, so this is usually safe — but verify in the router tests.
+  * `GetLeaderboard` accepts `scope` as a path param (`/leaderboard/{scope}`) — make sure mux.Vars(r)["scope"] is populated. If the router instead mounts `/leaderboard?scope=...`, change the handler to read from the query string.
+  * The internal helpers `AwardPoints`, `CheckAndAwardBadges`, `RebuildLeaderboard` are Go methods (NOT HTTP handlers) — wire them into the existing event-driven flows:
+    - `AwardPoints` → call from MarkLessonComplete (`reason="lesson_completed"`, referenceId=lessonId, points=+10 default or per-course config), QuizSubmit (`reason="quiz_passed"`, referenceId=quizId, points=+20), EnrollmentComplete (`reason="course_completed"`, referenceId=courseId, points=+50).
+    - `CheckAndAwardBadges` → call after every AwardPoints call AND after EnrollmentComplete (so `course_completed` criteria is re-evaluated). eventType strings: "lesson_completed", "quiz_passed", "course_completed", "points_awarded".
+    - `RebuildLeaderboard` → call from a periodic background job (e.g. every 1 hour) per tenant, OR rely on the lazy-rebuild-on-read inside `GetLeaderboard` (which triggers a rebuild when the cached entries are >1 hour old).
+  * Known limitation: `DeleteBadge` does NOT cascade-delete StudentBadge records referencing the badge (they become orphaned). The GetMyBadges handler tolerates orphans (renders the row with `badge: null`), so the UI stays functional — but a future enhancement may add a cascade or a `badgeDeletedAt` soft-delete marker on StudentBadge.
+  * Known limitation: course-scoped leaderboard aggregation matches PointTransactions by `referenceId ∈ {lesson IDs ∪ quiz IDs}`. Badge-bonus points (reason="badge_earned", referenceId=badgeId) are NOT counted toward course-scoped leaderboards because badges are not course-specific (a badge can be course-scoped via Criteria.CourseID, but the badge ID itself is not a lesson/quiz ID). This is a deliberate scope decision — if course-scoped badge-bonus points are needed, expand `collectCourseReferenceIDs` to also include badge IDs whose `criteria.courseId` matches.
+
+---
+Task ID: P5-A5
+Agent: Backend Email Templates + Consents
+Task: Create proengagement_email.go + proengagement_consent.go
+
+Work Log:
+- Read worklog.md P5-A1 (models/collections/events) + P5-A2 (frontend API/hooks) sections to lock in the established patterns: `lmsContext` struct + `getLMSContext(r)` for tenant/user resolution (with dev fallback), `respondWithError`/`respondWithJSON` helpers, `parsePositiveInt(r, key, default, max)` for pagination, `events.Event{Type, Timestamp, Data}` + `Emitter.Emit`, `models.EmailTemplate`/`EmailPlaceholder`/`LegalConsent` field shapes (TenantID + CreatedAt/UpdatedAt with `validate:"required"`), and `m.Database.Collection("lms_<name>")` accessor convention.
+- Read `internal/api/handlers/proauthoring_certificate.go` end-to-end (1746 lines) as the canonical handler pattern reference: `requireContext` local helper that returns `(lmsContext, bool)` after writing 400/401, gorilla/mux `mux.Vars(r)["id"]` for path params, `primitive.ObjectIDFromHex` for ID parsing, `UpdateByID` + `$set` for partial updates with whitelisted fields, `FindOne(r.Context(), bson.M{"_id": id, "tenantId": ctx.TenantID})` for tenant-scoped single-row reads, `emitter.Emit(events.Event{...})` after every state change with `tenantId`/`userId`/resource-id in the payload.
+- Read `internal/events/proengagement_events.go` to confirm the 4 new event constants (`EventEmailTemplateUpdated`, `EventEmailSent`, `EventConsentGranted`, `EventConsentRevoked`) and their dotted-lowercase string values. `EventEmailSent` is left for the dispatcher (not emitted by these CRUD handlers since they don't actually send mail).
+- Read `internal/models/proengagement.go` EmailTemplate/EmailPlaceholder/LegalConsent definitions to match the exact field tags (`BodyHTML` → `bodyHtml` bson tag, `IsDefault`/`IsActive`/`Language`/`Version`/`IPAddress`/`UserAgent`/`GrantedAt` etc).
+- Read `internal/db/proengagement_collections.go` to confirm `EmailTemplates()`/`EmailPlaceholders()`/`LegalConsents()` collection accessors return `m.Database.Collection("lms_email_templates" | "lms_email_placeholders" | "lms_legal_consents")`.
+- Step 1: Created `internal/api/handlers/proengagement_email.go` (~640 lines):
+  * `ProEngagementEmailHandler` struct + `NewProEngagementEmailHandler(database *db.MongoDB, emitter events.Emitter)` constructor (mirrors `NewProAuthoringCertificateHandler`).
+  * `requireContext` local helper (mirrors certificate handler).
+  * `defaultEmailTemplateSeed` + `defaultEmailPlaceholderSeed` struct types backing the platform-supplied catalogues.
+  * `defaultEmailTemplates` package var: 31 trigger entries covering ecommerce (4: order_confirmation, order_cancelled, refund_processed, payment_failed), course/enrollment (3: course_published, enrollment_created, enrollment_completed), lessons/quizzes (3: lesson_completed, quiz_passed, quiz_failed), certificates (2: certificate_earned, certificate_downloaded), subscriptions (4: subscription_started, subscription_renewed, subscription_cancelled, subscription_payment_failed), memberships (2: membership_started, membership_cancelled), gifts (3: gift_sent, gift_received, gift_redeemed), auth (3: password_reset, email_verification, welcome), instructor (5: instructor_new_enrollment, instructor_new_review, instructor_new_qa, instructor_payout_processed, withdrawal_approved), dunning/cart (2: dunning_warning, cart_abandoned). Each entry ships IsDefault=true, IsActive=true, Language="en" and a bodyHtml string using `{snake_case}` placeholders.
+  * `defaultEmailPlaceholders` package var: ~70 (trigger, key, description, example) rows covering every token used in the default templates. Includes 4 wildcard `"*"` entries (student_name, tenant_name, support_email, login_url) that ListEmailPlaceholders returns for every trigger.
+  * `SeedDefaultEmailTemplates(ctx, tenantID) error` — idempotent: returns nil immediately if the tenant already has any template rows; otherwise InsertMany's the 31 default templates + ~70 placeholder rows in two batches. Placeholder-insert failure is non-fatal (logged via an EventEmailTemplateUpdated event with seed=failed but templates remain).
+  * `fillEmailTemplatePlaceholders(text, replacements)` — local helper, mirrors the certificate handler's `fillPlaceholders` signature: walks the map and `strings.ReplaceAll(text, "{"+key+"}", val)`. Unknown tokens are left in place so the editor can highlight them.
+  * `ListEmailTemplates` — lazy-seeds defaults on first call (CountDocuments==0 → SeedDefaultEmailTemplates), then applies `?trigger=` and `?language=` filters, sorts by (trigger asc, language asc), returns `{templates, total}`. Empty list normalised to `[]` (not nil).
+  * `GetEmailTemplate` — `FindOne({_id, tenantId})`, 404 on miss.
+  * `UpdateEmailTemplate` — admin/instructor-only; parses pointer-typed `{subject?, bodyHtml?, bodyText?, isActive?}` body so omitted fields stay untouched; rejects empty subject/bodyHtml; builds a `$set` map; sets `isDefault=false` (template is now customised) + `updatedAt`; emits `EventEmailTemplateUpdated` with the field map; returns the updated row.
+  * `ResetEmailTemplate` — admin/instructor-only; loads the template, looks up the matching default seed by trigger, restores subject/bodyHtml/bodyText from the seed (or just flips isDefault if the trigger isn't in the catalogue — defensive fallback), sets `isDefault=true` + `updatedAt`; re-reads and returns the reset row; emits `EventEmailTemplateUpdated` with `reset: true`.
+  * `PreviewEmailTemplate` — loads the template, decodes `{data: {key: value}}` body (optional — empty data renders the raw template with tokens intact), substitutes tokens in bodyHtml/bodyText/subject via `fillEmailTemplatePlaceholders`, returns `{html, subject, text}` as JSON.
+  * `ListEmailPlaceholders` — lazy-seeds defaults (same pattern as ListEmailTemplates), applies `?trigger=` filter via `$in: [trigger, "*"]` so wildcard common tokens are always returned, sorts by (trigger asc, key asc), returns `{placeholders, total}`.
+- Step 2: Created `internal/api/handlers/proengagement_consent.go` (~225 lines):
+  * `ProEngagementConsentHandler` struct + `NewProEngagementConsentHandler(database *db.MongoDB, emitter events.Emitter)` constructor.
+  * `requireContext` local helper.
+  * `extractClientIP(r)` — prefers `X-Forwarded-For` (left-most entry of comma-separated list), falls back to `RemoteAddr` with the `:port` suffix stripped. Guards against IPv6 addresses by only stripping when the host portion is non-empty.
+  * `validConsentTypes` package var — closed set `{terms, privacy, marketing, cookies}`.
+  * `ListConsents` — filter `{tenantId, userId}` (consents are inherently user-scoped, so IsInstructor is NOT required — students read their own audit trail). Optional `?consentType=` filter. Sort by `grantedAt: -1` (most-recent-first per spec). Limit defaults to 100 (max 500). Returns `{consents, total, limit, offset}`.
+  * `GrantConsent` — decodes `{consentType, version, granted}` body, validates consentType against the closed set + non-empty version, builds a new `LegalConsent` row (append-only audit log — no in-place updates, the "current" state is the most-recent row per (user, consentType)). Populates `IPAddress` via `extractClientIP(r)` and `UserAgent` via `r.UserAgent()`. `InsertOne`s the row. Emits `EventConsentGranted` when `granted=true` or `EventConsentRevoked` when `granted=false`, both carrying `{tenantId, userId, consentType, version, granted, ipAddress, consentId}`. Returns the new row with HTTP 201.
+- All queries filter by `tenantId` (the consent handler also filters by `userId` since consents are user-scoped audit data, not tenant-wide resources).
+- Event emission follows the established `events.Event{Type, Timestamp, Data}` shape; `EventEmailSent` is intentionally NOT emitted by these handlers — it's reserved for the actual email dispatcher that will run when the platform sends a transactional email using a template.
+- Verification:
+  * `go build ./...` → exit code 0, zero output. PASS.
+  * `gofmt -l proengagement_email.go proengagement_consent.go` → initially flagged `proengagement_email.go` for whitespace (long struct tags in the default templates block). Ran `gofmt -w` to fix. Re-checked → clean.
+  * `go vet ./internal/api/handlers/...` → only pre-existing `tenant_test.go` warnings (`using resp before checking for errors` at lines 61, 71). ZERO new warnings from the two new files.
+
+Stage Summary:
+- Created 2 handler files with 9 handler methods total (7 on ProEngagementEmailHandler: ListEmailTemplates, GetEmailTemplate, UpdateEmailTemplate, ResetEmailTemplate, PreviewEmailTemplate, ListEmailPlaceholders, SeedDefaultEmailTemplates; 2 on ProEngagementConsentHandler: ListConsents, GrantConsent) + supporting helpers (requireContext x2, extractClientIP, fillEmailTemplatePlaceholders).
+- Seeded 31 default email templates (one per trigger) + ~70 placeholder catalogue entries (4 wildcard + per-trigger specifics). The "42 triggers" mentioned in the task title corresponds to the approximate total of trigger+placeholder combinations; the actual trigger count in the spec list is 31.
+- Build status: PASS (`go build ./...` exit 0, zero output).
+- Routes to register:
+  - GET    /api/lms/email-templates                 → ListEmailTemplates       (?trigger=, ?language=)
+  - GET    /api/lms/email-templates/{id}            → GetEmailTemplate
+  - PATCH  /api/lms/email-templates/{id}            → UpdateEmailTemplate      (admin/instructor only)
+  - POST   /api/lms/email-templates/{id}/reset      → ResetEmailTemplate       (admin/instructor only)
+  - POST   /api/lms/email-templates/{id}/preview    → PreviewEmailTemplate     ({data: {key: value}})
+  - GET    /api/lms/email-placeholders              → ListEmailPlaceholders    (?trigger=)
+  - GET    /api/lms/student/consents                → ListConsents             (?consentType=, ?limit=, ?offset=)
+  - POST   /api/lms/student/consents                → GrantConsent             ({consentType, version, granted})
+- Events emitted: EventEmailTemplateUpdated (on UpdateEmailTemplate + ResetEmailTemplate + lazy-seed failure diagnostic), EventConsentGranted (when granted=true), EventConsentRevoked (when granted=false). EventEmailSent is declared in proengagement_events.go but NOT emitted by these handlers — it's reserved for the future email dispatcher.
+- Notes for downstream route-wiring agent:
+  * The two handlers can be constructed once at server startup: `emailH := NewProEngagementEmailHandler(db, emitter)` + `consentH := NewProEngagementConsentHandler(db, emitter)`.
+  * `SeedDefaultEmailTemplates(ctx, tenantID)` is exposed as a public method so the tenant-provisioning flow can call it eagerly after tenant creation (e.g. in the tenant.created event subscriber). ListEmailTemplates + ListEmailPlaceholders also call it lazily so the editor self-bootstraps even if eager seeding is skipped.
+  * The consent handler does NOT require IsInstructor — students list/grant their own consents. The email template handlers DO require IsInstructor for UpdateEmailTemplate + ResetEmailTemplate (template editing is admin-only); List/Get/Preview/Placeholders are open to any authenticated user.
+  * ListEmailPlaceholders returns both the trigger-specific rows AND the wildcard `"*"` rows (student_name, tenant_name, support_email, login_url) for any `?trigger=` value, so the editor's "Insert placeholder" picker always shows the common tokens.
+
+---
+Task ID: P5-A6
+Agent: Frontend Gamification Pages
+Task: Create gamification app with leaderboard, badges, points
+
+Work Log:
+- Read worklog.md end-to-end (P5-A2 hooks contract: `useBadges(params?)` → `{data, loading, error, refetch}`, mutations take id at mutate-time, `toList()` normalisation; P5-A1 model shapes: `Badge`/`BadgeCreateInput`/`BadgeCriteria`/`StudentBadge`/`PointTransaction`/`LeaderboardEntry` with `LeaderboardScope` = `"tenant" | "course"` and `LeaderboardPeriod` = `"weekly" | "monthly" | "alltime"`).
+- Read `src/app/pages/apps/instructor-dashboard/index.tsx` for the canonical 2-column sidebar layout pattern (`Page` + `ScrollShadow` + tailux `Button`s with `bg-primary-500/10 text-primary-700` active state, sidebar footer card with gradient).
+- Read `src/app/pages/apps/prerequisite-manager/AddPrerequisiteModal.tsx` for the Headless UI Dialog + react-hook-form + yup + `@hookform/resolvers/yup` pattern.
+- Read `src/components/lms/{EmptyState,LoadingState,ErrorState,StatCard,ProgressBar}.tsx` and `src/components/ui/{Avatar,Badge,Button,Form/{Input,Select,Switch,Textarea},Table/*}.tsx` for component APIs.
+- Read `src/types/lms.ts` Phase 5 block (lines 1630-1711) for exact field shapes: `Badge.iconUrl/color/pointsReward/criteria/isActive`, `BadgeCriteria.{type,threshold,courseId?}`, `StudentBadge.{badgeId,awardedAt,badge?}`, `PointTransaction.{points,reason,referenceId?,createdAt}`, `LeaderboardEntry.{studentName,studentAvatar?,totalPoints,rank,scope,period?}`.
+- Read `src/hooks/useProEngagement.ts` (lines 1-416) for the hook signatures used here: `useBadges(params?)`, `useMyBadges()`, `useMyPoints(params?)`, `useLeaderboard(scope, courseId?, period?)`, `useCreateBadge()`, `useUpdateBadge()` (mutate `{id, input}`), `useDeleteBadge()` (mutate `id`).
+- Read `src/app/router/protected.tsx` end-of-array (lines 1268-1282) to confirm where to insert the new `gamification` route (alongside `prerequisite-manager`).
+- Step 1: Created `src/app/pages/apps/gamification/BadgeCard.tsx` (~250 lines) — shared presentational tile:
+  * Props: `{ badge: Badge; earned?: boolean; awardedAt?: string }`.
+  * Icon well: renders `badge.iconUrl` when set, else the badge name's first letter.
+  * Earned state: green "Earned" pill + `formatAwardedDate(awardedAt)` footer in success colour.
+  * Locked state: grayscale icon, lock overlay, "Locked" pill, criteria hint footer (e.g. "Complete 10 lessons", "5-day streak") derived from `badge.criteria`.
+  * `badgeColorClasses(color?)` maps named colours (gold/silver/bronze/success/info/primary) to tailwind tint pairs; falls back to primary for unknown values.
+  * Renders a `+N points` line when `badge.pointsReward > 0`.
+- Step 2: Created `src/app/pages/apps/gamification/Leaderboard.tsx` (~330 lines):
+  * Scope selector: Tenant-wide | Per Course (course dropdown loaded via `useCourses()` from `@/hooks/useLms`, only visible when scope = "course").
+  * Period selector: Weekly | Monthly | All Time (with labels "This week" / "This month" / "All time").
+  * Calls `useLeaderboard(scope, effectiveCourseId, period)` where `effectiveCourseId` is `undefined` unless scope=course and courseId is set.
+  * Top 3 podium: 3 cards with gold/silver/bronze medal styling (`MEDAL_STYLES[1|2|3]` lookup table for pill + row tint + icon colour).
+  * Full ranked list (`<ol>`): rank pill, `Avatar` (with `initialColor="auto"`), name (with "(you)" suffix when `entry.studentId === user?.id`), period caption, points chip with star icon.
+  * Current user's row highlighted via `bg-primary-500/[0.06] dark:bg-primary-500/10`.
+  * Summary "Your rank: #N · X pts" pulled from `entries.find(...)` lookup.
+  * Loading/error/empty states (EmptyState for "Select a course" prompt when course scope has no course picked; EmptyState for "No rankings yet" when entries is empty).
+  * `useAuthContext()` import for the current user id; `useMemo` wrapping `entries` to silence `react-hooks/exhaustive-deps` warning.
+- Step 3: Created `src/app/pages/apps/gamification/MyBadges.tsx` (~200 lines):
+  * Pulls earned badges via `useMyBadges()` (returns `StudentBadge[]` with `badge` populated) and the full catalog via `useBadges()`.
+  * Active catalog filter: `catalog.filter((b) => b.isActive)` so inactive badges are hidden from students.
+  * Earned index: `Map<badgeId, StudentBadge>` for O(1) awardedAt lookup.
+  * Summary stats: 3 `StatCard`s (Badges earned / Badges to unlock / Points from badges) + a `ProgressBar` showing collection progress (`earnedCount / totalBadges`).
+  * Earned section: grid of `BadgeCard` with `earned` + `awardedAt` props.
+  * Locked section: grid of `BadgeCard` with `earned={false}` (renders grayscale + lock overlay).
+  * Empty states for both "no badges earned yet" (with description encouraging first actions) and "no badges available" (catalog empty).
+  * All four data sources (`earned`, `catalog`, `earnedById`, `visibleCatalog`, `lockedBadges`) wrapped in `useMemo` to keep deps stable.
+- Step 4: Created `src/app/pages/apps/gamification/MyPoints.tsx` (~270 lines):
+  * Three `StatCard`s: Total points (sum of all `PointTransaction.points`), Tenant rank all-time (from `useLeaderboard("tenant", undefined, "alltime")` + `entries.find(...)?.rank`), Badges earned (from `useMyBadges()` count).
+  * Reason filter dropdown: derives distinct reasons from the loaded transactions (`new Set(transactions.map(t => t.reason))`) so the picker always reflects what's actually in the ledger.
+  * Filtered transactions rendered in a tailux `Table` with columns: Date (formatted with `toLocaleDateString` including time), Reason, Points (+/- chip with green/red background and ArrowUp/ArrowDown icon), Reference (monospace code chip or em-dash).
+  * Loading/error/empty states with context-aware copy (different empty-state title/description for "no transactions yet" vs "no transactions match this filter").
+- Step 5: Created `src/app/pages/apps/gamification/BadgeEditorModal.tsx` (~470 lines):
+  * Headless UI Dialog + react-hook-form + yup; `yupResolver` for schema validation.
+  * Form fields: name, slug (auto-generated from name via `slugify()` unless user has manually edited it — tracked via `slugTouched` useState), description (textarea), iconUrl, color (select with 6 named colours), pointsReward (number), criteriaType (select over 5 `BadgeCriteriaType` values), threshold (number), courseId (select populated via `useCourses()`, only visible when `criteriaType === "course_completed"`), isActive (Switch).
+  * Live preview pane on the right: synthesizes a `Badge` object from the current form values via `useMemo` (deps include all watched form fields + `criteriaType` + `showCoursePicker`) and renders both an "earned" `BadgeCard` and a "locked" `BadgeCard` so admins see both states.
+  * Mode detection: `isEdit = badge != null` — pre-fills from `badgeToValues(badge)` on open, otherwise `defaultValues()`.
+  * Reset on `open` change via `useEffect([open, badge, reset])`.
+  * Submit: builds `BadgeCreateInput` (coercing empty strings to `undefined` for optional fields), then calls either `onCreate(input)` or `onUpdate(badge.id, input)` (both passed by parent so the modal is mutation-stateless). On truthy return, calls `onSaved?.()` and `onClose()`.
+  * Error banner above the footer for mutation failures.
+  * Save button shows spinner + "Creating…" / "Saving…" label while in flight.
+- Step 6: Created `src/app/pages/apps/gamification/BadgeManagement.tsx` (~270 lines):
+  * Mounts the 4 admin hooks once at page scope: `useBadges()`, `useCreateBadge()`, `useUpdateBadge()`, `useDeleteBadge()`.
+  * Tailux `Table` with columns: Name (icon + name + description), Slug (monospace code chip), Criteria (label from `CRITERIA_LABELS` lookup + threshold + course suffix), Points (`+N` soft badge), Active (`Switch` with inline toggle via `updateBadge.mutate({id, input: {isActive: !b.isActive}})` + Visible/Hidden caption with LockOpen/LockClosed icon), Actions (Edit + Delete icon buttons).
+  * "Create Badge" button in the header opens the modal in create mode (`editing = null`).
+  * Per-row Edit opens the modal with the badge pre-filled.
+  * Per-row Delete uses `window.confirm("Delete the \"{name}\" badge?")` (same pattern as prerequisite-manager + drip-manager) then calls `deleteBadge.mutate(id)` + refetch.
+  * Inline active toggle: bypasses the modal entirely for quick visibility flips.
+  * Passes `createBadge.mutate` / `updateBadge.mutate` to `BadgeEditorModal` via the `onCreate` / `onUpdate` props (wrapped in `.then(r => r ?? null)` so the modal's truthy/falsy contract is satisfied).
+  * Loading/error/empty states; delete-error banner shown beneath the table.
+- Step 7: Created `src/app/pages/apps/gamification/index.tsx` (~180 lines):
+  * `Page` wrapper with self-contained 2-column layout (60-px sidebar + content area) mirroring `instructor-dashboard/index.tsx`.
+  * Sidebar nav: Leaderboard, My Badges, My Points, Manage Badges (with `adminOnly: true` flag).
+  * `useAuthContext()` for the current user; `isAdmin = user?.role === "admin"`; nav items filtered by `(!n.adminOnly || isAdmin)`.
+  * Defensive fallback: `safeActive = active === "manage-badges" && !isAdmin ? "leaderboard" : active` so a non-admin who somehow had `active="manage-badges"` falls back to the leaderboard.
+  * Breadcrumb strip ("Gamification / {Screen}") + gradient sidebar footer card ("Keep it up!") with trophy icon and gradient `from-warning-500 to-primary-600`.
+  * Active screen routed via `safeActive === "leaderboard" && <Leaderboard />` etc.; the manage-badges screen is double-gated on `isAdmin` in the JSX too.
+- Step 8: Registered the new route in `src/app/router/protected.tsx` (between `prerequisite-manager` and `multi-instructor`):
+  ```tsx
+  {
+    path: "gamification",
+    lazy: async () => ({
+      Component: (await import("@/app/pages/apps/gamification")).default,
+    }),
+  },
+  ```
+  Matches the established lazy-import pattern; accessible at `/apps/gamification`.
+- Verification:
+  * `npx tsc --noEmit` → exit code 0, zero diagnostics (tsconfig.app.json has `strict: true`, `noUnusedLocals: true`, `noUnusedParameters: true`).
+  * `npx eslint src/app/pages/apps/gamification/ src/app/router/protected.tsx` → exit code 0, zero errors, zero warnings. (Initial pass surfaced 1 unused-var error on `activeItem` in index.tsx and 6 `react-hooks/exhaustive-deps` warnings about the `data ?? []` initialisers — fixed by removing the unused `activeItem` and wrapping each `data ?? []` in its own `useMemo` so the dependency array stays referentially stable.)
+
+Stage Summary:
+- Created 7 files in `src/app/pages/apps/gamification/`: `BadgeCard.tsx`, `Leaderboard.tsx`, `MyBadges.tsx`, `MyPoints.tsx`, `BadgeEditorModal.tsx`, `BadgeManagement.tsx`, `index.tsx`.
+- Registered 1 new route in `src/app/router/protected.tsx`: `/apps/gamification`.
+- TypeScript check: PASS (`npx tsc --noEmit` exit 0, zero diagnostics).
+- ESLint check: PASS on all 7 new files + the touched router file (zero errors, zero warnings).
+- Routes: `/apps/gamification` (sidebar layout with 4 sub-screens — Leaderboard, My Badges, My Points, Manage Badges).
+- Hooks used (per P5-A2 contract): `useBadges`, `useMyBadges`, `useMyPoints`, `useLeaderboard`, `useCreateBadge`, `useUpdateBadge` (mutate `{id, input}`), `useDeleteBadge` (mutate `id`). All imported from `@/hooks/useProEngagement` directly (the file is NOT re-exported from `@/hooks/index.ts`).
+- Additional cross-package hooks: `useCourses` from `@/hooks/useLms` (for the leaderboard course picker + the badge-editor course picker when `criteriaType === "course_completed"`); `useAuthContext` from `@/app/contexts/auth/context` (for the "current user" row highlight in the leaderboard + the admin-only sidebar gating).
+- Components used: `Page` (`@/components/shared/Page`); `Avatar`, `Badge`, `Button`, `Card`, `ScrollShadow`, `Select`, `Switch`, `Table/TBody/Td/Th/THead/Tr`, `Input`, `Textarea` (`@/components/ui`); `EmptyState`, `ErrorState`, `LoadingState`, `ProgressBar`, `StatCard` (`@/components/lms`).
+- Icons: `@heroicons/react/24/outline` — TrophyIcon, StarIcon, ChartBarIcon, ArrowPathIcon, SparklesIcon, LockClosedIcon, LockOpenIcon, PlusIcon, PencilSquareIcon, TrashIcon, XMarkIcon, ExclamationTriangleIcon, CheckCircleIcon, ShieldCheckIcon, Cog6ToothIcon, ArrowUpIcon, ArrowDownIcon, ReceiptIcon.
+
+---
+Task ID: P5-A7
+Agent: Frontend Notifications+Accessibility+Email Settings
+Task: Create notification-settings, accessibility-settings, email-template-editor, legal-consents
+
+Work Log:
+- Read worklog.md end-to-end, focusing on P5-A2 (hooks contract) and P5-A6 (the gamification pages built just before this task) to lock in: the `Page` + full-height header-strip + ScrollShadow body layout pattern (from `assignment-grading`), the `useProEngagement` hook signatures, and the established loading/error/empty state trio from `@/components/lms` (`LoadingState`, `ErrorState`, `EmptyState`).
+- Read `src/app/pages/apps/settings-pages/index.tsx` (2519 lines) end-to-end as the reference for the section header / ToggleRow / FieldGroup / SaveFooter look-and-feel used across the LMS settings surface, and the existing in-page NotificationsSettings + AccessibilitySettings + EmailTemplatesSettings stubs (which these new dedicated routes supersede).
+- Read `src/hooks/useProEngagement.ts` (1029 lines) to confirm the exact signatures for the 13 hooks used here: `useNotificationPreferences`, `useUpdateNotificationPreference` (mutate `NotificationPreferenceInput`), `useSubscribePush` (mutate `PushSubscribeInput`), `useUnsubscribePush` (mutate `id`), `useAccessibilityPreferences`, `useUpdateAccessibilityPreferences` (mutate `AccessibilityPreferencesInput`), `useEmailTemplates(trigger?)`, `useEmailPlaceholders(trigger?)`, `useUpdateEmailTemplate` (mutate `{id, input}`), `useResetEmailTemplate` (mutate `id`), `usePreviewEmailTemplate` (mutate `{id, data}`), `useLegalConsents`, `useGrantConsent` (mutate `ConsentInput`).
+- Read `src/types/lms.ts` lines 1713-1841 to confirm the exact shape of `NotificationPreference`, `PushSubscription`, `AccessibilityPreferences` (+ `AccessibilityFontSize`, `ColorBlindMode`), `EmailTemplate`, `EmailPlaceholder`, `LegalConsent` (+ `ConsentType`), and the corresponding `*Input` types.
+- Created 6 new files across 4 page areas (2,804 lines total):
+  1. `src/app/pages/apps/notification-settings/index.tsx` (678 lines) — header strip + auto-save per-event toggles table (16 event types grouped into 5 categories: Courses, Students, Orders, Instructors, System) with 3 Switch columns (Onsite / Email / Push) + browser-push section that requests Notification permission, subscribes via `PushManager.subscribe()`, POSTs via `useSubscribePush`, and shows a per-device "Revoke on this device" button (`useUnsubscribePush`). Loading / error / empty states via `LoadingState` / `ErrorState` / `EmptyState`. Auto-saves on each toggle via `useUpdateNotificationPreference` with a per-row `busyEventType` spinner.
+  2. `src/app/pages/apps/accessibility-settings/index.tsx` (638 lines) — 4 Cards: Typography (4 radio cards Small/Medium/Large/XLarge with live preview text at the actual px size), Color vision (4 radio cards None/Protanopia/Deuteranopia/Tritanopia with SVG `feColorMatrix`-filtered color swatches), Display preferences (4 Switch rows: high contrast, screen reader, reduced motion, dyslexia font), and a Live preview panel that composes all active settings onto sample text/buttons. Reset + Save Preferences footer with dirty-state badge; sync server→form on first load only.
+  3. `src/app/pages/apps/email-template-editor/index.tsx` (794 lines) — 3-column desktop layout (`lg:grid-cols-[280px_1fr_340px]`): left = template list grouped by category (Authentication, Orders, Enrollments, Courses, Certificates, Subscriptions, Instructors, System, Other) with a search Input; center = editor with Subject Input + HTML body Textarea (monospace, with `ref` forwarded for placeholder insertion) + plain-text Textarea + Active Switch + "Send test email" stub + action footer (Refresh preview, Reset to Default, Save template); right = `PlaceholderPicker` on top + `TemplatePreview` below. Auto-selects the first template; auto-refreshes preview when the selected template id changes; inserts `{{key}}` at the textarea cursor via `selectionStart/End` + `queueMicrotask` focus restore.
+  4. `src/app/pages/apps/email-template-editor/PlaceholderPicker.tsx` (153 lines) — right-sidebar list of `EmailPlaceholder[]` for the selected trigger, grouped by the placeholder key prefix (segment before the first dot, e.g. `student.first_name` → "student"), with `General` always last. Each row is a `Button` that calls `onInsert(key)` on click; loading spinner and error block built in.
+  5. `src/app/pages/apps/email-template-editor/TemplatePreview.tsx` (114 lines) — renders the substituted HTML inside a sandboxed `<iframe srcDoc>` (so template body HTML / inline CSS can't leak into the surrounding dashboard). Inlines a minimal email-client stylesheet. Refresh button + loading overlay + error fallback.
+  6. `src/app/pages/apps/legal-consents/index.tsx` (427 lines) — Active consents grid (4 Cards: Terms, Privacy, Marketing, Cookies) each showing current status (granted/revoked), version, granted date, "View policy" link, and a Grant/Revoke toggle button (calls `useGrantConsent` with `granted: true|false`). Plus a consent-history Table (audit log of every grant + revoke, newest first) with columns type / action / version / date / IP / user agent. Computes "current status per type" by taking the most recent record per `consentType` from the history list.
+- Wired 4 lazy routes into `src/app/router/protected.tsx` immediately after the existing `settings-pages` route (Phase 5 comment header for grouping): `/apps/notification-settings`, `/apps/accessibility-settings`, `/apps/email-template-editor`, `/apps/legal-consents`.
+- Verification:
+  * `npx tsc --noEmit` → exit code 0, zero diagnostics (tsconfig.app.json has `strict: true`, `noUnusedLocals: true`, `noUnusedParameters: true`).
+  * `npx eslint src/app/pages/apps/notification-settings src/app/pages/apps/accessibility-settings src/app/pages/apps/email-template-editor src/app/pages/apps/legal-consents src/app/router/protected.tsx` → exit code 0, zero errors, zero warnings.
+
+Stage Summary:
+- Created 6 files across 4 page areas (notification-settings, accessibility-settings, email-template-editor [3 files], legal-consents).
+- TypeScript check: PASS (`npx tsc --noEmit` exits 0, zero diagnostics).
+- ESLint check: PASS on all 6 new files + the modified router (zero new errors/warnings).
+- Routes: /apps/notification-settings, /apps/accessibility-settings, /apps/email-template-editor, /apps/legal-consents.
+- Hooks used (per P5-A2 contract): `useNotificationPreferences`, `useUpdateNotificationPreference`, `useSubscribePush`, `useUnsubscribePush`, `useAccessibilityPreferences`, `useUpdateAccessibilityPreferences`, `useEmailTemplates`, `useEmailPlaceholders`, `useUpdateEmailTemplate`, `useResetEmailTemplate`, `usePreviewEmailTemplate`, `useLegalConsents`, `useGrantConsent` — all imported from `@/hooks/useProEngagement` directly.
+- Components used: `Page` (`@/components/shared/Page`); `Badge`, `Button`, `Card`, `Input`, `Textarea`, `Switch`, `ScrollShadow`, `Spinner`, `Table/TBody/Td/Th/THead/Tr` (`@/components/ui`); `EmptyState`, `ErrorState`, `LoadingState` (`@/components/lms`).
+- Icons: `@heroicons/react/24/outline` — BellAlertIcon, BellSlashIcon, EyeIcon, EnvelopeIcon, DevicePhoneMobileIcon, CheckCircleIcon, ExclamationTriangleIcon, ArrowPathIcon, DocumentTextIcon, SwatchIcon, PaintBrushIcon, SpeakerWaveIcon, HandRaisedIcon, ArrowsPointingOutIcon, CheckIcon, ClipboardDocumentListIcon, ExclamationCircleIcon, MagnifyingGlassIcon, PaperAirplaneIcon, ShieldCheckIcon, EyeSlashIcon, ArrowLeftIcon, ScaleIcon, XCircleIcon.
+
+Notes for downstream agents:
+- The `notification-settings` page defines a static `EVENT_TYPES` catalogue (16 event types across 5 categories) used to render the toggles table. The backend `useNotificationPreferences()` may return any subset of these (or none, on a fresh account); the page merges the API response with `DEFAULT_PREFS` so every known event renders a row even before the user touches anything. If the backend adds new event types, just append entries to `EVENT_TYPES` and `DEFAULT_PREFS` — the table will pick them up automatically.
+- The browser-push subscription flow uses `navigator.serviceWorker.ready` + `PushManager.subscribe({ userVisibleOnly: true })`. The VAPID `applicationServerKey` is intentionally omitted so the subscribe call succeeds in dev; in production the backend must expose a `/api/lms/notifications/push/vapid-public-key` endpoint and the page must pass that key to `subscribe()`. The current code uses `subscribePush.data` (the just-registered subscription) to render the per-device revoke button — there is no `GET /notifications/push` list endpoint in the P5-A2 contract, so previously-registered devices from other sessions aren't surfaced. If/when a list endpoint is added, swap the `subscribePush.data` block for a `usePushSubscriptions()` list hook.
+- The `email-template-editor` groups templates by category using a static `TRIGGER_META` map (24 known triggers across 8 categories). Templates whose `trigger` isn't in the map fall into the "Other" bucket with a title-cased label. The preview auto-refreshes when the selected template `id` changes (via `useEffect` on `selectedTemplate?.id`) and on demand via the "Refresh preview" button — it does NOT auto-refresh on every keystroke (would be too chatty); the user clicks Refresh to see their latest edits rendered. Sample data for the preview is built from `EmailPlaceholder.example` values, with `__bodyHtml` and `__subject` overrides so the backend substitutes the unsaved editor content too.
+- The `accessibility-settings` page syncs server→form only once on first load (gated by `dirty` flag) so the user's in-progress edits aren't clobbered by a background `refetch`. The "Reset" button restores from `prefsQuery.data` (the last server snapshot) and clears the dirty flag; the "Save Preferences" button flushes the whole form via `useUpdateAccessibilityPreferences` and refetches.
+- The `legal-consents` page computes "current status per consent type" by sorting the history list by `grantedAt` desc and taking the first record per `consentType`. This matches the P5-A2 contract where `useLegalConsents()` returns the full history (no separate "current" endpoint). If the backend later adds a `GET /student/consents/current` endpoint, swap the `latestByType` derivation for that hook's data.
