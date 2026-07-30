@@ -530,55 +530,1749 @@ func (h *LMSHandler) PublishCourse(w http.ResponseWriter, r *http.Request) {
 // Topics
 // ---------------------------------------------------------------------------
 
-func (h *LMSHandler) ListTopics(w http.ResponseWriter, r *http.Request)  { h.notImplemented(w, r) }
-func (h *LMSHandler) CreateTopic(w http.ResponseWriter, r *http.Request) { h.notImplemented(w, r) }
-func (h *LMSHandler) UpdateTopic(w http.ResponseWriter, r *http.Request) { h.notImplemented(w, r) }
-func (h *LMSHandler) DeleteTopic(w http.ResponseWriter, r *http.Request) { h.notImplemented(w, r) }
+// ListTopics handles GET /api/lms/courses/{courseId}/topics.
+//
+// When the {courseId} path variable is present the result is scoped to that
+// course; otherwise the tenant's entire topic set is returned.
+func (h *LMSHandler) ListTopics(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        filter := bson.M{"tenantId": ctx.TenantID}
+        if courseIDStr := mux.Vars(r)["courseId"]; courseIDStr != "" {
+                if oid, err := primitive.ObjectIDFromHex(courseIDStr); err == nil {
+                        filter["courseId"] = oid
+                }
+        }
+
+        findOpts := options.Find().SetSort(bson.D{{Key: "sortOrder", Value: 1}, {Key: "createdAt", Value: 1}})
+
+        cursor, err := h.db.Topics().Find(r.Context(), filter, findOpts)
+        if err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to fetch topics")
+                return
+        }
+        defer cursor.Close(r.Context())
+
+        var topics []models.Topic
+        if err := cursor.All(r.Context(), &topics); err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to decode topics")
+                return
+        }
+        if topics == nil {
+                topics = []models.Topic{}
+        }
+
+        total, _ := h.db.Topics().CountDocuments(r.Context(), filter)
+
+        respondWithJSON(w, http.StatusOK, map[string]interface{}{
+                "topics": topics,
+                "total":  total,
+        })
+}
+
+// CreateTopic handles POST /api/lms/courses/{courseId}/topics.
+func (h *LMSHandler) CreateTopic(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        courseIDStr := mux.Vars(r)["courseId"]
+        courseID, err := primitive.ObjectIDFromHex(courseIDStr)
+        if err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid course ID")
+                return
+        }
+
+        // Verify the parent course exists in the tenant.
+        var course models.Course
+        if err := h.db.Courses().FindOne(r.Context(), bson.M{
+                "_id":      courseID,
+                "tenantId": ctx.TenantID,
+        }).Decode(&course); err != nil {
+                respondWithError(w, http.StatusNotFound, "Course not found")
+                return
+        }
+
+        var topic models.Topic
+        if err := json.NewDecoder(r.Body).Decode(&topic); err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid request body")
+                return
+        }
+        if strings.TrimSpace(topic.Title) == "" {
+                respondWithError(w, http.StatusBadRequest, "title is required")
+                return
+        }
+
+        topic.ID = primitive.NilObjectID
+        topic.TenantID = ctx.TenantID
+        topic.CourseID = courseID
+        now := time.Now()
+        topic.CreatedAt = now
+        topic.UpdatedAt = now
+
+        result, err := h.db.Topics().InsertOne(r.Context(), &topic)
+        if err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to create topic")
+                return
+        }
+        if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
+                topic.ID = oid
+        }
+
+        h.emitter.Emit(events.Event{
+                Type:      events.EventTopicCreated,
+                Timestamp: now,
+                Data: map[string]interface{}{
+                        "tenantId": ctx.TenantID.Hex(),
+                        "courseId": courseID.Hex(),
+                        "topicId":  topic.ID.Hex(),
+                        "userId":   ctx.UserID.Hex(),
+                },
+        })
+
+        respondWithJSON(w, http.StatusCreated, topic)
+}
+
+// UpdateTopic handles PATCH /api/lms/topics/{id}.
+func (h *LMSHandler) UpdateTopic(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        idStr := mux.Vars(r)["id"]
+        id, err := primitive.ObjectIDFromHex(idStr)
+        if err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid topic ID")
+                return
+        }
+
+        var existing models.Topic
+        if err := h.db.Topics().FindOne(r.Context(), bson.M{
+                "_id":      id,
+                "tenantId": ctx.TenantID,
+        }).Decode(&existing); err != nil {
+                respondWithError(w, http.StatusNotFound, "Topic not found")
+                return
+        }
+
+        var patch map[string]interface{}
+        if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid request body")
+                return
+        }
+        for _, forbidden := range []string{"_id", "id", "tenantId", "courseId", "createdAt"} {
+                delete(patch, forbidden)
+        }
+        patch["updatedAt"] = time.Now()
+
+        if _, err := h.db.Topics().UpdateByID(r.Context(), id, bson.M{"$set": patch}); err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to update topic")
+                return
+        }
+
+        var updated models.Topic
+        if err := h.db.Topics().FindOne(r.Context(), bson.M{"_id": id}).Decode(&updated); err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to reload topic")
+                return
+        }
+
+        h.emitter.Emit(events.Event{
+                Type:      events.EventTopicUpdated,
+                Timestamp: time.Now(),
+                Data: map[string]interface{}{
+                        "tenantId": ctx.TenantID.Hex(),
+                        "topicId":  id.Hex(),
+                        "userId":   ctx.UserID.Hex(),
+                },
+        })
+
+        respondWithJSON(w, http.StatusOK, updated)
+}
+
+// DeleteTopic handles DELETE /api/lms/topics/{id}.
+func (h *LMSHandler) DeleteTopic(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        idStr := mux.Vars(r)["id"]
+        id, err := primitive.ObjectIDFromHex(idStr)
+        if err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid topic ID")
+                return
+        }
+
+        result, err := h.db.Topics().DeleteOne(r.Context(), bson.M{
+                "_id":      id,
+                "tenantId": ctx.TenantID,
+        })
+        if err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to delete topic")
+                return
+        }
+        if result.DeletedCount == 0 {
+                respondWithError(w, http.StatusNotFound, "Topic not found")
+                return
+        }
+
+        h.emitter.Emit(events.Event{
+                Type:      events.EventTopicDeleted,
+                Timestamp: time.Now(),
+                Data: map[string]interface{}{
+                        "tenantId": ctx.TenantID.Hex(),
+                        "topicId":  id.Hex(),
+                        "userId":   ctx.UserID.Hex(),
+                },
+        })
+
+        respondWithJSON(w, http.StatusOK, map[string]string{
+                "message": "Topic deleted",
+                "id":      id.Hex(),
+        })
+}
 
 // ---------------------------------------------------------------------------
 // Lessons
 // ---------------------------------------------------------------------------
 
-func (h *LMSHandler) ListLessons(w http.ResponseWriter, r *http.Request)          { h.notImplemented(w, r) }
-func (h *LMSHandler) CreateLesson(w http.ResponseWriter, r *http.Request)         { h.notImplemented(w, r) }
-func (h *LMSHandler) UpdateLesson(w http.ResponseWriter, r *http.Request)         { h.notImplemented(w, r) }
-func (h *LMSHandler) DeleteLesson(w http.ResponseWriter, r *http.Request)         { h.notImplemented(w, r) }
-func (h *LMSHandler) UpdateLessonProgress(w http.ResponseWriter, r *http.Request) { h.notImplemented(w, r) }
+// ListLessons handles GET /api/lms/topics/{topicId}/lessons.
+//
+// Optional query params: ?courseId=.
+func (h *LMSHandler) ListLessons(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        filter := bson.M{"tenantId": ctx.TenantID}
+        if topicIDStr := mux.Vars(r)["topicId"]; topicIDStr != "" {
+                if oid, err := primitive.ObjectIDFromHex(topicIDStr); err == nil {
+                        filter["topicId"] = oid
+                }
+        }
+        if courseIDStr := r.URL.Query().Get("courseId"); courseIDStr != "" {
+                if oid, err := primitive.ObjectIDFromHex(courseIDStr); err == nil {
+                        filter["courseId"] = oid
+                }
+        }
+
+        findOpts := options.Find().SetSort(bson.D{{Key: "sortOrder", Value: 1}, {Key: "createdAt", Value: 1}})
+
+        cursor, err := h.db.Lessons().Find(r.Context(), filter, findOpts)
+        if err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to fetch lessons")
+                return
+        }
+        defer cursor.Close(r.Context())
+
+        var lessons []models.Lesson
+        if err := cursor.All(r.Context(), &lessons); err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to decode lessons")
+                return
+        }
+        if lessons == nil {
+                lessons = []models.Lesson{}
+        }
+
+        total, _ := h.db.Lessons().CountDocuments(r.Context(), filter)
+
+        respondWithJSON(w, http.StatusOK, map[string]interface{}{
+                "lessons": lessons,
+                "total":   total,
+        })
+}
+
+// CreateLesson handles POST /api/lms/topics/{topicId}/lessons.
+func (h *LMSHandler) CreateLesson(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        topicIDStr := mux.Vars(r)["topicId"]
+        topicID, err := primitive.ObjectIDFromHex(topicIDStr)
+        if err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid topic ID")
+                return
+        }
+
+        var topic models.Topic
+        if err := h.db.Topics().FindOne(r.Context(), bson.M{
+                "_id":      topicID,
+                "tenantId": ctx.TenantID,
+        }).Decode(&topic); err != nil {
+                respondWithError(w, http.StatusNotFound, "Topic not found")
+                return
+        }
+
+        var lesson models.Lesson
+        if err := json.NewDecoder(r.Body).Decode(&lesson); err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid request body")
+                return
+        }
+        if strings.TrimSpace(lesson.Title) == "" {
+                respondWithError(w, http.StatusBadRequest, "title is required")
+                return
+        }
+        if lesson.LessonType == "" {
+                lesson.LessonType = models.LessonTypeText
+        }
+        if !models.ValidLessonType(lesson.LessonType) {
+                respondWithError(w, http.StatusBadRequest, "invalid lessonType")
+                return
+        }
+
+        lesson.ID = primitive.NilObjectID
+        lesson.TenantID = ctx.TenantID
+        lesson.CourseID = topic.CourseID
+        lesson.TopicID = topicID
+        lesson.InstructorID = ctx.UserID
+        now := time.Now()
+        lesson.CreatedAt = now
+        lesson.UpdatedAt = now
+
+        result, err := h.db.Lessons().InsertOne(r.Context(), &lesson)
+        if err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to create lesson")
+                return
+        }
+        if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
+                lesson.ID = oid
+        }
+
+        h.emitter.Emit(events.Event{
+                Type:      events.EventLessonCreated,
+                Timestamp: now,
+                Data: map[string]interface{}{
+                        "tenantId": ctx.TenantID.Hex(),
+                        "courseId": topic.CourseID.Hex(),
+                        "topicId":  topicID.Hex(),
+                        "lessonId": lesson.ID.Hex(),
+                        "userId":   ctx.UserID.Hex(),
+                },
+        })
+
+        respondWithJSON(w, http.StatusCreated, lesson)
+}
+
+// UpdateLesson handles PATCH /api/lms/lessons/{id}.
+func (h *LMSHandler) UpdateLesson(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        idStr := mux.Vars(r)["id"]
+        id, err := primitive.ObjectIDFromHex(idStr)
+        if err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid lesson ID")
+                return
+        }
+
+        var existing models.Lesson
+        if err := h.db.Lessons().FindOne(r.Context(), bson.M{
+                "_id":      id,
+                "tenantId": ctx.TenantID,
+        }).Decode(&existing); err != nil {
+                respondWithError(w, http.StatusNotFound, "Lesson not found")
+                return
+        }
+
+        var patch map[string]interface{}
+        if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid request body")
+                return
+        }
+        for _, forbidden := range []string{"_id", "id", "tenantId", "courseId", "topicId", "instructorId", "createdAt"} {
+                delete(patch, forbidden)
+        }
+        if lessonTypeRaw, ok := patch["lessonType"]; ok {
+                lessonTypeStr, _ := lessonTypeRaw.(string)
+                if lessonTypeStr != "" && !models.ValidLessonType(models.LessonType(lessonTypeStr)) {
+                        respondWithError(w, http.StatusBadRequest, "invalid lessonType")
+                        return
+                }
+        }
+        patch["updatedAt"] = time.Now()
+
+        if _, err := h.db.Lessons().UpdateByID(r.Context(), id, bson.M{"$set": patch}); err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to update lesson")
+                return
+        }
+
+        var updated models.Lesson
+        if err := h.db.Lessons().FindOne(r.Context(), bson.M{"_id": id}).Decode(&updated); err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to reload lesson")
+                return
+        }
+
+        h.emitter.Emit(events.Event{
+                Type:      events.EventLessonUpdated,
+                Timestamp: time.Now(),
+                Data: map[string]interface{}{
+                        "tenantId": ctx.TenantID.Hex(),
+                        "lessonId": id.Hex(),
+                        "userId":   ctx.UserID.Hex(),
+                },
+        })
+
+        respondWithJSON(w, http.StatusOK, updated)
+}
+
+// DeleteLesson handles DELETE /api/lms/lessons/{id}.
+func (h *LMSHandler) DeleteLesson(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        idStr := mux.Vars(r)["id"]
+        id, err := primitive.ObjectIDFromHex(idStr)
+        if err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid lesson ID")
+                return
+        }
+
+        result, err := h.db.Lessons().DeleteOne(r.Context(), bson.M{
+                "_id":      id,
+                "tenantId": ctx.TenantID,
+        })
+        if err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to delete lesson")
+                return
+        }
+        if result.DeletedCount == 0 {
+                respondWithError(w, http.StatusNotFound, "Lesson not found")
+                return
+        }
+
+        h.emitter.Emit(events.Event{
+                Type:      events.EventLessonDeleted,
+                Timestamp: time.Now(),
+                Data: map[string]interface{}{
+                        "tenantId": ctx.TenantID.Hex(),
+                        "lessonId": id.Hex(),
+                        "userId":   ctx.UserID.Hex(),
+                },
+        })
+
+        respondWithJSON(w, http.StatusOK, map[string]string{
+                "message": "Lesson deleted",
+                "id":      id.Hex(),
+        })
+}
+
+// UpdateLessonProgress handles POST /api/lms/lessons/{lessonId}/progress.
+//
+// Request body (all fields optional): positionSeconds, durationSeconds,
+// isComplete, completionPct. The LessonProgress document for (student,lesson)
+// is upserted. When an active enrollment exists its progressPct and
+// lessonsComplete counters are recomputed.
+func (h *LMSHandler) UpdateLessonProgress(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        lessonIDStr := mux.Vars(r)["lessonId"]
+        lessonID, err := primitive.ObjectIDFromHex(lessonIDStr)
+        if err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid lesson ID")
+                return
+        }
+
+        var lesson models.Lesson
+        if err := h.db.Lessons().FindOne(r.Context(), bson.M{
+                "_id":      lessonID,
+                "tenantId": ctx.TenantID,
+        }).Decode(&lesson); err != nil {
+                respondWithError(w, http.StatusNotFound, "Lesson not found")
+                return
+        }
+
+        var payload struct {
+                PositionSeconds int64   `json:"positionSeconds"`
+                DurationSeconds int64   `json:"durationSeconds"`
+                IsComplete      bool    `json:"isComplete"`
+                CompletionPct   float64 `json:"completionPct"`
+        }
+        if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid request body")
+                return
+        }
+
+        // Look up an active enrollment for the student+course. Progress tracking
+        // is permitted without an enrollment in dev mode (enrollment ID is left zero).
+        var enrollment models.Enrollment
+        enrollmentID := primitive.NilObjectID
+        hasEnrollment := true
+        if err := h.db.Enrollments().FindOne(r.Context(), bson.M{
+                "tenantId":  ctx.TenantID,
+                "studentId": ctx.UserID,
+                "courseId":  lesson.CourseID,
+                "status":    models.EnrollmentStatusActive,
+        }).Decode(&enrollment); err != nil {
+                hasEnrollment = false
+                enrollmentID = primitive.NilObjectID
+        }
+        if hasEnrollment {
+                enrollmentID = enrollment.ID
+        }
+
+        now := time.Now()
+
+        progressFilter := bson.M{
+                "tenantId":  ctx.TenantID,
+                "lessonId":  lessonID,
+                "studentId": ctx.UserID,
+        }
+        setFields := bson.M{
+                "courseId":        lesson.CourseID,
+                "enrollmentId":    enrollmentID,
+                "positionSeconds": payload.PositionSeconds,
+                "durationSeconds": payload.DurationSeconds,
+                "isComplete":      payload.IsComplete,
+                "completionPct":   payload.CompletionPct,
+                "lastWatchedAt":   now,
+                "updatedAt":       now,
+        }
+        if payload.IsComplete {
+                setFields["completedAt"] = now
+        }
+        update := bson.M{
+                "$set": setFields,
+                "$setOnInsert": bson.M{
+                        "tenantId":  ctx.TenantID,
+                        "lessonId":  lessonID,
+                        "studentId": ctx.UserID,
+                        "createdAt": now,
+                },
+        }
+        opts := options.Update().SetUpsert(true)
+        if _, err := h.db.LessonProgress().UpdateOne(r.Context(), progressFilter, update, opts); err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to update lesson progress")
+                return
+        }
+
+        var progress models.LessonProgress
+        if err := h.db.LessonProgress().FindOne(r.Context(), progressFilter).Decode(&progress); err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to reload lesson progress")
+                return
+        }
+
+        if hasEnrollment {
+                h.recomputeEnrollmentProgress(r, ctx, enrollment.ID, lesson.CourseID)
+        }
+
+        h.emitter.Emit(events.Event{
+                Type:      events.EventLessonProgressUpdated,
+                Timestamp: now,
+                Data: map[string]interface{}{
+                        "tenantId":  ctx.TenantID.Hex(),
+                        "lessonId":  lessonID.Hex(),
+                        "courseId":  lesson.CourseID.Hex(),
+                        "studentId": ctx.UserID.Hex(),
+                        "complete":  payload.IsComplete,
+                },
+        })
+
+        if payload.IsComplete {
+                h.emitter.Emit(events.Event{
+                        Type:      events.EventLessonCompleted,
+                        Timestamp: now,
+                        Data: map[string]interface{}{
+                                "tenantId":  ctx.TenantID.Hex(),
+                                "lessonId":  lessonID.Hex(),
+                                "courseId":  lesson.CourseID.Hex(),
+                                "studentId": ctx.UserID.Hex(),
+                        },
+                })
+        }
+
+        respondWithJSON(w, http.StatusOK, progress)
+}
+
+// recomputeEnrollmentProgress recomputes progressPct, lessonsTotal,
+// lessonsComplete and (optionally) flips the enrollment to completed.
+func (h *LMSHandler) recomputeEnrollmentProgress(r *http.Request, ctx lmsContext, enrollmentID, courseID primitive.ObjectID) {
+        totalLessons, _ := h.db.Lessons().CountDocuments(r.Context(), bson.M{
+                "tenantId": ctx.TenantID,
+                "courseId": courseID,
+        })
+        completedLessons, _ := h.db.LessonProgress().CountDocuments(r.Context(), bson.M{
+                "tenantId":   ctx.TenantID,
+                "studentId":  ctx.UserID,
+                "courseId":   courseID,
+                "isComplete": true,
+        })
+        var pct float64
+        if totalLessons > 0 {
+                pct = float64(completedLessons) / float64(totalLessons) * 100.0
+        }
+        now := time.Now()
+        setFields := bson.M{
+                "lessonsTotal":    int(totalLessons),
+                "lessonsComplete": int(completedLessons),
+                "progressPct":     pct,
+                "lastAccessedAt":  now,
+                "updatedAt":       now,
+        }
+        if totalLessons > 0 && completedLessons >= int64(totalLessons) {
+                setFields["status"] = models.EnrollmentStatusCompleted
+                setFields["completedAt"] = now
+        }
+        h.db.Enrollments().UpdateByID(r.Context(), enrollmentID, bson.M{"$set": setFields})
+}
 
 // ---------------------------------------------------------------------------
 // Quizzes
 // ---------------------------------------------------------------------------
 
-func (h *LMSHandler) ListQuizzes(w http.ResponseWriter, r *http.Request)       { h.notImplemented(w, r) }
-func (h *LMSHandler) CreateQuiz(w http.ResponseWriter, r *http.Request)        { h.notImplemented(w, r) }
-func (h *LMSHandler) UpdateQuiz(w http.ResponseWriter, r *http.Request)        { h.notImplemented(w, r) }
-func (h *LMSHandler) DeleteQuiz(w http.ResponseWriter, r *http.Request)        { h.notImplemented(w, r) }
-func (h *LMSHandler) CreateQuizAttempt(w http.ResponseWriter, r *http.Request) { h.notImplemented(w, r) }
-func (h *LMSHandler) SubmitQuizAttempt(w http.ResponseWriter, r *http.Request) { h.notImplemented(w, r) }
+// ListQuizzes handles GET /api/lms/topics/{topicId}/quizzes.
+//
+// Optional query params: ?courseId=.
+func (h *LMSHandler) ListQuizzes(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        filter := bson.M{"tenantId": ctx.TenantID}
+        if topicIDStr := mux.Vars(r)["topicId"]; topicIDStr != "" {
+                if oid, err := primitive.ObjectIDFromHex(topicIDStr); err == nil {
+                        filter["topicId"] = oid
+                }
+        }
+        if courseIDStr := r.URL.Query().Get("courseId"); courseIDStr != "" {
+                if oid, err := primitive.ObjectIDFromHex(courseIDStr); err == nil {
+                        filter["courseId"] = oid
+                }
+        }
+
+        findOpts := options.Find().SetSort(bson.D{{Key: "sortOrder", Value: 1}, {Key: "createdAt", Value: 1}})
+
+        cursor, err := h.db.Quizzes().Find(r.Context(), filter, findOpts)
+        if err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to fetch quizzes")
+                return
+        }
+        defer cursor.Close(r.Context())
+
+        var quizzes []models.Quiz
+        if err := cursor.All(r.Context(), &quizzes); err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to decode quizzes")
+                return
+        }
+        if quizzes == nil {
+                quizzes = []models.Quiz{}
+        }
+
+        total, _ := h.db.Quizzes().CountDocuments(r.Context(), filter)
+
+        respondWithJSON(w, http.StatusOK, map[string]interface{}{
+                "quizzes": quizzes,
+                "total":   total,
+        })
+}
+
+// CreateQuiz handles POST /api/lms/topics/{topicId}/quizzes.
+func (h *LMSHandler) CreateQuiz(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        topicIDStr := mux.Vars(r)["topicId"]
+        topicID, err := primitive.ObjectIDFromHex(topicIDStr)
+        if err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid topic ID")
+                return
+        }
+
+        var topic models.Topic
+        if err := h.db.Topics().FindOne(r.Context(), bson.M{
+                "_id":      topicID,
+                "tenantId": ctx.TenantID,
+        }).Decode(&topic); err != nil {
+                respondWithError(w, http.StatusNotFound, "Topic not found")
+                return
+        }
+
+        var quiz models.Quiz
+        if err := json.NewDecoder(r.Body).Decode(&quiz); err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid request body")
+                return
+        }
+        if strings.TrimSpace(quiz.Title) == "" {
+                respondWithError(w, http.StatusBadRequest, "title is required")
+                return
+        }
+
+        quiz.ID = primitive.NilObjectID
+        quiz.TenantID = ctx.TenantID
+        quiz.CourseID = topic.CourseID
+        quiz.TopicID = topicID
+        quiz.InstructorID = ctx.UserID
+        now := time.Now()
+        quiz.CreatedAt = now
+        quiz.UpdatedAt = now
+
+        result, err := h.db.Quizzes().InsertOne(r.Context(), &quiz)
+        if err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to create quiz")
+                return
+        }
+        if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
+                quiz.ID = oid
+        }
+
+        h.emitter.Emit(events.Event{
+                Type:      events.EventQuizCreated,
+                Timestamp: now,
+                Data: map[string]interface{}{
+                        "tenantId": ctx.TenantID.Hex(),
+                        "courseId": topic.CourseID.Hex(),
+                        "topicId":  topicID.Hex(),
+                        "quizId":   quiz.ID.Hex(),
+                        "userId":   ctx.UserID.Hex(),
+                },
+        })
+
+        respondWithJSON(w, http.StatusCreated, quiz)
+}
+
+// UpdateQuiz handles PATCH /api/lms/quizzes/{id}.
+func (h *LMSHandler) UpdateQuiz(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        idStr := mux.Vars(r)["id"]
+        id, err := primitive.ObjectIDFromHex(idStr)
+        if err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid quiz ID")
+                return
+        }
+
+        var existing models.Quiz
+        if err := h.db.Quizzes().FindOne(r.Context(), bson.M{
+                "_id":      id,
+                "tenantId": ctx.TenantID,
+        }).Decode(&existing); err != nil {
+                respondWithError(w, http.StatusNotFound, "Quiz not found")
+                return
+        }
+
+        var patch map[string]interface{}
+        if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid request body")
+                return
+        }
+        for _, forbidden := range []string{"_id", "id", "tenantId", "courseId", "topicId", "instructorId", "createdAt"} {
+                delete(patch, forbidden)
+        }
+        patch["updatedAt"] = time.Now()
+
+        justPublished := false
+        if isPubRaw, ok := patch["isPublished"]; ok {
+                if isPub, ok := isPubRaw.(bool); ok && isPub && !existing.IsPublished {
+                        justPublished = true
+                }
+        }
+
+        if _, err := h.db.Quizzes().UpdateByID(r.Context(), id, bson.M{"$set": patch}); err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to update quiz")
+                return
+        }
+
+        var updated models.Quiz
+        if err := h.db.Quizzes().FindOne(r.Context(), bson.M{"_id": id}).Decode(&updated); err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to reload quiz")
+                return
+        }
+
+        h.emitter.Emit(events.Event{
+                Type:      events.EventQuizUpdated,
+                Timestamp: time.Now(),
+                Data: map[string]interface{}{
+                        "tenantId": ctx.TenantID.Hex(),
+                        "quizId":   id.Hex(),
+                        "userId":   ctx.UserID.Hex(),
+                },
+        })
+        if justPublished {
+                h.emitter.Emit(events.Event{
+                        Type:      events.EventQuizPublished,
+                        Timestamp: time.Now(),
+                        Data: map[string]interface{}{
+                                "tenantId": ctx.TenantID.Hex(),
+                                "quizId":   id.Hex(),
+                                "userId":   ctx.UserID.Hex(),
+                        },
+                })
+        }
+
+        respondWithJSON(w, http.StatusOK, updated)
+}
+
+// DeleteQuiz handles DELETE /api/lms/quizzes/{id}.
+func (h *LMSHandler) DeleteQuiz(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        idStr := mux.Vars(r)["id"]
+        id, err := primitive.ObjectIDFromHex(idStr)
+        if err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid quiz ID")
+                return
+        }
+
+        result, err := h.db.Quizzes().DeleteOne(r.Context(), bson.M{
+                "_id":      id,
+                "tenantId": ctx.TenantID,
+        })
+        if err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to delete quiz")
+                return
+        }
+        if result.DeletedCount == 0 {
+                respondWithError(w, http.StatusNotFound, "Quiz not found")
+                return
+        }
+
+        h.emitter.Emit(events.Event{
+                Type:      events.EventQuizDeleted,
+                Timestamp: time.Now(),
+                Data: map[string]interface{}{
+                        "tenantId": ctx.TenantID.Hex(),
+                        "quizId":   id.Hex(),
+                        "userId":   ctx.UserID.Hex(),
+                },
+        })
+
+        respondWithJSON(w, http.StatusOK, map[string]string{
+                "message": "Quiz deleted",
+                "id":      id.Hex(),
+        })
+}
+
+// CreateQuizAttempt handles POST /api/lms/quizzes/{quizId}/attempts.
+//
+// Starts (or resumes) an in-progress attempt for the authenticated student.
+// An existing in-progress attempt is returned as-is to avoid duplicates.
+func (h *LMSHandler) CreateQuizAttempt(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        quizIDStr := mux.Vars(r)["quizId"]
+        quizID, err := primitive.ObjectIDFromHex(quizIDStr)
+        if err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid quiz ID")
+                return
+        }
+
+        var quiz models.Quiz
+        if err := h.db.Quizzes().FindOne(r.Context(), bson.M{
+                "_id":      quizID,
+                "tenantId": ctx.TenantID,
+        }).Decode(&quiz); err != nil {
+                respondWithError(w, http.StatusNotFound, "Quiz not found")
+                return
+        }
+
+        // Look up an active enrollment (optional in dev mode).
+        var enrollment models.Enrollment
+        enrollmentID := primitive.NilObjectID
+        if err := h.db.Enrollments().FindOne(r.Context(), bson.M{
+                "tenantId":  ctx.TenantID,
+                "studentId": ctx.UserID,
+                "courseId":  quiz.CourseID,
+                "status":    models.EnrollmentStatusActive,
+        }).Decode(&enrollment); err == nil {
+                enrollmentID = enrollment.ID
+        }
+
+        // Resume an existing in-progress attempt if one exists.
+        var existing models.QuizAttempt
+        if err := h.db.QuizAttempts().FindOne(r.Context(), bson.M{
+                "tenantId":  ctx.TenantID,
+                "quizId":    quizID,
+                "studentId": ctx.UserID,
+                "status":    models.QuizAttemptStatusInProgress,
+        }).Decode(&existing); err == nil {
+                h.emitter.Emit(events.Event{
+                        Type:      events.EventQuizAttemptResumed,
+                        Timestamp: time.Now(),
+                        Data: map[string]interface{}{
+                                "tenantId":  ctx.TenantID.Hex(),
+                                "quizId":    quizID.Hex(),
+                                "attemptId": existing.ID.Hex(),
+                                "studentId": ctx.UserID.Hex(),
+                        },
+                })
+                respondWithJSON(w, http.StatusOK, existing)
+                return
+        }
+
+        // Compute the next attempt number.
+        attemptCount, _ := h.db.QuizAttempts().CountDocuments(r.Context(), bson.M{
+                "tenantId":  ctx.TenantID,
+                "quizId":    quizID,
+                "studentId": ctx.UserID,
+        })
+
+        now := time.Now()
+        attempt := models.QuizAttempt{
+                TenantID:     ctx.TenantID,
+                QuizID:       quizID,
+                CourseID:     quiz.CourseID,
+                StudentID:    ctx.UserID,
+                EnrollmentID: enrollmentID,
+                Status:       models.QuizAttemptStatusInProgress,
+                AttemptNo:    int(attemptCount) + 1,
+                StartedAt:    now,
+                CreatedAt:    now,
+                UpdatedAt:    now,
+        }
+
+        result, err := h.db.QuizAttempts().InsertOne(r.Context(), &attempt)
+        if err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to create quiz attempt")
+                return
+        }
+        if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
+                attempt.ID = oid
+        }
+
+        h.emitter.Emit(events.Event{
+                Type:      events.EventQuizAttemptStarted,
+                Timestamp: now,
+                Data: map[string]interface{}{
+                        "tenantId":  ctx.TenantID.Hex(),
+                        "quizId":    quizID.Hex(),
+                        "attemptId": attempt.ID.Hex(),
+                        "studentId": ctx.UserID.Hex(),
+                },
+        })
+
+        respondWithJSON(w, http.StatusCreated, attempt)
+}
+
+// SubmitQuizAttempt handles POST /api/lms/quizzes/attempts/{id}/submit.
+//
+// Request body: { "answers": [QuizAnswer...], "timeSpentSec": int }.
+// Objective question types (single_choice, multiple_choice, true_false,
+// fill_blank, short_answer with acceptableAnswers) are auto-graded against
+// the stored questions; subjective types are marked for manual grading.
+func (h *LMSHandler) SubmitQuizAttempt(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        idStr := mux.Vars(r)["id"]
+        id, err := primitive.ObjectIDFromHex(idStr)
+        if err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid attempt ID")
+                return
+        }
+
+        var attempt models.QuizAttempt
+        if err := h.db.QuizAttempts().FindOne(r.Context(), bson.M{
+                "_id":      id,
+                "tenantId": ctx.TenantID,
+        }).Decode(&attempt); err != nil {
+                respondWithError(w, http.StatusNotFound, "Quiz attempt not found")
+                return
+        }
+        if attempt.Status != models.QuizAttemptStatusInProgress {
+                respondWithError(w, http.StatusConflict, "Quiz attempt is not in progress")
+                return
+        }
+
+        var payload struct {
+                Answers      []models.QuizAnswer `json:"answers"`
+                TimeSpentSec int64                `json:"timeSpentSec"`
+        }
+        if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid request body")
+                return
+        }
+
+        // Load the questions for objective grading.
+        cursor, err := h.db.Questions().Find(r.Context(), bson.M{
+                "tenantId": ctx.TenantID,
+                "quizId":   attempt.QuizID,
+        })
+        if err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to fetch questions")
+                return
+        }
+        var questions []models.Question
+        if err := cursor.All(r.Context(), &questions); err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to decode questions")
+                return
+        }
+        cursor.Close(r.Context())
+
+        questionByID := make(map[primitive.ObjectID]models.Question, len(questions))
+        for _, q := range questions {
+                questionByID[q.ID] = q
+        }
+
+        var pointsEarned, pointsTotal float64
+        for i := range payload.Answers {
+                ans := &payload.Answers[i]
+                q, ok := questionByID[ans.QuestionID]
+                if !ok {
+                        continue
+                }
+                pointsTotal += q.Points
+                if isAnswerCorrect(q, ans) {
+                        ans.IsCorrect = true
+                        ans.PointsAwarded = q.Points
+                        pointsEarned += q.Points
+                } else {
+                        ans.IsCorrect = false
+                        ans.PointsAwarded = 0
+                }
+        }
+
+        var scorePct float64
+        if pointsTotal > 0 {
+                scorePct = pointsEarned / pointsTotal * 100.0
+        }
+
+        // Determine pass/fail from the quiz settings.
+        isPassed := false
+        var quiz models.Quiz
+        if err := h.db.Quizzes().FindOne(r.Context(), bson.M{"_id": attempt.QuizID}).Decode(&quiz); err == nil {
+                if quiz.Settings.PassThresholdPct > 0 {
+                        isPassed = scorePct >= quiz.Settings.PassThresholdPct
+                } else {
+                        isPassed = scorePct >= 60.0
+                }
+        }
+
+        now := time.Now()
+        update := bson.M{
+                "$set": bson.M{
+                        "status":       models.QuizAttemptStatusSubmitted,
+                        "answers":      payload.Answers,
+                        "scorePct":     scorePct,
+                        "pointsEarned": pointsEarned,
+                        "pointsTotal":  pointsTotal,
+                        "isPassed":     isPassed,
+                        "timeSpentSec": payload.TimeSpentSec,
+                        "submittedAt":  now,
+                        "updatedAt":    now,
+                },
+        }
+        if _, err := h.db.QuizAttempts().UpdateByID(r.Context(), id, update); err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to submit quiz attempt")
+                return
+        }
+
+        var updated models.QuizAttempt
+        if err := h.db.QuizAttempts().FindOne(r.Context(), bson.M{"_id": id}).Decode(&updated); err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to reload quiz attempt")
+                return
+        }
+
+        h.emitter.Emit(events.Event{
+                Type:      events.EventQuizAttemptSubmitted,
+                Timestamp: now,
+                Data: map[string]interface{}{
+                        "tenantId":  ctx.TenantID.Hex(),
+                        "quizId":    attempt.QuizID.Hex(),
+                        "attemptId": id.Hex(),
+                        "studentId": ctx.UserID.Hex(),
+                        "scorePct":  scorePct,
+                        "isPassed":  isPassed,
+                },
+        })
+
+        respondWithJSON(w, http.StatusOK, updated)
+}
+
+// isAnswerCorrect returns true when the supplied answer matches the stored
+// correct options / acceptable answers for objective question types.
+// Subjective types (essay, short_answer without acceptable answers) return
+// false; they must be graded manually.
+func isAnswerCorrect(q models.Question, ans *models.QuizAnswer) bool {
+        switch q.QuestionType {
+        case models.QuestionTypeSingleChoice, models.QuestionTypeMultipleChoice, models.QuestionTypeTrueFalse:
+                correctIDs := map[string]bool{}
+                for _, opt := range q.Options {
+                        if opt.IsCorrect {
+                                correctIDs[opt.ID] = true
+                        }
+                }
+                if len(correctIDs) == 0 || len(ans.SelectedOptionIDs) == 0 {
+                        return false
+                }
+                for _, sel := range ans.SelectedOptionIDs {
+                        if !correctIDs[sel] {
+                                return false
+                        }
+                }
+                return len(ans.SelectedOptionIDs) == len(correctIDs)
+        case models.QuestionTypeFillBlank, models.QuestionTypeShortAnswer:
+                if len(q.AcceptableAnswers) == 0 {
+                        return false
+                }
+                trimmed := strings.TrimSpace(ans.TextAnswer)
+                for _, acc := range q.AcceptableAnswers {
+                        if strings.EqualFold(strings.TrimSpace(acc), trimmed) {
+                                return true
+                        }
+                }
+                return false
+        default:
+                return false
+        }
+}
 
 // ---------------------------------------------------------------------------
 // Questions
 // ---------------------------------------------------------------------------
 
-func (h *LMSHandler) ListQuestions(w http.ResponseWriter, r *http.Request)  { h.notImplemented(w, r) }
-func (h *LMSHandler) CreateQuestion(w http.ResponseWriter, r *http.Request) { h.notImplemented(w, r) }
-func (h *LMSHandler) UpdateQuestion(w http.ResponseWriter, r *http.Request) { h.notImplemented(w, r) }
-func (h *LMSHandler) DeleteQuestion(w http.ResponseWriter, r *http.Request) { h.notImplemented(w, r) }
+// ListQuestions handles GET /api/lms/quizzes/{quizId}/questions (or with ?quizId=).
+func (h *LMSHandler) ListQuestions(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        filter := bson.M{"tenantId": ctx.TenantID}
+        if quizIDStr := mux.Vars(r)["quizId"]; quizIDStr != "" {
+                if oid, err := primitive.ObjectIDFromHex(quizIDStr); err == nil {
+                        filter["quizId"] = oid
+                }
+        }
+        if quizIDStr := r.URL.Query().Get("quizId"); quizIDStr != "" {
+                if oid, err := primitive.ObjectIDFromHex(quizIDStr); err == nil {
+                        filter["quizId"] = oid
+                }
+        }
+
+        findOpts := options.Find().SetSort(bson.D{{Key: "sortOrder", Value: 1}, {Key: "createdAt", Value: 1}})
+
+        cursor, err := h.db.Questions().Find(r.Context(), filter, findOpts)
+        if err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to fetch questions")
+                return
+        }
+        defer cursor.Close(r.Context())
+
+        var questions []models.Question
+        if err := cursor.All(r.Context(), &questions); err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to decode questions")
+                return
+        }
+        if questions == nil {
+                questions = []models.Question{}
+        }
+
+        total, _ := h.db.Questions().CountDocuments(r.Context(), filter)
+
+        respondWithJSON(w, http.StatusOK, map[string]interface{}{
+                "questions": questions,
+                "total":     total,
+        })
+}
+
+// CreateQuestion handles POST /api/lms/quizzes/{quizId}/questions.
+func (h *LMSHandler) CreateQuestion(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        quizIDStr := mux.Vars(r)["quizId"]
+        quizID, err := primitive.ObjectIDFromHex(quizIDStr)
+        if err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid quiz ID")
+                return
+        }
+
+        var quiz models.Quiz
+        if err := h.db.Quizzes().FindOne(r.Context(), bson.M{
+                "_id":      quizID,
+                "tenantId": ctx.TenantID,
+        }).Decode(&quiz); err != nil {
+                respondWithError(w, http.StatusNotFound, "Quiz not found")
+                return
+        }
+
+        var question models.Question
+        if err := json.NewDecoder(r.Body).Decode(&question); err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid request body")
+                return
+        }
+        if strings.TrimSpace(question.Prompt) == "" {
+                respondWithError(w, http.StatusBadRequest, "prompt is required")
+                return
+        }
+        if question.QuestionType == "" {
+                question.QuestionType = models.QuestionTypeSingleChoice
+        }
+        if !models.ValidQuestionType(question.QuestionType) {
+                respondWithError(w, http.StatusBadRequest, "invalid questionType")
+                return
+        }
+
+        question.ID = primitive.NilObjectID
+        question.TenantID = ctx.TenantID
+        question.QuizID = quizID
+        now := time.Now()
+        question.CreatedAt = now
+        question.UpdatedAt = now
+
+        result, err := h.db.Questions().InsertOne(r.Context(), &question)
+        if err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to create question")
+                return
+        }
+        if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
+                question.ID = oid
+        }
+
+        h.recomputeQuizStats(r, ctx, quizID)
+
+        h.emitter.Emit(events.Event{
+                Type:      events.EventQuestionCreated,
+                Timestamp: now,
+                Data: map[string]interface{}{
+                        "tenantId":   ctx.TenantID.Hex(),
+                        "quizId":     quizID.Hex(),
+                        "questionId": question.ID.Hex(),
+                        "userId":     ctx.UserID.Hex(),
+                },
+        })
+
+        respondWithJSON(w, http.StatusCreated, question)
+}
+
+// UpdateQuestion handles PATCH /api/lms/questions/{id}.
+func (h *LMSHandler) UpdateQuestion(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        idStr := mux.Vars(r)["id"]
+        id, err := primitive.ObjectIDFromHex(idStr)
+        if err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid question ID")
+                return
+        }
+
+        var existing models.Question
+        if err := h.db.Questions().FindOne(r.Context(), bson.M{
+                "_id":      id,
+                "tenantId": ctx.TenantID,
+        }).Decode(&existing); err != nil {
+                respondWithError(w, http.StatusNotFound, "Question not found")
+                return
+        }
+
+        var patch map[string]interface{}
+        if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid request body")
+                return
+        }
+        for _, forbidden := range []string{"_id", "id", "tenantId", "quizId", "createdAt"} {
+                delete(patch, forbidden)
+        }
+        if qtRaw, ok := patch["questionType"]; ok {
+                qtStr, _ := qtRaw.(string)
+                if qtStr != "" && !models.ValidQuestionType(models.QuestionType(qtStr)) {
+                        respondWithError(w, http.StatusBadRequest, "invalid questionType")
+                        return
+                }
+        }
+        patch["updatedAt"] = time.Now()
+
+        if _, err := h.db.Questions().UpdateByID(r.Context(), id, bson.M{"$set": patch}); err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to update question")
+                return
+        }
+
+        var updated models.Question
+        if err := h.db.Questions().FindOne(r.Context(), bson.M{"_id": id}).Decode(&updated); err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to reload question")
+                return
+        }
+
+        h.recomputeQuizStats(r, ctx, existing.QuizID)
+
+        h.emitter.Emit(events.Event{
+                Type:      events.EventQuestionUpdated,
+                Timestamp: time.Now(),
+                Data: map[string]interface{}{
+                        "tenantId":   ctx.TenantID.Hex(),
+                        "questionId": id.Hex(),
+                        "userId":     ctx.UserID.Hex(),
+                },
+        })
+
+        respondWithJSON(w, http.StatusOK, updated)
+}
+
+// DeleteQuestion handles DELETE /api/lms/questions/{id}.
+func (h *LMSHandler) DeleteQuestion(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        idStr := mux.Vars(r)["id"]
+        id, err := primitive.ObjectIDFromHex(idStr)
+        if err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid question ID")
+                return
+        }
+
+        var existing models.Question
+        if err := h.db.Questions().FindOne(r.Context(), bson.M{
+                "_id":      id,
+                "tenantId": ctx.TenantID,
+        }).Decode(&existing); err != nil {
+                respondWithError(w, http.StatusNotFound, "Question not found")
+                return
+        }
+
+        result, err := h.db.Questions().DeleteOne(r.Context(), bson.M{
+                "_id":      id,
+                "tenantId": ctx.TenantID,
+        })
+        if err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to delete question")
+                return
+        }
+        if result.DeletedCount == 0 {
+                respondWithError(w, http.StatusNotFound, "Question not found")
+                return
+        }
+
+        h.recomputeQuizStats(r, ctx, existing.QuizID)
+
+        h.emitter.Emit(events.Event{
+                Type:      events.EventQuestionDeleted,
+                Timestamp: time.Now(),
+                Data: map[string]interface{}{
+                        "tenantId":   ctx.TenantID.Hex(),
+                        "questionId": id.Hex(),
+                        "userId":     ctx.UserID.Hex(),
+                },
+        })
+
+        respondWithJSON(w, http.StatusOK, map[string]string{
+                "message": "Question deleted",
+                "id":      id.Hex(),
+        })
+}
+
+// recomputeQuizStats updates the parent quiz's questionCount and totalPoints
+// based on its current set of questions.
+func (h *LMSHandler) recomputeQuizStats(r *http.Request, ctx lmsContext, quizID primitive.ObjectID) {
+        count, _ := h.db.Questions().CountDocuments(r.Context(), bson.M{
+                "tenantId": ctx.TenantID,
+                "quizId":   quizID,
+        })
+        type sumResult struct {
+                Total float64 `bson:"total"`
+        }
+        var sr sumResult
+        cursor, err := h.db.Questions().Aggregate(r.Context(), []bson.M{
+                {"$match": bson.M{"tenantId": ctx.TenantID, "quizId": quizID}},
+                {"$group": bson.M{"_id": nil, "total": bson.M{"$sum": "$points"}}},
+        })
+        if err == nil {
+                cursor.Next(r.Context())
+                _ = cursor.Decode(&sr)
+                cursor.Close(r.Context())
+        }
+        h.db.Quizzes().UpdateByID(r.Context(), quizID, bson.M{
+                "$set": bson.M{
+                        "questionCount": int(count),
+                        "totalPoints":   sr.Total,
+                        "updatedAt":     time.Now(),
+                },
+        })
+}
 
 // ---------------------------------------------------------------------------
 // Assignments
 // ---------------------------------------------------------------------------
 
-func (h *LMSHandler) ListAssignments(w http.ResponseWriter, r *http.Request)  { h.notImplemented(w, r) }
-func (h *LMSHandler) CreateAssignment(w http.ResponseWriter, r *http.Request) { h.notImplemented(w, r) }
-func (h *LMSHandler) SubmitAssignment(w http.ResponseWriter, r *http.Request) { h.notImplemented(w, r) }
+// ListAssignments handles GET /api/lms/topics/{topicId}/assignments (or with
+// ?topicId= / ?courseId= query params).
+func (h *LMSHandler) ListAssignments(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        filter := bson.M{"tenantId": ctx.TenantID}
+        if topicIDStr := mux.Vars(r)["topicId"]; topicIDStr != "" {
+                if oid, err := primitive.ObjectIDFromHex(topicIDStr); err == nil {
+                        filter["topicId"] = oid
+                }
+        }
+        if topicIDStr := r.URL.Query().Get("topicId"); topicIDStr != "" {
+                if oid, err := primitive.ObjectIDFromHex(topicIDStr); err == nil {
+                        filter["topicId"] = oid
+                }
+        }
+        if courseIDStr := r.URL.Query().Get("courseId"); courseIDStr != "" {
+                if oid, err := primitive.ObjectIDFromHex(courseIDStr); err == nil {
+                        filter["courseId"] = oid
+                }
+        }
+
+        findOpts := options.Find().SetSort(bson.D{{Key: "sortOrder", Value: 1}, {Key: "createdAt", Value: 1}})
+
+        cursor, err := h.db.Assignments().Find(r.Context(), filter, findOpts)
+        if err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to fetch assignments")
+                return
+        }
+        defer cursor.Close(r.Context())
+
+        var assignments []models.Assignment
+        if err := cursor.All(r.Context(), &assignments); err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to decode assignments")
+                return
+        }
+        if assignments == nil {
+                assignments = []models.Assignment{}
+        }
+
+        total, _ := h.db.Assignments().CountDocuments(r.Context(), filter)
+
+        respondWithJSON(w, http.StatusOK, map[string]interface{}{
+                "assignments": assignments,
+                "total":       total,
+        })
+}
+
+// CreateAssignment handles POST /api/lms/topics/{topicId}/assignments.
+func (h *LMSHandler) CreateAssignment(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        topicIDStr := mux.Vars(r)["topicId"]
+        topicID, err := primitive.ObjectIDFromHex(topicIDStr)
+        if err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid topic ID")
+                return
+        }
+
+        var topic models.Topic
+        if err := h.db.Topics().FindOne(r.Context(), bson.M{
+                "_id":      topicID,
+                "tenantId": ctx.TenantID,
+        }).Decode(&topic); err != nil {
+                respondWithError(w, http.StatusNotFound, "Topic not found")
+                return
+        }
+
+        var assignment models.Assignment
+        if err := json.NewDecoder(r.Body).Decode(&assignment); err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid request body")
+                return
+        }
+        if strings.TrimSpace(assignment.Title) == "" {
+                respondWithError(w, http.StatusBadRequest, "title is required")
+                return
+        }
+
+        assignment.ID = primitive.NilObjectID
+        assignment.TenantID = ctx.TenantID
+        assignment.CourseID = topic.CourseID
+        assignment.TopicID = topicID
+        assignment.InstructorID = ctx.UserID
+        now := time.Now()
+        assignment.CreatedAt = now
+        assignment.UpdatedAt = now
+
+        result, err := h.db.Assignments().InsertOne(r.Context(), &assignment)
+        if err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to create assignment")
+                return
+        }
+        if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
+                assignment.ID = oid
+        }
+
+        h.emitter.Emit(events.Event{
+                Type:      events.EventAssignmentCreated,
+                Timestamp: now,
+                Data: map[string]interface{}{
+                        "tenantId":     ctx.TenantID.Hex(),
+                        "courseId":     topic.CourseID.Hex(),
+                        "topicId":      topicID.Hex(),
+                        "assignmentId": assignment.ID.Hex(),
+                        "userId":       ctx.UserID.Hex(),
+                },
+        })
+
+        respondWithJSON(w, http.StatusCreated, assignment)
+}
+
+// SubmitAssignment handles POST /api/lms/assignments/{id}/submit.
+//
+// Request body: { "content": string, "attachmentUrls": []string, "note": string }.
+func (h *LMSHandler) SubmitAssignment(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        idStr := mux.Vars(r)["id"]
+        id, err := primitive.ObjectIDFromHex(idStr)
+        if err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid assignment ID")
+                return
+        }
+
+        var assignment models.Assignment
+        if err := h.db.Assignments().FindOne(r.Context(), bson.M{
+                "_id":      id,
+                "tenantId": ctx.TenantID,
+        }).Decode(&assignment); err != nil {
+                respondWithError(w, http.StatusNotFound, "Assignment not found")
+                return
+        }
+
+        var payload struct {
+                Content        string   `json:"content"`
+                AttachmentURLs []string `json:"attachmentUrls"`
+                Note           string   `json:"note"`
+        }
+        if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid request body")
+                return
+        }
+
+        // Look up an active enrollment (optional in dev mode).
+        var enrollment models.Enrollment
+        enrollmentID := primitive.NilObjectID
+        if err := h.db.Enrollments().FindOne(r.Context(), bson.M{
+                "tenantId":  ctx.TenantID,
+                "studentId": ctx.UserID,
+                "courseId":  assignment.CourseID,
+                "status":    models.EnrollmentStatusActive,
+        }).Decode(&enrollment); err == nil {
+                enrollmentID = enrollment.ID
+        }
+
+        now := time.Now()
+        submission := models.AssignmentSubmission{
+                TenantID:       ctx.TenantID,
+                AssignmentID:   id,
+                CourseID:       assignment.CourseID,
+                StudentID:      ctx.UserID,
+                EnrollmentID:   enrollmentID,
+                Status:         models.AssignmentSubmissionStatusSubmitted,
+                Content:        payload.Content,
+                AttachmentURLs: payload.AttachmentURLs,
+                Note:           payload.Note,
+                SubmittedAt:    now,
+                CreatedAt:      now,
+                UpdatedAt:      now,
+        }
+
+        result, err := h.db.AssignmentSubmissions().InsertOne(r.Context(), &submission)
+        if err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to submit assignment")
+                return
+        }
+        if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
+                submission.ID = oid
+        }
+
+        h.emitter.Emit(events.Event{
+                Type:      events.EventAssignmentSubmitted,
+                Timestamp: now,
+                Data: map[string]interface{}{
+                        "tenantId":     ctx.TenantID.Hex(),
+                        "assignmentId": id.Hex(),
+                        "submissionId": submission.ID.Hex(),
+                        "studentId":    ctx.UserID.Hex(),
+                },
+        })
+
+        respondWithJSON(w, http.StatusCreated, submission)
+}
 
 // ---------------------------------------------------------------------------
 // Enrollments
 // ---------------------------------------------------------------------------
 
-func (h *LMSHandler) ListEnrollments(w http.ResponseWriter, r *http.Request) { h.notImplemented(w, r) }
-func (h *LMSHandler) EnrollCourse(w http.ResponseWriter, r *http.Request)    { h.notImplemented(w, r) }
+// ListEnrollments handles GET /api/lms/enrollments.
+//
+// Returns the authenticated user's enrollments. Instructors (admins/owners)
+// see all enrollments in the tenant; students see only their own.
+//
+// Optional query params: ?courseId=, ?status=, ?limit=, ?offset=.
+func (h *LMSHandler) ListEnrollments(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        filter := bson.M{"tenantId": ctx.TenantID}
+        if !ctx.IsInstructor {
+                filter["studentId"] = ctx.UserID
+        }
+        if courseIDStr := r.URL.Query().Get("courseId"); courseIDStr != "" {
+                if oid, err := primitive.ObjectIDFromHex(courseIDStr); err == nil {
+                        filter["courseId"] = oid
+                }
+        }
+        if status := r.URL.Query().Get("status"); status != "" {
+                filter["status"] = models.EnrollmentStatus(status)
+        }
+
+        limit := parsePositiveInt(r, "limit", 50, 100)
+        offset := parsePositiveInt(r, "offset", 0, 1<<30)
+
+        findOpts := options.Find().
+                SetLimit(int64(limit)).
+                SetSkip(int64(offset)).
+                SetSort(bson.D{{Key: "createdAt", Value: -1}})
+
+        cursor, err := h.db.Enrollments().Find(r.Context(), filter, findOpts)
+        if err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to fetch enrollments")
+                return
+        }
+        defer cursor.Close(r.Context())
+
+        var enrollments []models.Enrollment
+        if err := cursor.All(r.Context(), &enrollments); err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to decode enrollments")
+                return
+        }
+        if enrollments == nil {
+                enrollments = []models.Enrollment{}
+        }
+
+        total, _ := h.db.Enrollments().CountDocuments(r.Context(), filter)
+
+        respondWithJSON(w, http.StatusOK, map[string]interface{}{
+                "enrollments": enrollments,
+                "total":       total,
+                "limit":       limit,
+                "offset":      offset,
+        })
+}
+
+// EnrollCourse handles POST /api/lms/courses/{courseId}/enroll.
+//
+// Idempotent: if the student already has any enrollment for the course, the
+// existing enrollment is returned (and re-activated if it was previously
+// cancelled or expired).
+func (h *LMSHandler) EnrollCourse(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        courseIDStr := mux.Vars(r)["courseId"]
+        courseID, err := primitive.ObjectIDFromHex(courseIDStr)
+        if err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid course ID")
+                return
+        }
+
+        var course models.Course
+        if err := h.db.Courses().FindOne(r.Context(), bson.M{
+                "_id":      courseID,
+                "tenantId": ctx.TenantID,
+        }).Decode(&course); err != nil {
+                respondWithError(w, http.StatusNotFound, "Course not found")
+                return
+        }
+
+        now := time.Now()
+
+        // Idempotent: re-activate an existing enrollment if one exists.
+        var existing models.Enrollment
+        err = h.db.Enrollments().FindOne(r.Context(), bson.M{
+                "tenantId":  ctx.TenantID,
+                "studentId": ctx.UserID,
+                "courseId":  courseID,
+        }).Decode(&existing)
+        if err == nil {
+                if existing.Status == models.EnrollmentStatusCancelled || existing.Status == models.EnrollmentStatusExpired {
+                        h.db.Enrollments().UpdateByID(r.Context(), existing.ID, bson.M{
+                                "$set": bson.M{
+                                        "status":         models.EnrollmentStatusActive,
+                                        "lastAccessedAt": now,
+                                        "updatedAt":      now,
+                                },
+                        })
+                        existing.Status = models.EnrollmentStatusActive
+                        existing.UpdatedAt = now
+                }
+                respondWithJSON(w, http.StatusOK, existing)
+                return
+        }
+
+        enrollment := models.Enrollment{
+                TenantID:       ctx.TenantID,
+                CourseID:       courseID,
+                StudentID:      ctx.UserID,
+                Status:         models.EnrollmentStatusActive,
+                ProgressPct:    0,
+                LastAccessedAt: &now,
+                CreatedAt:      now,
+                UpdatedAt:      now,
+        }
+
+        result, err := h.db.Enrollments().InsertOne(r.Context(), &enrollment)
+        if err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to enroll in course")
+                return
+        }
+        if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
+                enrollment.ID = oid
+        }
+
+        // Best-effort: bump the course's enrolledCount.
+        h.db.Courses().UpdateByID(r.Context(), courseID, bson.M{
+                "$inc": bson.M{"enrolledCount": 1},
+        })
+
+        h.emitter.Emit(events.Event{
+                Type:      events.EventEnrollmentCreated,
+                Timestamp: now,
+                Data: map[string]interface{}{
+                        "tenantId":  ctx.TenantID.Hex(),
+                        "courseId":  courseID.Hex(),
+                        "studentId": ctx.UserID.Hex(),
+                },
+        })
+
+        respondWithJSON(w, http.StatusCreated, enrollment)
+}
 
 // ---------------------------------------------------------------------------
 // Q&A and Reviews
@@ -593,17 +2287,344 @@ func (h *LMSHandler) CreateReview(w http.ResponseWriter, r *http.Request) { h.no
 // Notes
 // ---------------------------------------------------------------------------
 
-func (h *LMSHandler) ListNotes(w http.ResponseWriter, r *http.Request)  { h.notImplemented(w, r) }
-func (h *LMSHandler) CreateNote(w http.ResponseWriter, r *http.Request) { h.notImplemented(w, r) }
+// ListNotes handles GET /api/lms/notes.
+//
+// Returns notes owned by the authenticated user. Optional query params:
+// ?courseId=, ?lessonId=, ?limit=, ?offset=.
+func (h *LMSHandler) ListNotes(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        filter := bson.M{
+                "tenantId":  ctx.TenantID,
+                "studentId": ctx.UserID,
+        }
+        if courseIDStr := r.URL.Query().Get("courseId"); courseIDStr != "" {
+                if oid, err := primitive.ObjectIDFromHex(courseIDStr); err == nil {
+                        filter["courseId"] = oid
+                }
+        }
+        if lessonIDStr := r.URL.Query().Get("lessonId"); lessonIDStr != "" {
+                if oid, err := primitive.ObjectIDFromHex(lessonIDStr); err == nil {
+                        filter["lessonId"] = oid
+                }
+        }
+
+        limit := parsePositiveInt(r, "limit", 100, 200)
+        offset := parsePositiveInt(r, "offset", 0, 1<<30)
+
+        findOpts := options.Find().
+                SetLimit(int64(limit)).
+                SetSkip(int64(offset)).
+                SetSort(bson.D{{Key: "createdAt", Value: -1}})
+
+        cursor, err := h.db.StudentNotes().Find(r.Context(), filter, findOpts)
+        if err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to fetch notes")
+                return
+        }
+        defer cursor.Close(r.Context())
+
+        var notes []models.StudentNote
+        if err := cursor.All(r.Context(), &notes); err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to decode notes")
+                return
+        }
+        if notes == nil {
+                notes = []models.StudentNote{}
+        }
+
+        total, _ := h.db.StudentNotes().CountDocuments(r.Context(), filter)
+
+        respondWithJSON(w, http.StatusOK, map[string]interface{}{
+                "notes":  notes,
+                "total":  total,
+                "limit":  limit,
+                "offset": offset,
+        })
+}
+
+// CreateNote handles POST /api/lms/notes.
+//
+// Required body fields: lessonId, body. The courseId is resolved from the
+// lesson lookup so callers cannot forge cross-tenant associations.
+func (h *LMSHandler) CreateNote(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        var note models.StudentNote
+        if err := json.NewDecoder(r.Body).Decode(&note); err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid request body")
+                return
+        }
+        if note.LessonID.IsZero() {
+                respondWithError(w, http.StatusBadRequest, "lessonId is required")
+                return
+        }
+        if strings.TrimSpace(note.Body) == "" {
+                respondWithError(w, http.StatusBadRequest, "body is required")
+                return
+        }
+
+        var lesson models.Lesson
+        if err := h.db.Lessons().FindOne(r.Context(), bson.M{
+                "_id":      note.LessonID,
+                "tenantId": ctx.TenantID,
+        }).Decode(&lesson); err != nil {
+                respondWithError(w, http.StatusNotFound, "Lesson not found")
+                return
+        }
+
+        note.ID = primitive.NilObjectID
+        note.TenantID = ctx.TenantID
+        note.CourseID = lesson.CourseID
+        note.StudentID = ctx.UserID
+        now := time.Now()
+        note.CreatedAt = now
+        note.UpdatedAt = now
+
+        result, err := h.db.StudentNotes().InsertOne(r.Context(), &note)
+        if err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to create note")
+                return
+        }
+        if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
+                note.ID = oid
+        }
+
+        h.emitter.Emit(events.Event{
+                Type:      events.EventStudentNoteCreated,
+                Timestamp: now,
+                Data: map[string]interface{}{
+                        "tenantId":  ctx.TenantID.Hex(),
+                        "courseId":  lesson.CourseID.Hex(),
+                        "lessonId":  note.LessonID.Hex(),
+                        "noteId":    note.ID.Hex(),
+                        "studentId": ctx.UserID.Hex(),
+                },
+        })
+
+        respondWithJSON(w, http.StatusCreated, note)
+}
 
 // ---------------------------------------------------------------------------
 // Categories and Tags
 // ---------------------------------------------------------------------------
 
-func (h *LMSHandler) ListCategories(w http.ResponseWriter, r *http.Request) { h.notImplemented(w, r) }
-func (h *LMSHandler) CreateCategory(w http.ResponseWriter, r *http.Request) { h.notImplemented(w, r) }
-func (h *LMSHandler) ListTags(w http.ResponseWriter, r *http.Request)       { h.notImplemented(w, r) }
-func (h *LMSHandler) CreateTag(w http.ResponseWriter, r *http.Request)      { h.notImplemented(w, r) }
+// ListCategories handles GET /api/lms/categories.
+//
+// Optional query params: ?parentId=<oid|null>, ?isActive=true.
+func (h *LMSHandler) ListCategories(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        filter := bson.M{"tenantId": ctx.TenantID}
+        if parentIDStr := r.URL.Query().Get("parentId"); parentIDStr != "" {
+                if parentIDStr == "null" {
+                        filter["parentId"] = nil
+                } else if oid, err := primitive.ObjectIDFromHex(parentIDStr); err == nil {
+                        filter["parentId"] = oid
+                }
+        }
+        if active := r.URL.Query().Get("isActive"); active == "true" {
+                filter["isActive"] = true
+        }
+
+        findOpts := options.Find().SetSort(bson.D{{Key: "sortOrder", Value: 1}, {Key: "name", Value: 1}})
+
+        cursor, err := h.db.Categories().Find(r.Context(), filter, findOpts)
+        if err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to fetch categories")
+                return
+        }
+        defer cursor.Close(r.Context())
+
+        var categories []models.Category
+        if err := cursor.All(r.Context(), &categories); err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to decode categories")
+                return
+        }
+        if categories == nil {
+                categories = []models.Category{}
+        }
+
+        total, _ := h.db.Categories().CountDocuments(r.Context(), filter)
+
+        respondWithJSON(w, http.StatusOK, map[string]interface{}{
+                "categories": categories,
+                "total":      total,
+        })
+}
+
+// CreateCategory handles POST /api/lms/categories.
+func (h *LMSHandler) CreateCategory(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        var category models.Category
+        if err := json.NewDecoder(r.Body).Decode(&category); err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid request body")
+                return
+        }
+        if strings.TrimSpace(category.Name) == "" {
+                respondWithError(w, http.StatusBadRequest, "name is required")
+                return
+        }
+        if strings.TrimSpace(category.Slug) == "" {
+                respondWithError(w, http.StatusBadRequest, "slug is required")
+                return
+        }
+
+        category.ID = primitive.NilObjectID
+        category.TenantID = ctx.TenantID
+        now := time.Now()
+        category.CreatedAt = now
+        category.UpdatedAt = now
+
+        dupCount, err := h.db.Categories().CountDocuments(r.Context(), bson.M{
+                "tenantId": ctx.TenantID,
+                "slug":     category.Slug,
+        })
+        if err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to verify category slug")
+                return
+        }
+        if dupCount > 0 {
+                respondWithError(w, http.StatusConflict, "A category with this slug already exists")
+                return
+        }
+
+        result, err := h.db.Categories().InsertOne(r.Context(), &category)
+        if err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to create category")
+                return
+        }
+        if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
+                category.ID = oid
+        }
+
+        h.emitter.Emit(events.Event{
+                Type:      events.EventCategoryCreated,
+                Timestamp: now,
+                Data: map[string]interface{}{
+                        "tenantId":   ctx.TenantID.Hex(),
+                        "categoryId": category.ID.Hex(),
+                        "userId":     ctx.UserID.Hex(),
+                },
+        })
+
+        respondWithJSON(w, http.StatusCreated, category)
+}
+
+// ListTags handles GET /api/lms/tags.
+//
+// Optional query params: ?search= (case-insensitive name match).
+func (h *LMSHandler) ListTags(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        filter := bson.M{"tenantId": ctx.TenantID}
+        if search := r.URL.Query().Get("search"); search != "" {
+                filter["name"] = bson.M{"$regex": escapeRegexInput(search), "$options": "i"}
+        }
+
+        findOpts := options.Find().SetSort(bson.D{{Key: "name", Value: 1}})
+
+        cursor, err := h.db.Tags().Find(r.Context(), filter, findOpts)
+        if err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to fetch tags")
+                return
+        }
+        defer cursor.Close(r.Context())
+
+        var tags []models.Tag
+        if err := cursor.All(r.Context(), &tags); err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to decode tags")
+                return
+        }
+        if tags == nil {
+                tags = []models.Tag{}
+        }
+
+        total, _ := h.db.Tags().CountDocuments(r.Context(), filter)
+
+        respondWithJSON(w, http.StatusOK, map[string]interface{}{
+                "tags":  tags,
+                "total": total,
+        })
+}
+
+// CreateTag handles POST /api/lms/tags.
+func (h *LMSHandler) CreateTag(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        var tag models.Tag
+        if err := json.NewDecoder(r.Body).Decode(&tag); err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid request body")
+                return
+        }
+        if strings.TrimSpace(tag.Name) == "" {
+                respondWithError(w, http.StatusBadRequest, "name is required")
+                return
+        }
+        if strings.TrimSpace(tag.Slug) == "" {
+                respondWithError(w, http.StatusBadRequest, "slug is required")
+                return
+        }
+
+        tag.ID = primitive.NilObjectID
+        tag.TenantID = ctx.TenantID
+        now := time.Now()
+        tag.CreatedAt = now
+        tag.UpdatedAt = now
+
+        dupCount, err := h.db.Tags().CountDocuments(r.Context(), bson.M{
+                "tenantId": ctx.TenantID,
+                "slug":     tag.Slug,
+        })
+        if err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to verify tag slug")
+                return
+        }
+        if dupCount > 0 {
+                respondWithError(w, http.StatusConflict, "A tag with this slug already exists")
+                return
+        }
+
+        result, err := h.db.Tags().InsertOne(r.Context(), &tag)
+        if err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to create tag")
+                return
+        }
+        if oid, ok := result.InsertedID.(primitive.ObjectID); ok {
+                tag.ID = oid
+        }
+
+        h.emitter.Emit(events.Event{
+                Type:      events.EventTagCreated,
+                Timestamp: now,
+                Data: map[string]interface{}{
+                        "tenantId": ctx.TenantID.Hex(),
+                        "tagId":    tag.ID.Hex(),
+                        "userId":   ctx.UserID.Hex(),
+                },
+        })
+
+        respondWithJSON(w, http.StatusCreated, tag)
+}
 
 // ---------------------------------------------------------------------------
 // Orders and Coupons
@@ -648,8 +2669,117 @@ func (h *LMSHandler) CreateInstructorPayout(w http.ResponseWriter, r *http.Reque
 // Notifications
 // ---------------------------------------------------------------------------
 
-func (h *LMSHandler) ListNotifications(w http.ResponseWriter, r *http.Request)    { h.notImplemented(w, r) }
-func (h *LMSHandler) MarkNotificationRead(w http.ResponseWriter, r *http.Request) { h.notImplemented(w, r) }
+// ListNotifications handles GET /api/lms/notifications.
+//
+// Returns notifications addressed to the authenticated user. Optional query
+// params: ?unreadOnly=true, ?type=<notificationType>, ?limit=, ?offset=.
+func (h *LMSHandler) ListNotifications(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        filter := bson.M{
+                "tenantId": ctx.TenantID,
+                "userId":   ctx.UserID,
+        }
+        if r.URL.Query().Get("unreadOnly") == "true" {
+                filter["isRead"] = false
+        }
+        if ntype := r.URL.Query().Get("type"); ntype != "" {
+                filter["type"] = models.NotificationType(ntype)
+        }
+
+        limit := parsePositiveInt(r, "limit", 50, 200)
+        offset := parsePositiveInt(r, "offset", 0, 1<<30)
+
+        findOpts := options.Find().
+                SetLimit(int64(limit)).
+                SetSkip(int64(offset)).
+                SetSort(bson.D{{Key: "createdAt", Value: -1}})
+
+        cursor, err := h.db.Notifications().Find(r.Context(), filter, findOpts)
+        if err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to fetch notifications")
+                return
+        }
+        defer cursor.Close(r.Context())
+
+        var notifications []models.Notification
+        if err := cursor.All(r.Context(), &notifications); err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to decode notifications")
+                return
+        }
+        if notifications == nil {
+                notifications = []models.Notification{}
+        }
+
+        total, _ := h.db.Notifications().CountDocuments(r.Context(), filter)
+        unreadCount, _ := h.db.Notifications().CountDocuments(r.Context(), bson.M{
+                "tenantId": ctx.TenantID,
+                "userId":   ctx.UserID,
+                "isRead":   false,
+        })
+
+        respondWithJSON(w, http.StatusOK, map[string]interface{}{
+                "notifications": notifications,
+                "total":         total,
+                "unreadCount":   unreadCount,
+                "limit":         limit,
+                "offset":        offset,
+        })
+}
+
+// MarkNotificationRead handles POST /api/lms/notifications/{id}/read.
+func (h *LMSHandler) MarkNotificationRead(w http.ResponseWriter, r *http.Request) {
+        ctx, ok := h.requireLMSContext(w, r)
+        if !ok {
+                return
+        }
+
+        idStr := mux.Vars(r)["id"]
+        id, err := primitive.ObjectIDFromHex(idStr)
+        if err != nil {
+                respondWithError(w, http.StatusBadRequest, "Invalid notification ID")
+                return
+        }
+
+        now := time.Now()
+        result, err := h.db.Notifications().UpdateOne(r.Context(), bson.M{
+                "_id":      id,
+                "tenantId": ctx.TenantID,
+                "userId":   ctx.UserID,
+        }, bson.M{
+                "$set": bson.M{
+                        "isRead":    true,
+                        "readAt":    now,
+                        "updatedAt": now,
+                },
+        })
+        if err != nil {
+                respondWithError(w, http.StatusInternalServerError, "Failed to mark notification as read")
+                return
+        }
+        if result.MatchedCount == 0 {
+                respondWithError(w, http.StatusNotFound, "Notification not found")
+                return
+        }
+
+        h.emitter.Emit(events.Event{
+                Type:      events.EventNotificationRead,
+                Timestamp: now,
+                Data: map[string]interface{}{
+                        "tenantId":       ctx.TenantID.Hex(),
+                        "userId":         ctx.UserID.Hex(),
+                        "notificationId": id.Hex(),
+                },
+        })
+
+        respondWithJSON(w, http.StatusOK, map[string]string{
+                "message":        "Notification marked as read",
+                "notificationId": id.Hex(),
+        })
+}
 
 // ---------------------------------------------------------------------------
 // Calendar

@@ -1082,6 +1082,20 @@ const protectedRoutes: RouteObject = {
                 ).default,
               }),
             },
+            {
+              path: "quiz-builder",
+              lazy: async () => ({
+                Component: (await import("@/app/pages/apps/quiz-builder"))
+                  .default,
+              }),
+            },
+            {
+              path: "settings-pages",
+              lazy: async () => ({
+                Component: (await import("@/app/pages/apps/settings-pages"))
+                  .default,
+              }),
+            },
           ],
         },
         {

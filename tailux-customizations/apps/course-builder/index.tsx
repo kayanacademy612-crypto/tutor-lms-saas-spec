@@ -10,7 +10,7 @@
 //   - Colors use tailux tokens: text-primary-600, dark:bg-dark-700, dark:text-dark-100
 //   - Card uses <Card> from @/components/ui with skin="bordered" or "shadow"
 
-import { useState, Fragment, useRef } from "react";
+import { useState, Fragment, useRef, useEffect } from "react";
 import {
   Dialog,
   DialogPanel,
@@ -78,6 +78,21 @@ import {
 import { Upload } from "@/components/ui/Form/Upload";
 
 // ============================================================
+// API INTEGRATION (Phase 1 — Part 2)
+// The Course Builder is now backed by the real LMS API client.
+// All create operations call `lmsApi.*` and fall back to local
+// mock IDs on failure so the UI keeps working in dev even when
+// the backend is unreachable.
+// ============================================================
+import { lmsApi } from "@/services/lms-api";
+import { useCourses, useCreateCourse } from "@/hooks/useLms";
+import type {
+  Course as ApiCourse,
+  Topic as ApiTopic,
+  Lesson as ApiLesson,
+} from "@/types/lms";
+
+// ============================================================
 // TYPES
 // ============================================================
 type Step = 1 | 2 | 3;
@@ -96,6 +111,44 @@ interface Topic {
   summary: string;
   expanded: boolean;
   items: CurriculumItem[];
+}
+
+// ============================================================
+// API MAPPERS — translate the API's data shape into the local
+// Topic / CurriculumItem shape the UI was already built against.
+// (The backend uses snake_case-adjacent camelCase + ObjectID
+// strings + ISODate strings; the local mock used short ids and
+// plain strings.)
+// ============================================================
+
+function apiTopicToLocal(t: ApiTopic): Topic {
+  return {
+    id: t.id,
+    title: t.title,
+    summary: t.summary ?? "",
+    expanded: false,
+    items: [],
+  };
+}
+
+function apiLessonToItem(l: ApiLesson): CurriculumItem {
+  return {
+    id: l.id,
+    type: "lesson",
+    title: l.title,
+    meta: l.lessonType ? `(${l.lessonType})` : undefined,
+  };
+}
+
+/** Slugify a title for the API's required `slug` field on course create. */
+function slugify(input: string): string {
+  return (
+    input
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || `course-${Date.now()}`
+  );
 }
 
 // ============================================================
@@ -119,6 +172,120 @@ export default function CourseBuilder() {
     },
   ]);
 
+  // ---- API integration state ----
+  // `activeCourseId` is the API-side course this builder is editing.
+  // When undefined, the UI keeps using the local mock data above.
+  const [activeCourseId, setActiveCourseId] = useState<string | undefined>(undefined);
+  const [apiSyncing, setApiSyncing] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
+
+  // Fetch the courses list on mount via the `useCourses` hook. We use
+  // the hook (not a raw effect) so the loading + error plumbing comes
+  // for free. The hook keeps its own state, so we mirror it into local
+  // state below to drive the "active course" selection.
+  const {
+    data: coursesData,
+    loading: coursesLoading,
+    error: coursesError,
+  } = useCourses();
+  const { mutate: createCourse } = useCreateCourse();
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function bootstrap() {
+      // Still waiting for the hook to finish the initial fetch.
+      if (coursesLoading) return;
+      setApiError(coursesError ? String(coursesError.message) : null);
+      if (coursesError || !coursesData) return;
+
+      // Already bootstrapped — don't re-run when the data settles.
+      if (cancelled || activeCourseId) return;
+
+      setApiSyncing(true);
+      try {
+        let courseId: string | undefined;
+        let baseTitle = "New Course";
+        let baseDescription = "";
+
+        if (coursesData.length === 0) {
+          // No courses on the server — create one to host this builder.
+          try {
+            const created = await createCourse({
+              title: "New Course",
+              slug: slugify(`New Course ${Date.now()}`),
+              description: "",
+            });
+            courseId = created?.id;
+            baseTitle = created?.title ?? baseTitle;
+            baseDescription = created?.description ?? "";
+          } catch (e) {
+            // create failed — fall back to local mock mode
+            console.warn("[course-builder] createCourse failed, using local state:", e);
+          }
+        } else {
+          const first: ApiCourse = coursesData[0] as ApiCourse;
+          courseId = first.id;
+          baseTitle = first.title;
+          baseDescription = first.description ?? "";
+        }
+
+        if (cancelled) return;
+
+        if (courseId) {
+          setActiveCourseId(courseId);
+          setTitle(baseTitle);
+          setDescription(baseDescription);
+
+          // Fetch topics + lessons for the active course. On any
+          // failure we keep the existing local mock topics so the UI
+          // still renders something useful.
+          try {
+            const apiTopics = await lmsApi.topic.list(courseId);
+            if (cancelled) return;
+
+            const withItems: Topic[] = await Promise.all(
+              apiTopics.map(async (t): Promise<Topic> => {
+                const local = apiTopicToLocal(t);
+                try {
+                  const lessons = await lmsApi.lesson.list(t.id);
+                  local.items = lessons.map(apiLessonToItem);
+                } catch (e) {
+                  // leave items empty — topic still renders
+                  console.warn(`[course-builder] lesson.list failed for topic ${t.id}:`, e);
+                }
+                return local;
+              }),
+            );
+
+            if (cancelled) return;
+            if (withItems.length > 0) {
+              // Mark the first topic as expanded so the curriculum
+              // tab renders with one open by default (matches the
+              // previous mock-data behaviour).
+              withItems[0].expanded = true;
+              setTopics(withItems);
+            }
+          } catch (e) {
+            console.warn("[course-builder] topic.list failed, using local mock topics:", e);
+          }
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setApiError(e instanceof Error ? e.message : "Failed to load course data");
+        }
+      } finally {
+        if (!cancelled) setApiSyncing(false);
+      }
+    }
+
+    void bootstrap();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coursesData, coursesLoading, coursesError]);
+
   return (
     <Page title="Course Builder">
       <div className="min-h-screen bg-primary-100 p-4 dark:bg-dark-800 sm:p-8">
@@ -138,6 +305,9 @@ export default function CourseBuilder() {
             <CurriculumTab
               topics={topics}
               setTopics={setTopics}
+              courseId={activeCourseId}
+              apiSyncing={apiSyncing || coursesLoading}
+              apiError={apiError}
               onBack={() => setStep(1)}
               onNext={() => setStep(3)}
             />
@@ -498,11 +668,22 @@ function BasicTab({
 function CurriculumTab({
   topics,
   setTopics,
+  courseId,
+  apiSyncing,
+  apiError,
   onBack,
   onNext,
 }: {
   topics: Topic[];
-  setTopics: (t: Topic[]) => void;
+  // Widen to the real useState setter type so async handlers can use
+  // the functional form (the existing `setTopics(arr)` calls still work).
+  setTopics: React.Dispatch<React.SetStateAction<Topic[]>>;
+  /** API-side course id this builder is editing. Undefined = dev-fallback mode. */
+  courseId?: string;
+  /** True while the initial fetch / a background sync is in flight. */
+  apiSyncing?: boolean;
+  /** Last API error message, surfaced inline so the user knows data is local-only. */
+  apiError?: string | null;
   onBack: () => void;
   onNext: () => void;
 }) {
@@ -519,20 +700,95 @@ function CurriculumTab({
   const toggleExpand = (id: string) =>
     setTopics(topics.map((t) => (t.id === id ? { ...t, expanded: !t.expanded } : t)));
 
+  // -------- addTopic: optimistic local + API create with fallback --------
   const addTopic = () => {
-    const newId = `t${Date.now()}`;
-    setTopics([...topics, { id: newId, title: "New Topic", summary: "", expanded: true, items: [] }]);
-    setEditingTopic(newId);
+    const tempId = `t${Date.now()}`;
+    setTopics((prev) => [
+      ...prev,
+      { id: tempId, title: "New Topic", summary: "", expanded: true, items: [] },
+    ]);
+    setEditingTopic(tempId);
+
+    if (!courseId) return; // dev-fallback mode — keep local-only
+    lmsApi.topic
+      .create(courseId, { title: "New Topic" })
+      .then((created) => {
+        // Replace the temp id with the API-issued id so subsequent
+        // operations on this topic target the right resource.
+        setTopics((prev) =>
+          prev.map((t) => (t.id === tempId ? { ...t, id: created.id } : t)),
+        );
+        setEditingTopic(created.id);
+      })
+      .catch((e) => {
+        console.warn("[course-builder] topic.create failed, keeping local id:", e);
+      });
   };
 
-  const updateTopic = (id: string, patch: Partial<Topic>) =>
+  const updateTopic = (id: string, patch: Partial<Topic>) => {
     setTopics(topics.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+    // Best-effort PATCH — fire-and-forget. The local state already reflects the change.
+    if (courseId && patch.title !== undefined) {
+      lmsApi.topic.update(id, { title: patch.title }).catch((e) => {
+        console.warn(`[course-builder] topic.update failed for ${id}:`, e);
+      });
+    }
+  };
 
-  const deleteTopic = (id: string) => setTopics(topics.filter((t) => t.id !== id));
+  const deleteTopic = (id: string) => {
+    setTopics(topics.filter((t) => t.id !== id));
+    // Skip the API call for local-only temp ids (pattern: `t{timestamp}`).
+    if (/^t\d+$/.test(id)) return;
+    lmsApi.topic.remove(id).catch((e) => {
+      console.warn(`[course-builder] topic.remove failed for ${id}:`, e);
+    });
+  };
 
+  // -------- saveItem: optimistic local + API create with fallback --------
+  // The modals call this with a CurriculumItem that has a temp id.
+  // We optimistically add it to local state, then ask the API to
+  // persist it. On success we swap the temp id for the real one so
+  // subsequent edits target the right resource.
   const saveItem = (topicId: string, item: CurriculumItem) => {
-    setTopics(topics.map((t) => (t.id === topicId ? { ...t, items: [...t.items, item] } : t)));
+    setTopics((prev) =>
+      prev.map((t) => (t.id === topicId ? { ...t, items: [...t.items, item] } : t)),
+    );
     setModal(null);
+
+    const replaceTempId = (realId: string) =>
+      setTopics((prev) =>
+        prev.map((t) =>
+          t.id === topicId
+            ? {
+                ...t,
+                items: t.items.map((i) => (i.id === item.id ? { ...i, id: realId } : i)),
+              }
+            : t,
+        ),
+      );
+
+    if (item.type === "lesson") {
+      lmsApi.lesson
+        .create(topicId, { title: item.title, lessonType: "text" })
+        .then((created) => replaceTempId(created.id))
+        .catch((e) => {
+          console.warn(`[course-builder] lesson.create failed for topic ${topicId}:`, e);
+        });
+    } else if (item.type === "quiz") {
+      lmsApi.quiz
+        .create(topicId, { title: item.title })
+        .then((created) => replaceTempId(created.id))
+        .catch((e) => {
+          console.warn(`[course-builder] quiz.create failed for topic ${topicId}:`, e);
+        });
+    } else if (item.type === "assignment") {
+      lmsApi.assignment
+        .create(topicId, { title: item.title })
+        .then((created) => replaceTempId(created.id))
+        .catch((e) => {
+          console.warn(`[course-builder] assignment.create failed for topic ${topicId}:`, e);
+        });
+    }
   };
 
   const updateItem = (topicId: string, itemId: string, patch: Partial<CurriculumItem>) =>
@@ -542,8 +798,15 @@ function CurriculumTab({
       ),
     );
 
-  const deleteItem = (topicId: string, itemId: string) =>
+  const deleteItem = (topicId: string, itemId: string) => {
     setTopics(topics.map((t) => (t.id === topicId ? { ...t, items: t.items.filter((i) => i.id !== itemId) } : t)));
+    // Only call the API if the id looks like a server-issued id (not a temp `i{timestamp}`).
+    if (!/^i\d+$/.test(itemId)) {
+      lmsApi.lesson.remove(itemId).catch((e) => {
+        console.warn(`[course-builder] item.remove failed for ${itemId}:`, e);
+      });
+    }
+  };
 
   const duplicateItem = (topicId: string, itemId: string) => {
     setTopics(
@@ -559,6 +822,31 @@ function CurriculumTab({
   return (
     <>
       <div className="min-h-[600px] bg-gray-50 p-6 dark:bg-dark-800">
+        {/* ---- API sync / error banner (subtle, non-intrusive) ---- */}
+        {(apiSyncing || apiError) && (
+          <div
+            className={clsx(
+              "mb-3 flex items-center gap-2 rounded-md border px-3 py-2 text-xs",
+              apiError
+                ? "border-error-500/30 bg-error-500/10 text-error-700 dark:text-error-400"
+                : "border-primary-500/30 bg-primary-500/10 text-primary-700 dark:text-primary-300",
+            )}
+          >
+            {apiSyncing && (
+              <>
+                <ArrowPathIcon className="size-3.5 animate-spin" />
+                Syncing with server…
+              </>
+            )}
+            {!apiSyncing && apiError && (
+              <>
+                <ExclamationTriangleIcon className="size-3.5" />
+                Server unavailable — showing local mock data. ({apiError})
+              </>
+            )}
+          </div>
+        )}
+
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Button
@@ -571,6 +859,11 @@ function CurriculumTab({
               <ArrowLeftIcon className="size-4 text-gray-600 dark:text-dark-200" />
             </Button>
             <h2 className="text-xl font-semibold text-gray-900 dark:text-dark-50">Curriculum</h2>
+            {courseId && (
+              <Badge color="success" variant="soft" className="text-[10px]">
+                API connected
+              </Badge>
+            )}
           </div>
           <div className="flex items-center gap-3">
             <Button
@@ -601,8 +894,8 @@ function CurriculumTab({
               onEditDone={() => setEditingTopic(null)}
               onUpdate={(patch) => updateTopic(topic.id, patch)}
               onDuplicate={() =>
-                setTopics([
-                  ...topics,
+                setTopics((prev) => [
+                  ...prev,
                   { ...topic, id: `t${Date.now()}`, title: `${topic.title} (copy)`, items: [] },
                 ])
               }
