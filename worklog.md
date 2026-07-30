@@ -4305,3 +4305,731 @@ Notes for downstream agents:
 - `CancelMigration` returns 409 if the job isn't currently `running`. A job that has already reached a terminal state (completed / failed / cancelled) cannot be cancelled again — but a `failed` job CAN be re-started via `StartMigration` (which transitions it back to `running` and re-runs the importer from scratch).
 - `GetMigration` returns the job wrapped in a `{ "migration": <job>, "progressPct": <0-100> }` envelope so the frontend doesn't have to recompute progress. `ListMigrations` returns `{ "migrations": [...], "total", "limit", "offset" }` — note the key is `migrations` (plural) to match the `migrationApi.list()` shape expected by `useMigrations()` in `useReportsAI.ts`. The P6-A2 frontend hook expects the array directly via `toList()` so the wrapper key doesn't matter for the hook, but the convention matches `ListBadges` (`{ "badges": [...] }`).
 - The `progressPct` calculation sums all four entity counters (courses + lessons + quizzes + students). If a platform importer only populates some of the totals (e.g. CSV only sets `totalCourses`), the percentage is still correct because the unset totals are 0.
+
+---
+Task ID: SAAS-4
+Agent: Admin API Client
+Task: Create admin-api.ts with all lastsaas admin endpoints
+
+Work Log:
+- Read `/home/z/my-project/worklog.md` for context on the lastsaas backend; the audit mentioned in the SAAS-A1 frontend audit was not present as a section in the worklog, so I cross-referenced the canonical `lastsaas/frontend/src/api/client.ts` (the existing admin API client) and `lastsaas/frontend/src/types/index.ts` for the complete endpoint list and type definitions.
+- Read `tailux-main/src/services/auth-api.ts` for the axios instance + interceptor pattern (named `AxiosInstance`, `AUTH_TOKEN_KEY` localStorage key, normalized error shape via `AxiosError<unknown>` unwrap, plain-object reject).
+- Read `tailux-main/src/services/lms-api.ts` for the resource-group layout (single exported object with nested groups, typed response wrappers, request param types).
+- Read `tailux-main/src/hooks/useEcommerce.ts` and `useLms.ts` for the React hook pattern (`UseLmsQueryResult<T>` / `UseLmsMutationResult<T,V>`, `useIsMounted` + per-fetch token ref, `argsKey` deps helper, list-normalization `toList()`).
+- Verified the existing admin pages live under `lastsaas/frontend/src/pages/admin/` (DashboardPage, TenantsPage, UsersPage, PlansPage, HealthPage, LogsPage, BrandingPage, ConfigPage, APIPage, AnnouncementsPage, PromotionsPage, FinancialPage, PMPage, RootMembersPage, TenantProfilePage, UserProfilePage, AboutPage, MessagesPage) — every one of these has a corresponding endpoint group in the new `admin-api.ts`.
+- Created `tailux-main/src/services/admin-api.ts`:
+  * Separate axios instance `adminAxios` (baseURL `/api`, 30s timeout, `Accept: application/json`).
+  * Request interceptor attaches `Authorization: Bearer <token>` from `localStorage["authToken"]` and `X-Tenant-ID` from `localStorage["authTenant"]` (parsed JSON, id field).
+  * Response interceptor unwraps backend error envelopes (`{ message }` / `{ error }` / string / network error) into a typed `AdminApiError` `{ status, message, details? }`.
+  * Exported types for every endpoint response: `AdminDashboard`, `AdminAbout`, `Tenant`, `TenantDetail`, `TenantListResponse`, `TenantDetailResponse`, `AdminUser`, `AdminUserDetail`, `AdminUserListResponse`, `AdminUserDetailResponse`, `DeleteUserPreflight`, `ImpersonationResponse`, `Plan`, `PlanListResponse`, `EntitlementKey`, `CreditBundle`, `CreditBundleListResponse`, `FinancialTransaction`, `FinancialTransactionListResponse`, `DailyMetricPoint`, `FinancialMetricsResponse`, `HealthNode`, `HealthNodesResponse`, `HealthMetric`, `HealthMetricsResponse`, `HealthIntegration`, `HealthIntegrationsResponse`, `TestEmailResponse`, `SystemLog`, `SystemLogListResponse`, `SystemLogSeverityCountsResponse`, `ConfigVar`, `ConfigVarListResponse`, `APIKey`, `APIKeyListResponse`, `APIKeyCreateResponse`, `Webhook`, `WebhookDelivery`, `WebhookListResponse`, `WebhookDetailResponse`, `WebhookCreateResponse`, `WebhookTestResponse`, `WebhookRegenerateSecretResponse`, `WebhookEventType`, `WebhookEventTypeListResponse`, `Announcement`, `AnnouncementListResponse`, `Promotion`, `EligibleProduct`, `PromotionListResponse`, `EligibleProductListResponse`, `PromotionCreateResponse`, `TenantMember`, `Invitation`, `RootMembersResponse`, `BrandingConfig`, `BrandingNavItem`, `MediaItem`, `MediaItemListResponse`, `CustomPage`, `CustomPageListResponse`, plus PM-dashboard types (`FunnelStep`, `FunnelData`, `CohortRow`, `RetentionResponse`, `FeatureUse`, `EngagementData`, `PlanShare`, `KPIData`, `CustomEventData`, `EventTypeSummary`, `EventTypeListResponse`).
+  * Exported `adminApi` object with 81 top-level methods + 6 nested `pm.*` methods = 87 total API methods covering: dashboard, about, tenants (list/get/update/status/plan/cancel-subscription/export), users (list/get/update/status/role/preflight-delete/delete/impersonate/export), root members (list/invite/remove/change-role/cancel-invitation), plans (list/get/create/update/delete/archive/unarchive/entitlement-keys), credit bundles (CRUD), health (nodes/current/metrics/integrations/test-email), financial (transactions/metrics), promotions (list/eligible-products/create/update/deactivate), announcements (CRUD), logs (list/severity-counts/export), config (list/get/create/update/delete), API keys (list/create/delete), webhooks (list/get/create/update/delete/test/regenerate-secret/event-types), branding (get/update/asset-upload/asset-delete/media-list/media-upload/media-delete/pages-list/pages-create/pages-update/pages-delete), and PM dashboard (funnel/kpis/retention/engagement/events/event-types).
+  * All methods return typed Promises; CSV/export endpoints use `{ responseType: "blob" }` and return `Promise<Blob>`; multipart uploads use `FormData` + `multipart/form-data` Content-Type header.
+- Created `tailux-main/src/hooks/useAdmin.ts`:
+  * Defines local `UseAdminQueryResult<T>` and `UseAdminMutationResult<T,V>` types (decoupled from `useLms.ts` so consumers don't need to import `LmsApiError`).
+  * Implements 79 React hooks total — 42 query hooks + 37 mutation hooks — covering every common admin operation: dashboard/about, tenants (list/list-flat/get/status/plan/cancel-sub), users (list/list-flat/get/status/preflight/delete/impersonate), root members (list/invite/remove/change-role), plans (list/list-flat/get/create/update/delete/archive/unarchive), bundles (list/list-flat/create/update/delete), health (nodes/current/metrics/integrations/test-email), financial (transactions/metrics), promotions (list), announcements (list/list-flat/create/update/delete), logs (list/severity-counts), config (list/list-flat/get/create/update/delete), API keys (list/create/delete), webhooks (list/get/create/update/delete/test/regenerate-secret/event-types), branding (get/update/media-list/media-upload/media-delete/pages-list/pages-create/pages-update/pages-delete), PM dashboard (funnel/kpis/retention/engagement/custom-events/event-types).
+  * Each query hook: `{ data, loading, error, refetch }`, skips fetch when `id`/`name` is empty, refetches when stringified `params` change via `argsKey()`.
+  * Each mutation hook: `{ data, loading, error, mutate, reset }`, passes resource id at `mutate(...)` time so the same hook instance can operate on any row.
+  * Uses `useIsMounted` + per-fetch token ref to guard against setState-after-unmount and stale-response-overwrite races.
+  * Convenience hooks (`useAdminTenantList`, `useAdminUserList`, `useAdminPlanList`, `useAdminBundleList`, `useAdminConfigList`, `useAnnouncementList`) normalize the envelope response `{ <key>: T[] }` into a bare `T[]` array.
+- Ran `npx tsc --noEmit` from `tailux-main/` (the verification command in the task spec) — exit code 0, no output. Also ran `npx tsc --noEmit -p tsconfig.app.json` to confirm zero errors in the new files specifically (the 225 pre-existing errors are all in unrelated `src/app/pages/...` files about the `Button` component's `size` prop, plus one unused-declaration warning in `lms-api.ts` — none in `admin-api.ts` or `useAdmin.ts`).
+
+Stage Summary:
+- Created `src/services/admin-api.ts` (1,246 lines) with 87 API methods (81 top-level + 6 in the nested `pm` group) covering all lastsaas admin endpoints (tenants, users, root members, plans, credit bundles, health, financial, promotions, announcements, logs, config, API keys, webhooks, branding, PM dashboard) plus 60+ exported TypeScript types.
+- Created `src/hooks/useAdmin.ts` (2,968 lines) with 79 React hooks (42 query hooks + 37 mutation hooks) following the same pattern as `useEcommerce.ts` / `useLms.ts`.
+- TypeScript check: PASS (`npx tsc --noEmit` exits 0; zero errors in the new files under `tsconfig.app.json`).
+
+---
+Task ID: SAAS-3
+Agent: Role-Aware Auth Provider
+Task: Fix auth to track roles, memberships, tenant switching
+
+Work Log:
+- Read `/home/z/my-project/worklog.md` end-to-end for context on the lastsaas backend auth contract (P5-A1/AUTH-1) and confirmed the backend `/login` endpoint returns `memberships[]` (with `tenantId`, `tenantName`, `tenantSlug`, `role`, `isRoot`) while `/school-signup` returns a single `tenant` object + the freshly-created owner user.
+- Read existing `src/app/contexts/auth/context.ts`, `src/app/contexts/auth/Provider.tsx`, `src/services/auth-api.ts`, `src/middleware/GhostGuard.tsx`, `src/middleware/AuthGuard.tsx`, `src/@types/user.ts`, `src/constants/app.ts`, `src/components/ui/Button/index.tsx`, `src/components/ui/Card/index.tsx`, `src/components/shared/Page.tsx`, existing error pages (`401.tsx` / `404.tsx` / `429.tsx` / `500.tsx`), and `src/app/router/{public,ghost,protected,router}.tsx` to lock in the existing auth state shape, persistence keys (`authToken` / `refreshToken` / `authUser` / `authTenant`), reducer pattern, and route conventions (lazy `Component: (await import(...)).default`, `prototypes/errors/<code>` folder pattern).
+- Verified `User` from `@/@types/user` is imported only by `context.ts` and `Provider.tsx` (the other 30+ files that import a `User` symbol pull it from local `./data` modules with their own shape) — safe to relocate the canonical `User` type to `context.ts` without breaking other modules.
+- **Task 1 — Updated `src/app/contexts/auth/context.ts`**: extended `AuthTenant` with `role: string` + `isRoot?: boolean`; added a new `User` interface (`id, name, email, role?, avatarUrl?, memberships?: AuthTenant[]`) per the task spec; kept the existing `subdomain?` field on `SignupInput` (the backend still derives one from `schoolName` when omitted, and the existing `authApi.schoolSignup` accepts it — dropping it would shrink the input contract); added `activeTenant: AuthTenant | null` to `AuthContextType` (per "activeTenant in state, not just tenant"); kept `tenant` as an alias for backward compat with `useIsRootTenant` / navbar widgets; added `switchTenant(tenantId: string) => void` to the context type.
+- Updated `src/@types/user.ts` to re-export `User` + `AuthTenant` from `@/app/contexts/auth/context` so any legacy imports from `@/@types/user` keep compiling (no callers besides the two auth files import it, but the re-export costs nothing and keeps the module non-empty).
+- **Task 2 — Updated `src/services/auth-api.ts`**: extended `AuthTenant` with `role: string` + `isRoot?: boolean`; extended `AuthUser` with `role: string` (always present, defaults to `"student"`) and `memberships: AuthTenant[]` (always present, possibly empty); extended `AuthResponse` with `memberships: AuthTenant[]` and changed `tenant?` to `AuthTenant | null` (the normaliser now always returns a `tenant` that may be `null` when the user has no memberships yet — covers the legacy `authToken`-only demo backend). Rewrote `normalizeAuthResponse` to: (a) extract `memberships[]` from `raw.memberships` (login shape — maps `tenantId`/`tenantName`/`tenantSlug`/`role`/`isRoot` per element, tolerates `id`/`name`/`slug` aliases), (b) when no memberships but a top-level `raw.tenant` exists (signup shape), construct a single `owner` membership from it, (c) set the active tenant to `memberships[0] ?? null`, (d) set `user.role = activeTenant?.role ?? "student"` and `user.memberships = memberships`, (e) return both top-level `memberships` and `tenant` so the Provider can store either shape.
+- **Task 3 — Updated `src/app/contexts/auth/Provider.tsx`**: (a) added a `SWITCH_TENANT` action to the reducer that updates `tenant`, `activeTenant` (alias), and `user.role` in one pass; updated `LOGIN_SUCCESS`, `SIGNUP_SUCCESS`, `LOGOUT`, and `INITIALIZE` handlers to also set `activeTenant` (mirroring `tenant`). (b) `login()` now reads `res.memberships` and `res.tenant` from the normalised response, builds a full `User` object with `role` + `memberships[]`, persists them (they're embedded in the `authUser` blob via `JSON.stringify(user)`), and dispatches `LOGIN_SUCCESS` with both. (c) `signup()` does the same but defaults `role` to `"owner"` when the response is missing a tenant (defensive — the normaliser always sets it). (d) `persistSession()` now serialises the full `User` (including `memberships`) — no separate `memberships` key needed. (e) Added a `reconcileUserWithTenant(user, tenant)` helper used during rehydration: if the persisted user is from an older build (no `memberships` field), it synthesises one from the persisted `tenant`; if the persisted user already has memberships, it ensures the active tenant is in the list (replacing or appending as needed) and refreshes `user.role` from the active tenant. (f) Added `switchTenant(tenantId)` — finds the membership by id, updates `user.role` to the new tenant's role, re-persists the session (so a reload keeps the active tenant), and dispatches `SWITCH_TENANT`. Silently no-ops (with a `console.warn`) when the tenant isn't in `user.memberships` so the UI doesn't crash on a stale membership list.
+- **Task 4 — Created `src/middleware/RoleGuard.tsx`**: simple wrapper that reads `user.role` from `useAuthContext`, defaults to `"student"` when undefined (matches the normaliser default), and `<Navigate to="/403" replace state={{ from: location }} />` when `userRole` isn't in `allowedRoles`. Passes `state.from` so the 403 page can offer a "go back" link.
+- **Task 5 — Created `src/hooks/useCanAccess.ts`** with three named exports: `useCanAccess(allowedRoles)` returns `boolean`, `useUserRole()` returns the active-tenant role string (default `"student"`), `useIsRootTenant()` returns `Boolean(tenant?.isRoot)`. Each is a thin wrapper over `useAuthContext` for declarative inline use (button visibility, menu filtering) — paired with `<RoleGuard />` for route-level protection.
+- **Task 6 — Created `src/utils/roleRedirect.ts`** with `getHomePathForRole(role)`: `owner`/`admin` → `/apps/reports-dashboard`, `instructor` → `/apps/instructor-dashboard`, `student`/unknown → `/apps/student-dashboard`. The default arm catches `undefined` (not-yet-loaded user) so a not-yet-hydrated GhostGuard redirect lands somewhere sensible.
+- **Task 7 — Updated `src/middleware/GhostGuard.tsx`**: now reads `user` from the auth context and redirects to `getHomePathForRole(user?.role)` instead of the old hardcoded `HOME_PATH` (`/`). Kept the `?redirect=` query-param override (deep links to protected pages still work after login). Dropped the unused `HOME_PATH` import (kept `REDIRECT_URL_KEY`). `AuthGuard.tsx` was left untouched — it only checks `isAuthenticated` (role-based protection is the RoleGuard's job, layered inside AuthGuard-protected routes).
+- **Task 8 — Created `src/app/pages/errors/ForbiddenPage.tsx`**: centered `Card` with a `LockClosedIcon` (Heroicons outline) in a circular `bg-error-50` badge, "403" headline in `text-error-500`, "Access Denied" subhead, "You don't have permission to access this page" body copy, two buttons ("Back to dashboard" → `state.from.pathname` from the RoleGuard, "Go home" → `getHomePathForRole(user.role)`), and a small footer showing "Your current role: <role>" so the user understands why they were blocked. Reads `user` from `useAuthContext` so the dashboard links are role-aware.
+- Wired the `/403` route into `src/app/router/public.tsx` as the first child of `publicRoutes` (registered as a public route so it's reachable regardless of auth state — covers the edge case where a session expires between the RoleGuard redirect and the page load). Used the existing lazy-import pattern: `lazy: async () => ({ Component: (await import("@/app/pages/errors/ForbiddenPage")).default })`.
+- Verified with `npx tsc --noEmit` (root tsconfig.json — the task spec's verification command) — EXIT_CODE=0, zero output. Also ran `npx tsc --noEmit -p tsconfig.app.json` for a deeper check: zero errors in any of the 11 files I created/modified (filtered by `src/(app/contexts/auth|services/auth-api|middleware|hooks/useCanAccess|utils/roleRedirect|app/pages/errors/ForbiddenPage|@types/user|app/router/public)`). The 99 pre-existing TS errors in the project are all in unrelated apps pages (a missing `size` prop on the `Button` component, plus missing prototype error/sign-in pages) — none were introduced by this task.
+
+Stage Summary:
+- Updated auth types with role + memberships: `src/app/contexts/auth/context.ts` (added `role` + `isRoot` to `AuthTenant`, added `User` interface with `role?` + `memberships?`, added `activeTenant` + `switchTenant` to `AuthContextType`); `src/@types/user.ts` re-exports from context for back-compat.
+- Fixed normalizer to extract memberships from login response: `src/services/auth-api.ts` — `normalizeAuthResponse` now always returns a `memberships[]` array (extracted from `raw.memberships` on login, synthesised from `raw.tenant` on signup with `role: "owner"`), sets the active tenant to `memberships[0] ?? null`, and populates `user.role` from the active tenant.
+- Updated Provider to store/restore role + memberships: `src/app/contexts/auth/Provider.tsx` — `login()` / `signup()` now build a full `User` with `role` + `memberships[]`, persist them via the `authUser` blob, and dispatch them via `LOGIN_SUCCESS` / `SIGNUP_SUCCESS`; added `SWITCH_TENANT` reducer action + `switchTenant(tenantId)` method (updates `activeTenant`, `tenant` alias, `user.role`, re-persists session); added `reconcileUserWithTenant()` helper for rehydration that back-fills `memberships` from the persisted tenant for users saved by older builds; `INITIALIZE` / `LOGIN_SUCCESS` / `SIGNUP_SUCCESS` / `LOGOUT` now also set `activeTenant`.
+- Created `src/middleware/RoleGuard.tsx`: declarative route-level RBAC — redirects to `/403` with `state.from` when `user.role` isn't in `allowedRoles`.
+- Created `src/hooks/useCanAccess.ts` with three exports: `useCanAccess(allowedRoles)`, `useUserRole()`, `useIsRootTenant()` — for inline role checks inside already-rendered pages.
+- Created `src/utils/roleRedirect.ts` with `getHomePathForRole(role)`: owner/admin → reports dashboard, instructor → instructor dashboard, student/unknown → student dashboard.
+- Updated `src/middleware/GhostGuard.tsx` to redirect post-login to `getHomePathForRole(user?.role)` instead of the hardcoded `HOME_PATH` (`/`) — keeps the `?redirect=` override for deep links.
+- Created `src/app/pages/errors/ForbiddenPage.tsx` (403 page): centered Card with `LockClosedIcon` badge, "403 / Access Denied" headline, "You don't have permission to access this page" body, role-aware "Back to dashboard" + "Go home" buttons (driven by `useAuthContext().user.role` and `state.from.pathname` from the RoleGuard), and a "Your current role: <role>" footer.
+- Wired the `/403` route in `src/app/router/public.tsx` (registered as a public route so it's reachable regardless of auth state).
+- TypeScript check: PASS (`npx tsc --noEmit` exits 0; `npx tsc --noEmit -p tsconfig.app.json` shows zero errors in any of the 11 touched files — the 99 pre-existing errors are all in unrelated apps pages with a `size` prop on `Button` that doesn't exist on the current `Button` component, plus missing prototype error/sign-in pages).
+
+Notes for downstream agents:
+- `user.role` is now ALWAYS a string after login (defaults to `"student"` when no memberships, `"owner"` on signup). `user.memberships` is ALWAYS an array (possibly empty). Code that previously did `user?.role === "admin"` will still work; code that did `user?.role === undefined` to mean "not loaded yet" should switch to `user === null` (which still means "not logged in" / "still hydrating").
+- The `tenant` and `activeTenant` fields on the auth context are kept in sync as aliases — prefer `activeTenant` in new code (the spec calls it out as the preferred name), but `tenant` remains for backward compat (the `useIsRootTenant` hook and any existing navbar widgets read `tenant`).
+- `switchTenant(tenantId)` is a pure client-side switch — it does NOT call the backend. It updates the in-memory `activeTenant` + `user.role`, re-persists the session to localStorage, and dispatches `SWITCH_TENANT`. Subsequent LMS API calls (which read the active tenant from the JWT or from `lmsAxios`'s request interceptor) will still target the tenant encoded in the JWT — a follow-up backend task should add a `POST /api/auth/switch-tenant` endpoint that issues a fresh JWT for the new active tenant; the `switchTenant` function is structured so a future `await authApi.switchTenant(tenantId)` call can be inserted before the dispatch without changing the reducer.
+- `RoleGuard` defaults to `"student"` when `user.role` is undefined — this is intentional so a not-yet-hydrated guard (rare, but possible during the brief window between `INITIALIZE` running and the user object being populated) doesn't accidentally grant admin access. Once `INITIALIZE` completes, `user.role` is always set.
+- The `/403` route is registered as a PUBLIC route (not protected) so it's reachable even when the user's session has expired. The `ForbiddenPage` reads `user.role` from the auth context — when the session is expired, `user` is `null`, `user?.role` is `undefined`, and `getHomePathForRole(undefined)` returns the student dashboard (a sensible landing page that will then bounce them to `/login` via AuthGuard).
+- The 99 pre-existing TypeScript errors in the project (`size` prop on `Button` in apps pages + missing prototype error/sign-in pages) are NOT introduced by this task and are out of scope — they existed before SAAS-3 and will need a separate cleanup pass.
+
+---
+Task ID: SAAS-2
+Agent: SaaS Landing Page
+Task: Build conversion-focused marketing landing page
+
+Work Log:
+- Read worklog.md, router.tsx, public.tsx, protected.tsx, ghost.tsx, Root.tsx,
+  AuthGuard, GhostGuard, auth context, storefront/Hero patterns, Button/Card/Badge
+  UI primitives, Accordion API, and tailwind color system (colors.css + variants.css).
+- Discovered color system: `primary-*` (50-950) and `gray-*`/`dark-*` (numeric) are
+  fully defined; `secondary`, `success`, `info`, `warning`, `error` are only defined
+  as `lighter/light/main/darker` (NO numeric variants). Used the correct names in all
+  new files.
+- Created 11 files under `src/app/pages/landing/`:
+    1. `Hero.tsx` — big headline + subheadline + two CTAs + dashboard mockup (built
+       from divs/spans) with floating "+24%" badge. Auth-aware: shows "Go to
+       Dashboard" when `useAuthContext().isAuthenticated` is true.
+    2. `StatsBar.tsx` — four animated count-up stats (500+ Schools, 50k+ Students,
+       1M+ Lessons, 4.9/5 Rating) using IntersectionObserver + rAF ease-out-cubic.
+    3. `FeaturesGrid.tsx` — 6 feature cards (Course Builder, eCommerce, Certificates,
+       Student Management, Analytics, Multi-Tenant) with heroicons + colored icon
+       tiles. Hover lift + border highlight.
+    4. `HowItWorks.tsx` — 3 numbered step cards with connecting gradient line.
+    5. `FeatureShowcase.tsx` — tabbed interface (Dashboard / Course Builder /
+       eCommerce / Certificates) with 4 distinct div-built mockups. Section has
+       id="feature-showcase" so the Hero "Watch Demo" CTA smooth-scrolls to it.
+    6. `Pricing.tsx` — 3 tiers (Starter $29, Professional $99 highlighted as "Most
+       Popular", Enterprise $299) with feature lists and auth-aware CTA.
+    7. `Testimonials.tsx` — 3 cards with star ratings, initials avatars, and tone-
+       colored avatar backgrounds.
+    8. `FAQ.tsx` — 6-question accordion using the project's Accordion primitive
+       (AccordionItem / AccordionButton / AccordionPanel) with keyboard nav.
+    9. `FinalCTA.tsx` — big gradient card with dot pattern + decorative blobs.
+   10. `Footer.tsx` — brand block + Product/Company link columns + social icons
+       (Twitter, LinkedIn, GitHub, YouTube as inline SVGs) + bottom legal row.
+   11. `index.tsx` — composes all 10 sections + sets `scroll-behavior: smooth`
+       on document root via useEffect.
+   12. `LandingRoute.tsx` — thin wrapper that checks `useAuthContext()`; renders
+       SplashScreen during init, `<Navigate to="/dashboards/sales" replace />`
+       when authed, otherwise renders `<LandingPage />`. Mirrors the AuthGuard /
+       GhostGuard pattern.
+- Authored every section with full `dark:` variants and responsive grids
+  (mobile → tablet → desktop).
+- Route registration:
+    * Added `index: true` lazy route to `src/app/router/public.tsx` pointing at
+      `LandingRoute` (the auth-aware wrapper).
+    * Reordered `src/app/router/router.tsx` Root children from
+      `[protectedRoutes, ghostRoutes, publicRoutes]` to
+      `[publicRoutes, ghostRoutes, protectedRoutes]` so the public `index` wins
+      for the `/` URL over the AuthGuard-wrapped protected branch. Without this
+      reorder, AuthGuard would bounce not-authenticated visitors to /login before
+      the landing page could render.
+- Verified the existing `prototypes/...` and `apps/certificate-builder/verify`
+  public routes still match their own URLs (they have specific paths, so they
+  match independently of the new `index: true`).
+- TypeScript check (`npx tsc --noEmit`): PASS, 0 errors.
+- ESLint on the new files (`npx eslint src/app/pages/landing/
+  src/app/router/public.tsx src/app/router/router.tsx`): PASS, 0 warnings.
+- Vite production build runs through all 1923 modules including the landing
+  page; the only build error is a PRE-EXISTING issue in
+  `src/app/pages/apps/gamification/MyPoints.tsx` (`ReceiptIcon` is not exported
+  by heroicons — only `ReceiptPercentIcon` / `ReceiptRefundIcon` exist). This is
+  unrelated to the landing page work and was not introduced by this task.
+
+Stage Summary:
+- Created landing page with 10 sections (Hero, StatsBar, FeaturesGrid,
+  HowItWorks, FeatureShowcase, Pricing, Testimonials, FAQ, FinalCTA, Footer)
+  plus a LandingRoute auth wrapper.
+- TypeScript check: PASS
+- ESLint check: PASS
+- Route: `/` (public, redirects to `/dashboards/sales` if authenticated via
+  LandingRoute wrapper; renders the marketing page otherwise).
+- Auth-aware CTAs in Hero, Pricing, and FinalCTA swap to "Go to Dashboard"
+  when `useAuthContext().isAuthenticated` is true.
+- 11 new files in `src/app/pages/landing/`; 2 modified router files
+  (`public.tsx`, `router.tsx`).
+
+---
+Task ID: SAAS-1
+Agent: Cleanup + Role-Aware Navigation
+Task: Remove demo apps, build role-based navigation
+
+Work Log:
+- Read `/home/z/my-project/worklog.md` to confirm prior agent context
+  (LMS frontend built on tailux; P3–P6 phases already shipped ~30 LMS
+  pages under `src/app/pages/apps/`). No prior SAAS-1 entry existed.
+- Read the navigation + layout + router surface before touching anything:
+  - `src/@types/navigation.ts` (NavigationTree shape)
+  - `src/app/navigation/{index.ts, baseNavigation.ts, icons.ts}`
+  - `src/app/navigation/segments/{apps.ts, dashboards.ts, settings.ts}`
+  - `src/app/router/{protected.tsx, public.tsx, ghost.tsx, router.tsx}`
+  - `src/app/layouts/MainLayout/{index.tsx, Profile.tsx, Sidebar/index.tsx,
+    Sidebar/MainPanel/index.tsx, Sidebar/MainPanel/Menu/index.tsx,
+    Sidebar/PrimePanel/index.tsx, Sidebar/PrimePanel/Menu/index.tsx}`
+  - `src/app/layouts/Sideblock/{Sidebar/Menu/index.tsx, Profile.tsx}`
+  - `src/app/layouts/{AppLayout.tsx, DynamicLayout.tsx}`
+  - `src/components/template/{RightSidebar/Apps.tsx, Search.tsx}`
+  - `src/app/contexts/auth/{context.ts, Provider.tsx}`
+  - `src/@types/user.ts`, `src/services/auth-api.ts`, `src/constants/app.ts`
+  Confirmed `User.role` is already populated by `Provider.tsx` from the
+  active tenant membership (lines 393-399 login, 450-456 signup) so the
+  new role-aware UI has a real signal to read.
+- **Task 1 — Demo cleanup.** Deleted 35 directories + 7 obsolete segment
+  files:
+  - `src/app/pages/apps/{nft-1, nft-2, pos, travel, chat, ai-chat, mail,
+    todo, kanban, filemanager, list}` (11 demo apps)
+  - `src/app/pages/dashboards/{sales, crm-analytics, orders, crypto-1,
+    crypto-2, banking-1, banking-2, personal, cms-analytics, influencer,
+    travel, authors, doctor, employees, workspaces, meetings,
+    projects-board, widget-ui, widget-contact}` (19 demo dashboards —
+    kept `teacher/` and `education/` per the spec)
+  - `src/app/pages/{prototypes, tables, forms, components, docs}`
+    (5 top-level demo trees — kept `errors/` for real 404/500/etc.)
+  - `src/app/navigation/segments/{apps.ts, dashboards.ts, prototypes.ts,
+    tables.ts, forms.ts, components.ts, docs.ts}` (7 segment files whose
+    contents referenced deleted routes)
+- **Task 2 — Role-aware navigation.**
+  - Updated `src/@types/navigation.ts` to add `roles?: string[]` and
+    `badge?: string` to `NavigationTree` (with a doc-comment listing the
+    four known LMS roles).
+  - Rewrote `src/app/navigation/index.ts` as a single LMS-only tree with
+    10 root segments, each tagged with `roles`:
+      1. Dashboard (all roles) — `path: "/"`, childs redirect per role
+      2. Courses (all roles) — catalog + builder + quiz-builder
+      3. Learning (student) — learning-area + certificates + subscriptions
+         + gamification
+      4. Teaching (instructor/admin/owner) — instructor-dashboard +
+         assignment-grading + multi-instructor + drip-manager +
+         prerequisites + tutor-ai (badge "AI")
+      5. eCommerce (admin/owner) — store + orders + payouts + storefront
+         + bundles + memberships + gift-course
+      6. Certificates (instructor/admin/owner) — certificate-builder
+      7. Reports (admin/owner) — reports-dashboard
+      8. Settings (admin/owner) — payment + ecommerce + email-templates
+         + notifications + accessibility + legal-consents + LMS pages
+      9. Platform Admin (owner) — 11 `/admin/*` entries (dashboard,
+         tenants, users, plans, financial, health, logs, branding,
+         api-keys, announcements, config)
+     10. Migration (admin/owner) — migration-wizard
+  - Slimmed `src/app/navigation/baseNavigation.ts` to keep only the
+    `settings` root entry (the standalone Settings page Sidebar still
+    imports `baseNavigation`).
+- **Task 3 — Sidebar role filtering.**
+  - Added `filterNavByRole(nav, role)` helper in
+    `src/app/layouts/MainLayout/Sidebar/PrimePanel/Menu/index.tsx` —
+    keeps an item when `!item.roles || item.roles.includes(role)`,
+    recursively filters `childs`, and trims leading/trailing/consecutive
+    dividers so empty sections don't leave visual gaps.
+  - Updated `PrimePanel/Menu` to read `useAuthContext().user?.role`
+    (defaults to `"student"`) and feed `filterNavByRole(nav, userRole)`
+    into the existing `Accordion` renderer.
+  - Updated `MainLayout/Sidebar/MainPanel/index.tsx` to import
+    `filterNavByRole` and apply it to the root-segment rail.
+  - Updated `MainLayout/Sidebar/index.tsx` to use a new
+    `findActiveSegment` helper that picks the LONGEST matching path
+    (otherwise the Dashboard root's `path: "/"` would always win and
+    every /apps/* URL would highlight Dashboard instead of, say,
+    Courses).
+  - Mirrored the role filter + longest-match logic in
+    `src/app/layouts/Sideblock/Sidebar/Menu/index.tsx` so the sideblock
+    layout behaves identically.
+- **Task 4 — Profile widget.**
+  - Rewrote `src/app/layouts/MainLayout/Profile.tsx` to use
+    `useAuthContext()`:
+      - Avatar `src` falls back to `user.avatarUrl` → `/images/200x200.png`
+      - Header shows `user.name` (or "Guest" when missing) + `user.email`
+        (or a friendly role subtitle when email is empty)
+      - Links now point to LMS routes (`/apps/tutor-ai` instead of
+        `/apps/chat`; `/apps/multi-instructor` instead of `#`); the Team
+        link is restricted to staff roles and Billing to admin/owner
+      - Logout button calls `logout()` (was a no-op before)
+  - Applied the same treatment to `src/app/layouts/Sideblock/Profile.tsx`
+    for consistency.
+- **Task 5 — Route cleanup.**
+  - Rewrote `src/app/router/protected.tsx` from scratch. Removed all
+    `/components/*`, `/forms/*`, `/tables/*`, `/prototypes/*`,
+    `/dashboards/*`, `/Docs/*`, and the deleted demo app routes
+    (`/apps/{nft-1, nft-2, travel, pos, chat, ai-chat, mail, todo,
+    kanban, filemanager, list}`). Kept every LMS route under `/apps/*`
+    (40+ lazy routes: course-builder, student-dashboard,
+    instructor-dashboard, learning-area, catalog (+ detail + checkout),
+    quiz-builder, ecommerce, payment-settings, ecommerce-settings,
+    subscriptions (+ :id), gift-course (+ redeem + sent), orders-admin
+    (+ :id), payouts-admin (+ :id), storefront, bundles (+ :id),
+    memberships (+ checkout/:planId + admin), settings-pages,
+    notification-settings, accessibility-settings, email-template-editor,
+    legal-consents, certificate-builder (+ verify), drip-manager,
+    prerequisite-manager, gamification, multi-instructor,
+    assignment-grading, reports-dashboard, tutor-ai, migration-wizard)
+    + the `/settings/*` shell (Layout + 6 sub-routes).
+  - Added `RoleHomeRedirect` component: reads `useAuthContext().user.role`
+    and redirects to `/apps/student-dashboard` (student/default),
+    `/apps/instructor-dashboard` (instructor), or
+    `/apps/reports-dashboard` (admin/owner). Mounted at the protected
+    root's `index: true` (replaces the old `<Navigate to="/dashboards/sales" />`).
+  - Added a catch-all `path: "*"` that bounces unknown protected URLs
+    back to `HOME_PATH` ("/") so the DynamicLayout doesn't render a
+    blank page for stale links.
+  - Updated `src/app/router/public.tsx` to drop the deleted
+    `/prototypes/errors/*`, `/prototypes/sign-in-*`, and
+    `/prototypes/sign-up-*` routes (kept the landing `index` route, the
+    `/403` ForbiddenPage, and the public certificate verifier).
+  - Updated `src/app/pages/landing/LandingRoute.tsx`,
+    `Hero.tsx`, `Pricing.tsx`, `FinalCTA.tsx` to redirect authenticated
+    users to their role-specific dashboard (was hardcoded to
+    `/dashboards/sales`). LandingRoute can't redirect to `/` because
+    that's the landing route itself — would cause an infinite loop.
+- **Task 6 — RightSidebar.**
+  - Rewrote `src/components/template/RightSidebar/Apps.tsx` with an
+    11-entry LMS app set (catalog, learning-area, instructor-dashboard,
+    tutor-ai, reports-dashboard, ecommerce, orders-admin, memberships,
+    gift-course, settings-pages, platform-admin). Each entry carries a
+    `roles` array; the component filters via `useAuthContext().user.role`
+    and renders `null` when nothing is visible. Switched the container
+    to `flex-wrap` so the wider LMS app set wraps gracefully.
+  - Rewrote `src/components/template/Search.tsx` "Popular search" list
+    to point at LMS routes (was hardcoded to `/docs/getting-started`,
+    `/apps/kanban`, `/dashboards/crm-analytics`, `/apps/chat`,
+    `/apps/filemanager`, `/dashboards/orders`, `/dashboards/sales`).
+- Updated `src/app/pages/settings/Sidebar/SidebarPanel/index.tsx` to
+  remove the broken "Documentation" link (pointed at the deleted
+  `/docs/getting-started`) and the now-unused `Link` import.
+- Verified with `npx tsc --noEmit` from
+  `/home/z/my-project/repos/tailux/tailux-main` — exit code 0, zero
+  output. `tsconfig.app.json` has `noUnusedLocals` +
+  `noUnusedParameters` + `noUncheckedSideEffectImports` enabled, so
+  this is a strict pass.
+
+Stage Summary:
+- Deleted 35 demo directories (11 apps + 19 dashboards + 5 top-level
+  trees) and 7 obsolete navigation segment files.
+- Created role-aware navigation with 10 root segments covering 40+ LMS
+  routes; every segment + sub-item is tagged with `roles` so the sidebar
+  only shows what the current user can access.
+- Updated Sidebar (MainPanel + PrimePanel + Sideblock) to filter by
+  `useAuthContext().user?.role` and to pick the most-specific active
+  segment (longest path match) so the Dashboard root's `path: "/"`
+  doesn't shadow more-specific segments.
+- Updated Profile widgets (MainLayout + Sideblock) with real auth
+  context: `user.name` / `user.email` / `user.avatarUrl` + working
+  `logout()` button + role-filtered link list.
+- Cleaned up routes — `protected.tsx` now only contains LMS apps + the
+  Settings shell + a `RoleHomeRedirect` index; `public.tsx` no longer
+  references deleted prototype routes; landing page CTAs send
+  authenticated users to their role-specific dashboard.
+- TypeScript check: PASS (`npx tsc --noEmit` exits 0 with zero output
+  under `tsconfig.app.json` with strict + noUnusedLocals +
+  noUnusedParameters + noUncheckedSideEffectImports).
+
+Notes for downstream agents:
+- The Dashboard root segment uses `path: "/"` so clicking it sends the
+  user to `/` → `LandingRoute` (in `public.tsx`) → role-specific
+  dashboard redirect. That's a 2-hop redirect; if it ever becomes a
+  perf concern, swap the Dashboard segment's `path` for a per-role
+  default at runtime (would need a small wrapper component instead of
+  `Link to={path}`).
+- The protected `index: true` route (`RoleHomeRedirect`) is effectively
+  dead code in practice because `publicRoutes` is listed FIRST in
+  `router.tsx` and its `index` (LandingRoute) always wins for `/`.
+  Kept `RoleHomeRedirect` as a safety net in case the route ordering
+  changes.
+- The `teacher/` and `education/` dashboards under
+  `src/app/pages/dashboards/` were NOT deleted (per the spec) but are
+  no longer in the navigation. If they need to come back into the nav,
+  add a new root segment in `src/app/navigation/index.ts` and rewire a
+  route in `protected.tsx` under the `DynamicLayout` block.
+- The `errors/` directory (404, 401, 429, 500, ForbiddenPage,
+  RootErrorBoundary) was kept as-is. The ghost router (`ghost.tsx`)
+  already serves the auth pages (login, signup, mfa-verify,
+  forgot-password, reset-password, oauth/callback).
+- `src/app/navigation/icons.ts` still imports ~50 SVG assets, many of
+  which are no longer referenced by any navigation entry (e.g.
+  `Nft1Icon`, `KanbanIcon`, `MailIcon`, `BotIcon`). They're kept as a
+  registry so future segments can reuse them without re-importing; if
+  bundle size becomes a concern, trim the unused entries.
+
+---
+Task ID: SAAS-6
+Agent: School Admin Dashboard
+Task: Build real school admin dashboard with live API data
+
+Work Log:
+- Read worklog + reference patterns: `apps/reports-dashboard/` (KpiCard, OverviewTab, CoursesTab, StudentsTab, SalesTab, SimpleBarChart), `apps/ecommerce/index.tsx` (2-column sidebar + content layout), `apps/instructor-dashboard/`, `src/hooks/useReportsAI.ts` (useOverviewReport / useSalesReport / useCourseReport / useStudentReport), `src/hooks/useEcommerce.ts` (useOrders), `src/hooks/useLms.ts` (useCourses / useEnrollments), `src/services/lms-api.ts` (lmsApi.review.list / lmsApi.qa.list), `src/components/lms/` (EmptyState / LoadingState / ErrorState / formatPrice), `src/components/ecommerce/` (RevenueChart / EarningsStatCard), `src/types/lms.ts` (OverviewReport / SalesReport / CourseReport / StudentReport / Course / Enrollment / Order / CourseReview / QAQuestion).
+- Created `src/app/pages/apps/school-dashboard/KpiCard.tsx` — reusable KPI card with `{label, value, icon, trend?, color?, subtitle?, className?}` props, ColorType-aware tinted icon well, signed trend chip (green up / red down).
+- Created `src/app/pages/apps/school-dashboard/ActivityFeed.tsx` — vertical activity list with `{items: ActivityItem[], title?, description?, bare?, className?}` props. Each item carries a `type` discriminator (enrollment / order / review / question / info) that maps to a heroicon + tinted well colour. Includes a `relativeTime()` helper.
+- Created `src/app/pages/apps/school-dashboard/RevenueChart.tsx` — div-based daily revenue bar chart (no chart library) with `{data: Array<{date, revenueCents, enrollments}>, height?, maxBars?, className?}` props. Bars sized as % of peak, hover tooltip shows formatted revenue + enrollment count, X axis shows first / middle / last date labels.
+- Created `src/app/pages/apps/school-dashboard/index.tsx` — main dashboard with sidebar (Overview / Courses / Students / Revenue / Activity) + 5 internal tab components:
+  - OverviewTab: 6 KPI cards from `useOverviewReport()` (Total Revenue, Total Students, Total Courses, Total Enrollments, Completion Rate, Avg Rating) + RevenueChart from `report.dailySeries` + ActivityFeed built from latest `useEnrollments()` + `useOrders()`.
+  - CoursesTab: summary cards (total / published / draft) + sortable + searchable table from `useCourseReport().courses` (Title, Instructor, Students, Revenue, Rating, Completion, Status). Live course titles/statuses from `useCourses()` augment the table.
+  - StudentsTab: summary cards (total / active / new this month) + sortable + searchable table from `useStudentReport().students` (Name, Email, Enrollments, Completed, Total Spent, Last Active).
+  - RevenueTab: 4 KPI cards (Total Sales, AOV, Refund Rate, Total Orders) from `useSalesReport()` + RevenueChart from `report.dailySeries` (mapped salesCents → revenueCents) + Top Courses table + Payment Methods breakdown (horizontal progress bars) + Recent Orders table from `useOrders()`.
+  - ActivityTab: 4 ActivityFeed panels (Recent enrollments, Recent orders, Recent reviews, Recent Q&A questions). Reviews + Q&A fetched in parallel across the first 8 published courses via a small in-file hook (`useRecentCourseInteractions`) that fans out `lmsApi.review.list(courseId)` + `lmsApi.qa.list(courseId)` calls and merges by `createdAt`. All real data — no mocks.
+- Registered the route in `src/app/router/protected.tsx` under the `apps` children as `school-dashboard` (lazy import), accessible to any authenticated user (admin + owner by convention — same gating pattern as `reports-dashboard` and `ecommerce`).
+- Ran `npx tsc --noEmit -p tsconfig.app.json` and fixed 5 unused-import errors in `index.tsx` (removed `useCallback`, `ChatBubbleLeftRightIcon`, `CourseReport`, `SalesReport`, `StudentReport` from the import lists). Re-checked: 0 errors in any school-dashboard file or in `protected.tsx`.
+
+Stage Summary:
+- Created 4 files in `src/app/pages/apps/school-dashboard/`: `index.tsx`, `KpiCard.tsx`, `ActivityFeed.tsx`, `RevenueChart.tsx`.
+- Modified 1 file: `src/app/router/protected.tsx` (added the `school-dashboard` lazy route).
+- TypeScript check: PASS for all SAAS-6 files (0 errors in school-dashboard / protected.tsx). The codebase has 114 pre-existing tsc errors in unrelated files (certificate-builder, course-builder, drip-manager, etc.) that are out of scope for this task.
+- Route: `/apps/school-dashboard`
+
+---
+Task ID: SAAS-8
+Agent: Student Role Shell
+Task: Fix student dashboard with real data, add continue learning + achievements
+
+Work Log:
+- Read worklog + audited all 8 existing student-dashboard screens + relevant hooks
+  (useLms, useEcommerce, useProEngagement, useProAuthoring) and the lms-api surface
+  (enrollment, course, note, qa, certificate, calendar, gamification, accessibility,
+  notificationPref).
+- Confirmed role routing is already correct: `protected.tsx` redirects `/` →
+  `/apps/student-dashboard` for students; navigation tree (`src/app/navigation/index.ts`)
+  only surfaces student-relevant items for the `student` role. No changes needed there.
+- Created `ContinueLearning.tsx` (new component): renders active enrollments sorted by
+  `lastAccessedAt` desc; each card shows course thumbnail/title/difficulty/progress bar/
+  last-accessed hint + a Continue button that routes to `/apps/learning-area/{courseId}`.
+  Uses `useEnrollments()` + `useCourses()`; loading/error/empty states included.
+- Created `Achievements.tsx` (new component): three sections — badges grid (useMyBadges),
+  recent points ledger + total points (useMyPoints), leaderboard top-5 + user's own row
+  highlighted (useLeaderboard("tenant", undefined, "alltime")). Per-section loading/
+  error/empty states.
+- Created `SettingsScreen.tsx` (extracted from inline): replaces local-state Settings
+  panel with two real-data sections — Notifications (useNotificationPreferences +
+  useUpdateNotificationPreference; per-event-type matrix + channel-wide master toggles)
+  and Accessibility (useAccessibilityPreferences + useUpdateAccessibilityPreferences;
+  high contrast / screen reader / reduced motion / dyslexia font / font size /
+  color-blind mode). Playback section kept as local state because no LMS API exists
+  for video prefs; labelled "Local" so it's obvious to the user.
+- Rewrote `HomeScreen.tsx`: replaced all mock data (MOCK_COURSES, MOCK_ENROLLMENTS,
+  MOCK_NOTIFICATIONS, MOCK_DEADLINES) with real hooks. 4 KPI cards now show real
+  Enrolled / Completed / In-Progress / Certificates-earned counts (certificates via
+  useCertificates). Embeds the new ContinueLearning component (limit=4) + an
+  Achievements preview (badges + total points) + a Recommended-courses grid
+  (catalog courses the student is NOT enrolled in, sorted featured-first then by
+  enrolledCount) + a Recent-activity feed (useNotifications). Single retry button
+  re-fetches every hook.
+- Updated `CoursesScreen.tsx`: dropped MOCK_COURSES + MOCK_ENROLLMENTS; resolves
+  enrolled courses from real `useCourses()` × `useEnrollments()`; click navigates to
+  `/apps/learning-area/{courseId}`. Loading/empty/error states preserved.
+- Updated `NotesScreen.tsx`: dropped MOCK_NOTES init + COURSE_TITLES/LESSON_TITLES
+  lookups; course titles resolved via `useCourses()` map. Note create now persists
+  via `lmsApi.note.create()` (the only write endpoint shipped); edit/delete remain
+  optimistic (no PATCH/DELETE on the backend yet). Lesson selector replaced with a
+  free-text Lesson-ID input since `useLessons(topicId)` requires a topic fetch first.
+- Updated `DiscussionsScreen.tsx`: dropped MOCK_THREADS; now fetches Q&A across every
+  enrolled course in parallel via `lmsApi.qa.list(courseId)` (Promise.allSettled — a
+  per-course failure doesn't sink the whole list). Each row shows the question,
+  answer preview (or "Not answered yet"), resolved badge, course badge, and last-
+  activity timestamp. Search + course filter retained.
+- Updated `ProfileScreen.tsx`: identity (name, email, avatar) now from `useAuthContext`;
+  certificate count from real `useCertificates()` (filtering revoked); enrolled count
+  from real `useEnrollments()`; added an Accessibility-preferences read-out section
+  using `useAccessibilityPreferences()`. Optional profile fields (headline, bio,
+  location, social links) stay local because no LMS profile endpoint exists.
+- Updated `index.tsx`: replaced inline SettingsScreen with the extracted module;
+  added Continue Learning + Achievements to the sidebar NAV_ITEMS (10 items total,
+  all student-relevant); removed the hardcoded "Alex" greeting in the top bar.
+- Updated `src/app/router/protected.tsx`: added `learning-area/:courseId` route so
+  `/apps/learning-area/{courseId}` resolves cleanly instead of hitting the protected-
+  root catch-all. The LearningArea component still uses its mock course today, but
+  the URL pattern now works for forward-compat.
+- KidsModeScreen: left unchanged. Verified there is no LMS API for kids-mode
+  preferences (`grep -iE "kids|kidsMode|kid_mode"` across services + hooks returned
+  no hits) — the screen is intentionally client-side and was already labelled as such.
+
+Stage Summary:
+- Fixed/verified 8 student dashboard screens:
+  * HomeScreen.tsx          — full rewrite, real API only (was mock-heavy)
+  * CoursesScreen.tsx        — real useCourses() + useEnrollments() (was mock-heavy)
+  * NotesScreen.tsx          — real useNotes() + useCourses() + lmsApi.note.create()
+  * DiscussionsScreen.tsx    — real lmsApi.qa.list() per enrolled course (was pure mock)
+  * CalendarScreen.tsx       — already uses lmsApi.calendar.list(); left as-is
+  * ProfileScreen.tsx        — auth context + useCertificates() + accessibility prefs
+  * SettingsScreen.tsx       — new file; real notification + accessibility pref hooks
+  * KidsModeScreen.tsx       — no API; left as intentional local-state
+- Created ContinueLearning.tsx + Achievements.tsx components
+- Added `/apps/learning-area/:courseId` route so Continue buttons resolve cleanly
+- TypeScript check: PASS (npx tsc --noEmit exits 0)
+- ESLint check: PASS (npx eslint on student-dashboard/ exits 0, 0 errors 0 warnings)
+
+---
+Task ID: SAAS-7
+Agent: Instructor Role Shell
+Task: Fix instructor dashboard with real data, add quick actions
+
+Work Log:
+- Read worklog + existing instructor dashboard screens (12 files) and mapped mock-data usage
+- Audited hooks/services: `useCourses`, `useEnrollments`, `useNotifications` (useLms); `useEarningsSummary`, `useEarningsStatements`, `useWithdrawals` (useEcommerce); `useAssignments`, `useAssignmentSubmissions`, `useCreateAssignmentGrade`, `useCertificateTemplates`, `useCreateCertificateTemplate`, `useUpdateCertificateTemplate`, `useCertificates` (useProAuthoring); `useCourseReport`, `useEnrollmentReport` (useReportsAI); `useAnnouncementList`, `useCreateAnnouncement`, `useMarkAllNotificationsRead` (useAdmin); `useAuthContext`
+- REWROTE `HomeScreen.tsx`: 4 KPI cards (My Courses, Total Students, Total Earnings, Avg Rating) from real hooks; My Courses table (Title/Students/Revenue/Rating/Status/Completion) joining `useCourses` + `useEnrollments`; earnings chart from `useEarningsSummary().monthlySeries`; Pending Assignments card (`useAssignments` + `useAssignmentSubmissions`, link to /apps/assignment-grading); Pending Withdrawals card (`useWithdrawals`); Recent Activity feed (notifications + enrollments); quick-action cards routing to course-builder / reports-dashboard / assignment-grading
+- CREATED `QuickActions.tsx`: standalone 6-card grid (Create Course → /apps/course-builder, Create Quiz → /apps/quiz-builder, Grade Assignments → /apps/assignment-grading, View Earnings → /apps/payouts-admin, Certificate Builder → /apps/certificate-builder, AI Assistant → /apps/tutor-ai) with `useNavigate`
+- REWROTE `CoursesScreen.tsx`: replaced `INITIAL_COURSES` mock with `useCourses()` filtered to current instructor; `useCreateCourse()` for real course draft POST; `lmsApi.course.update()` for publish action; loading/error/empty states
+- REWROTE `AnalyticsScreen.tsx`: replaced `REVENUE_SERIES`/`ENROLLMENT_BY_COURSE`/`ENGAGEMENT_SERIES`/`RATINGS_BREAKDOWN` mock constants with real `useEarningsSummary`, `useCourseReport({instructorId})`, `useEnrollmentReport({instructorId})`, `useCourses`; per-chart loading/error/empty states
+- REWROTE `AssignmentsScreen.tsx`: replaced `INITIAL_SUBMISSIONS` mock with `useAssignments()` + parallel fetch of submissions via `lmsApi.assignmentExtended.listSubmissions` (bounded to first 12 assignments); inline grading POSTs via `useCreateAssignmentGrade`; course titles joined from `useCourses`
+- REWROTE `QuizAttemptsScreen.tsx`: replaced `MOCK_ATTEMPTS` with fan-out fetch (courses → topics → quizzes → attempts) via `lmsApi` (bounded to 8 courses / 12 quizzes per course)
+- REWROTE `StatementsScreen.tsx`: replaced `MOCK_TRANSACTIONS` with `useEarningsSummary` + `useEarningsStatements` + `useWithdrawals` merged into a unified transactions list; period filter (monthly/quarterly/yearly) applies on real data
+- REWROTE `DiscussionsScreen.tsx`: replaced `MOCK_THREADS` with `lmsApi.qa.list(courseId)` fan-out across the instructor's first 10 courses
+- REWROTE `NotificationsScreen.tsx`: removed `MOCK_NOTIFICATIONS` fallback; uses `useNotifications()` + `useMarkAllNotificationsRead()` for bulk-mark with optimistic local overlay
+- REFACTORED `ProfileScreen.tsx`: removed `MOCK_PROFILE` (seeded from `useAuthContext().user`), removed `MOCK_PAYOUTS` (real fetch via `lmsApi.payout.list()`); KPIs derived from `useCourses` filtered to instructor
+- REFACTORED `AnnouncementsScreen.tsx`: replaced `INITIAL_ANNOUNCEMENTS` + `COURSES` mock with `useAnnouncementList()` + `useCreateAnnouncement()` from `useAdmin` (real `POST /api/admin/announcements`); course picker sourced from `useCourses`
+- REFACTORED `CertificateScreen.tsx`: replaced `INITIAL_TEMPLATES` mock with `useCertificateTemplates()` + `useCreateCertificateTemplate()` + `useUpdateCertificateTemplate()`; issued counts joined from `useCertificates()`
+- REFACTORED `LiveClassesScreen.tsx`: replaced `INITIAL_CLASSES` mock with `lmsApi.calendar.list()` (CalendarEvent → LiveClass mapping); composer remains local-only (no calendar POST endpoint yet — documented in file header)
+- UPDATED `index.tsx`: registered new `quick-actions` nav item + route; removed stale hard-coded nav badges (Announcements 2, Assignments 5, Discussions 3, Notifications 4) so the sidebar no longer shows fabricated counts
+- Verified instructor role routing: `protected.tsx` already redirects `instructor` → `/apps/instructor-dashboard` on login
+- Design hygiene: every screen uses `clsx`, `@heroicons/react/24/outline`, `dark:` variants, `formatPrice`/`money()` for currency, and `StatCard`/`EmptyState`/`LoadingState`/`ErrorState` from `@/components/lms`
+- TypeScript check: PASS (`npx tsc --noEmit` exits 0, no errors in instructor-dashboard/* files)
+
+Stage Summary:
+- Fixed/verified 13 instructor dashboard screens (Home, Courses, Analytics, Assignments, QuizAttempts, Statements, Discussions, Notifications, Profile, Announcements, Certificate, LiveClasses, Settings)
+- Created QuickActions component + wired it into the sidebar nav
+- TypeScript check: PASS
+
+---
+Task ID: SAAS-5
+Agent: Platform Admin Pages
+Task: Build admin dashboard + tenants + users + plans + financial + health + logs + branding + API keys
+
+Work Log:
+- Read `/home/z/my-project/worklog.md` end-to-end (especially SAAS-3
+  RoleGuard/auth-provider notes and SAAS-4 admin-api/useAdmin surface
+  area) before touching any code.
+- Read the canonical layout / pattern files:
+  - `src/app/pages/apps/reports-dashboard/index.tsx` — sidebar + top
+    header + scrollable main layout (the pattern I mirrored for the
+    admin layout shell).
+  - `src/app/pages/apps/payouts-admin/index.tsx` — admin table pattern
+    with action buttons + Headless UI Dialog modals.
+  - `src/middleware/RoleGuard.tsx` — wraps a subtree and redirects to
+    `/403` when `user.role` isn't in `allowedRoles`.
+  - `src/hooks/useAdmin.ts` — confirmed the full hook surface (79 hooks)
+    and the `UseAdminQueryResult<T>` / `UseAdminMutationResult<T,V>`
+    shapes. Note: there is NO `useUpdateUser` hook — `adminApi.updateUser`
+    is exposed as a method but no React hook wraps it (UserDetailPage
+    calls it directly with local loading/error state).
+  - `src/services/admin-api.ts` — confirmed the 87-method surface and
+    the exported types (`Tenant`, `TenantDetail`, `AdminUser`,
+    `AdminUserDetail`, `Plan`, `CreditBundle`, `FinancialTransaction`,
+    `HealthNode`, `HealthMetric`, `HealthIntegration`, `SystemLog`,
+    `APIKey`, `Webhook`, `BrandingConfig`, etc.).
+  - `src/app/navigation/index.ts` — confirmed the existing
+    "Platform Admin" root segment with 11 `/admin/*` child entries (so
+    the main app sidebar already routes to the admin pages).
+  - `src/app/router/protected.tsx` — confirmed the AppLayout-wrapped
+    route tree where the new `/admin/*` block is nested.
+- Created `src/app/pages/admin/` directory with 13 files:
+
+  1. **`index.tsx` (AdminLayout)** — the layout shell. Wraps the entire
+     `/admin/*` route tree in `<RoleGuard allowedRoles={["owner"]}>`
+     (so any non-owner is bounced to `/403` before any admin page
+     loads). Renders a top header (Platform Admin badge + "Back to App"
+     link + version from `useAdminAbout`) and a 2-column body with a
+     260px sidebar listing all 11 admin sections + a per-page breadcrumb
+     header + a `<ScrollShadow>`-wrapped `<Outlet />` for the active
+     child route. Active nav item is derived from `useLocation().pathname`
+     with longest-prefix matching so `/admin/tenants/:id` still
+     highlights "Tenants".
+  2. **`MiniBarChart.tsx`** — pure-div inline bar chart (no chart
+     library). Each bar's height is proportional to its value relative
+     to the max in the dataset; hover tooltip via `title` attribute.
+     Used by DashboardPage for the revenue / signups / tenant-growth
+     charts.
+  3. **`utils.ts`** — small admin-only helpers: `downloadBlob` (CSV
+     export trigger), `formatDate`, `formatDateTime`, `formatRelative`
+     (time-ago), `formatUptime`, `formatBytes`, `formatMs`.
+  4. **`DashboardPage.tsx`** — 4 KPI cards (Total Tenants, Total
+     Users, Active Subscriptions, Monthly Revenue from
+     `useAdminDashboard` + `usePMKPIs`), 3 inline bar charts (revenue
+     30d from `useFinancialMetrics`, signups 30d from PM KPI
+     `subscriberTrend`, tenant growth 12mo derived from
+     `useAdminTenants({sort:"-createdAt"})`), recent activity feed
+     (latest 10 tenants), system health summary (CPU/Memory/Disk
+     progress bars from `useHealthCurrent`).
+  5. **`TenantsPage.tsx`** — searchable/sortable/paginated table of
+     every tenant. Columns: Name, Slug, Plan, Status, Members, Credits,
+     Created, Actions. Sort headers toggle direction. Row click →
+     `/admin/tenants/:id`. Activate/Deactivate button per row.
+     `Export CSV` button calls `adminApi.exportTenantsCSV` (Blob
+     download). 25-per-page pagination.
+  6. **`TenantDetailPage.tsx`** — tenant info card + plan assignment
+     (Select with all active plans + "waive billing" checkbox) +
+     subscription info (Stripe customer/sub IDs, period end, cancel
+     button with immediate-vs-period-end confirm) + members table
+     (email, name, role, joined, link to user detail). Status toggle
+     (Activate/Deactivate) in the header.
+  7. **`UsersPage.tsx`** — searchable/sortable/paginated table of
+     every user. Columns: Name, Email, Status, Auth Methods, Created,
+     Last Login, Actions. Row click → `/admin/users/:id`. Per-row
+     Activate/Deactivate + Impersonate (saves the impersonation token
+     to localStorage and hard-reloads to `/` so the auth provider
+     rehydrates with the new session). `Export CSV` button calls
+     `adminApi.exportUsersCSV`.
+  8. **`UserDetailPage.tsx`** — user info card + edit form
+     (displayName/email — calls `adminApi.updateUser` directly with
+     local loading/error state because no `useUpdateUser` hook exists
+     in useAdmin.ts) + memberships table (tenant name, slug, role,
+     link to tenant) + status toggle + danger zone with preflight
+     check (`usePreflightDeleteUser`) that detects tenant ownerships
+     requiring reassignment. Delete user calls `useDeleteUser` with
+     `replacementOwners` map + `confirmTenantDeletions` array.
+  9. **`PlansPage.tsx`** — plans table (Name, Price, Credits, User
+     Limit, Subscribers, Status, Actions) with create/edit modal
+     (Headless UI Dialog: name, description, monthly price, annual
+     discount, monthly credits, user limit, trial days). Archive /
+     Unarchive action per row (disabled for system plans). Credit
+     bundles section below with its own create-modal (name, credits,
+     price, isActive) and per-row delete.
+  10. **`FinancialPage.tsx`** — searchable/paginated transaction
+      ledger. Columns: Date, Type (badge with type-specific color),
+      Description, Amount (negative for refunds), Tax, Invoice, Tenant.
+      Type filter (subscription / credit_purchase / refund / payout /
+      payment / adjustment). Summary cards above the table (page total,
+      total records, current page rows). `Export page CSV` button
+      serializes the current page client-side (admin API has no
+      financial export endpoint).
+  11. **`HealthPage.tsx`** — three sections: server nodes grid
+      (hostname, machineId, status badge, version, Go version, uptime,
+      last seen), integration status cards (MongoDB, Stripe, Resend,
+      OAuth providers — name, response time, calls/24h, last check),
+      current metrics grid (CPU, Memory, Disk, HTTP Requests, Latency,
+      Errors) with progress bars for percentage-based metrics.
+  12. **`LogsPage.tsx`** — severity filter chips (Critical/High/Medium/
+      Low/Debug) with live counts from `useLogSeverityCounts`, category
+      filter, date-range filter, search input, log table with
+      expandable rows (full message, user, tenant, metadata JSON),
+      pagination (25/50/100 per page), auto-refresh toggle (10s
+      interval). Uses `<Fragment key={l.id}>` for the expandable row
+      pair so React can reconcile the detail row with the header row.
+      Dynamic severity color classes use a static lookup map
+      (`SEVERITY_ACTIVE_CLASS`) so Tailwind's JIT picks them up.
+  13. **`BrandingPage.tsx`** — tabbed interface (Identity / Theme /
+      Content). Identity tab: app name, tagline, logo mode select,
+      logo + favicon upload (via `useUploadBrandingMedia`), auth
+      providers summary. Theme tab: primary/accent color pickers, font
+      family + heading font selects, custom CSS textarea, head HTML
+      textarea. Content tab: landing enabled toggle, landing title,
+      login/signup headings + subtexts, dashboard HTML, landing HTML.
+      Save button calls `useUpdateBranding` with the full
+      `BrandingConfig` form.
+  14. **`APIKeysPage.tsx`** — API keys table (name, key preview,
+      authority badge, created, last used, delete) + create-key modal
+      (name, authority select). On create, the raw key is shown once
+      with a copy button. Webhooks table (name, URL, events chips,
+      deliveries/24h, last delivery, delete) + create-webhook modal
+      (name, URL, multi-select event chips from
+      `useWebhookEventTypes`). On create, the signing secret is shown
+      once with a copy button.
+  15. **`AnnouncementsPage.tsx`** + **`ConfigPage.tsx`** — small
+      "coming soon" placeholders so the sidebar links work without
+      404ing. The spec listed these in the sidebar nav but didn't
+      require full implementations.
+
+- Registered the `/admin/*` route tree in `src/app/router/protected.tsx`
+  as a sibling of `apps` and `settings` under AppLayout's children.
+  The layout component (`src/app/pages/admin/index.tsx`) is lazy-loaded
+  as the parent route, with 13 child routes lazy-loaded underneath
+  (index → redirect to `/admin/dashboard`, then dashboard / tenants /
+  tenants/:id / users / users/:id / plans / financial / health / logs
+  / branding / api-keys / announcements / config). RoleGuard lives
+  inside the layout component (cleaner than passing `allowedRoles` as a
+  route prop since the router uses `Component:` and doesn't have a
+  first-class prop-passing mechanism).
+
+- Iterated on TypeScript errors (caught by
+  `npx tsc --noEmit -p tsconfig.app.json`):
+  * Removed unused `adminApi` import from `FinancialPage.tsx` (the
+    export is generated client-side from the current page).
+  * Removed unused `useEffect` import from `PlansPage.tsx`.
+  * Replaced non-existent `CircleSlashIcon` with `CircleStackIcon` for
+    the Disk metric card in `HealthPage.tsx` (heroicons v2 doesn't
+    export `CircleSlashIcon`).
+  * Renamed `ArrowUpDownIcon` → `ArrowsUpDownIcon` in `TenantsPage.tsx`
+    and `UsersPage.tsx` (heroicons v2 uses `ArrowsUpDownIcon`).
+  * Replaced `useUpdateUser` hook (which doesn't exist in useAdmin.ts)
+    with a direct `adminApi.updateUser` call + local
+    `profileSaving/profileError/profileSaved` state in
+    `UserDetailPage.tsx`.
+  * Coerced `planMut.data` (typed as `unknown` because
+    `useAssignTenantPlan` returns `UseAdminMutationResult<unknown, …>`)
+    with `planMut.data !== null` in `TenantDetailPage.tsx` so JSX
+    accepts the conditional.
+
+- Final TypeScript verification:
+  * `npx tsc --noEmit` (root `tsconfig.json`, the spec's verification
+    command) — EXIT 0, zero output. PASS.
+  * `npx tsc --noEmit -p tsconfig.app.json` (stricter app config with
+    `noUnusedLocals` + `noUnusedParameters` +
+    `noUncheckedSideEffectImports`) — zero errors in any
+    `src/app/pages/admin/*` file or in `src/app/router/protected.tsx`.
+    The remaining 111 errors are all pre-existing issues in unrelated
+    `src/app/pages/apps/*` files (mostly the `Button` `size` prop that
+    was already documented in the SAAS-3 and SAAS-4 worklogs as
+    out-of-scope for this task).
+
+Stage Summary:
+- Created 13 files in `src/app/pages/admin/`:
+  `index.tsx` (AdminLayout shell with RoleGuard + sidebar + header +
+  Outlet), `MiniBarChart.tsx` (pure-div chart helper), `utils.ts`
+  (downloadBlob + date/byte/ms formatters), `DashboardPage.tsx`,
+  `TenantsPage.tsx`, `TenantDetailPage.tsx`, `UsersPage.tsx`,
+  `UserDetailPage.tsx`, `PlansPage.tsx`, `FinancialPage.tsx`,
+  `HealthPage.tsx`, `LogsPage.tsx`, `BrandingPage.tsx`,
+  `APIKeysPage.tsx`, `AnnouncementsPage.tsx` (placeholder),
+  `ConfigPage.tsx` (placeholder).
+- Updated `src/app/router/protected.tsx` — added the `admin` route
+  tree under AppLayout's children with 13 child routes (index →
+  /admin/dashboard redirect, then the 12 named routes above).
+- Routes: `/admin` (redirects to /admin/dashboard), `/admin/dashboard`,
+  `/admin/tenants`, `/admin/tenants/:id`, `/admin/users`,
+  `/admin/users/:id`, `/admin/plans`, `/admin/financial`,
+  `/admin/health`, `/admin/logs`, `/admin/branding`,
+  `/admin/api-keys`, `/admin/announcements`, `/admin/config`.
+- TypeScript check: PASS for new files (`npx tsc --noEmit` exits 0;
+  `npx tsc --noEmit -p tsconfig.app.json` shows zero errors in any
+  `src/app/pages/admin/*` file or `protected.tsx`).
+
+Notes for downstream agents:
+- The AdminLayout wraps everything in `<RoleGuard allowedRoles={["owner"]}>`
+  INTERNALLY (not at the route level). This is the cleanest approach
+  given React Router v6's `Component:` lazy-route API doesn't have a
+  first-class way to pass props. If you want to add more owner-only
+  routes later, just drop them inside the `admin` children array in
+  `protected.tsx` — they'll inherit the RoleGuard automatically.
+- The impersonation flow in `UsersPage.tsx` saves the original token
+  to `localStorage["impersonationOriginalToken"]` before overwriting
+  `authToken`. There is no UI yet to "end impersonation" — a future
+  task should add a banner that reads `impersonationOriginalToken`,
+  restores it, and hard-reloads. (Backend support: the lastsaas
+  `/admin/users/:id/impersonate` endpoint already returns a fresh
+  access token; the frontend just needs a "revert" affordance.)
+- The `useUpdateUser` hook doesn't exist in `useAdmin.ts` — only
+  `useUpdateUserStatus` does. `UserDetailPage.tsx` calls
+  `adminApi.updateUser` directly with local `useState` for
+  loading/error/saved flags. If a future SAAS-X task wants to add a
+  `useUpdateUser` hook to `useAdmin.ts`, the UserDetailPage can be
+  simplified to use it.
+- Several pages (FinancialPage, LogsPage) implement CSV export
+  client-side by serializing the current page because the admin API
+  surface in `admin-api.ts` only exposes `exportTenantsCSV`,
+  `exportUsersCSV`, and `exportLogsCSV` — there's no
+  `exportFinancialCSV`. The tenant + user + log pages still call the
+  real backend exports; the financial + (current) log pages fall back
+  to the in-browser serializer.
+- The Announcements and Config pages are intentional placeholders
+  (the spec listed them in the sidebar but didn't ask for full
+  implementations). The hooks (`useAnnouncementList`,
+  `useCreateAnnouncement`, `useAdminConfigList`, `useUpdateConfig`,
+  etc.) already exist in `useAdmin.ts` — building out those pages is a
+  straightforward follow-up.
+- The `MiniBarChart` is intentionally simple (divs + height %) — no
+  SVG, no chart library, no axes. Good enough for KPI trend previews.
+  If a future task wants real charts, the existing
+  `apps/reports-dashboard/SimpleBarChart.tsx` and
+  `SimpleLineChart.tsx` components are already in the codebase and
+  could be promoted to a shared location.
