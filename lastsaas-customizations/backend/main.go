@@ -418,6 +418,33 @@ func main() {
         // LMS ROUTES — /api/lms/* (NOT guarded, accessible without system init)
         // ============================================================
         lmsHandler := handlers.NewLMSHandler(database, emitter)
+
+        // Phase 3 eCommerce handlers (all reuse database + emitter; the
+        // checkout / payment / subscription handlers additionally take an
+        // optional Stripe service via SetStripeService).
+        ecommerceCartHandler := handlers.NewEcommerceCartHandler(database, emitter)
+        ecommerceCheckoutHandler := handlers.NewEcommerceCheckoutHandler(database, emitter)
+        ecommercePaymentHandler := handlers.NewEcommercePaymentHandler(database, emitter)
+        ecommerceSubscriptionHandler := handlers.NewEcommerceSubscriptionHandler(database, emitter)
+        ecommerceMembershipHandler := handlers.NewEcommerceMembershipHandler(database, emitter)
+        ecommerceBundleHandler := handlers.NewEcommerceBundleHandler(database, emitter)
+        ecommerceGiftHandler := handlers.NewEcommerceGiftHandler(database, emitter)
+        ecommerceInvoiceHandler := handlers.NewEcommerceInvoiceHandler(database, emitter)
+        ecommerceRefundHandler := handlers.NewEcommerceRefundHandler(database, emitter)
+        ecommerceTaxHandler := handlers.NewEcommerceTaxHandler(database, emitter)
+        ecommerceRevenueHandler := handlers.NewEcommerceRevenueHandler(database, emitter)
+        ecommerceWithdrawalHandler := handlers.NewEcommerceWithdrawalHandler(database, emitter)
+        ecommerceGatewayHandler := handlers.NewEcommerceGatewayHandler(database, emitter)
+        if stripeSvc != nil {
+                ecommerceCheckoutHandler.SetStripeService(stripeSvc)
+                ecommercePaymentHandler.SetStripeService(stripeSvc)
+                ecommerceSubscriptionHandler.SetStripeService(stripeSvc)
+        }
+
+        // Ecommerce webhook — public, signature-verified (mount on the public
+        // api router BEFORE the guarded subrouter, mirroring /billing/webhook).
+        api.HandleFunc("/lms/ecommerce-webhook", ecommercePaymentHandler.Webhook).Methods("POST")
+
         lmsAPI := api.PathPrefix("/lms").Subrouter()
 
         // Courses
@@ -469,16 +496,19 @@ func main() {
         lmsAPI.HandleFunc("/categories", lmsHandler.CreateCategory).Methods("POST")
         lmsAPI.HandleFunc("/tags", lmsHandler.ListTags).Methods("GET")
         lmsAPI.HandleFunc("/tags", lmsHandler.CreateTag).Methods("POST")
-        // Cart
-        lmsAPI.HandleFunc("/cart", lmsHandler.GetCart).Methods("GET")
-        lmsAPI.HandleFunc("/cart", lmsHandler.ClearCart).Methods("DELETE")
-        lmsAPI.HandleFunc("/cart/items", lmsHandler.AddToCart).Methods("POST")
-        lmsAPI.HandleFunc("/cart/items/{itemId}", lmsHandler.RemoveFromCart).Methods("DELETE")
-        // Orders & Coupons
+        // Cart (Phase 3 — backed by lms_carts via EcommerceCartHandler)
+        lmsAPI.HandleFunc("/cart", ecommerceCartHandler.GetCart).Methods("GET")
+        lmsAPI.HandleFunc("/cart", ecommerceCartHandler.ClearCart).Methods("DELETE")
+        lmsAPI.HandleFunc("/cart/items", ecommerceCartHandler.AddToCart).Methods("POST")
+        lmsAPI.HandleFunc("/cart/items/{itemId}", ecommerceCartHandler.UpdateCartItem).Methods("PATCH")
+        lmsAPI.HandleFunc("/cart/items/{itemId}", ecommerceCartHandler.RemoveFromCart).Methods("DELETE")
+        lmsAPI.HandleFunc("/cart/apply-coupon", ecommerceCartHandler.ApplyCoupon).Methods("POST")
+        lmsAPI.HandleFunc("/cart/coupon", ecommerceCartHandler.RemoveCoupon).Methods("DELETE")
+        // Orders & Coupons (orders still served by LMSHandler; refunds now go
+        // through EcommerceRefundHandler below)
         lmsAPI.HandleFunc("/orders", lmsHandler.ListOrders).Methods("GET")
         lmsAPI.HandleFunc("/orders", lmsHandler.CreateOrder).Methods("POST")
         lmsAPI.HandleFunc("/orders/{id}", lmsHandler.GetOrder).Methods("GET")
-        lmsAPI.HandleFunc("/orders/{id}/refund", lmsHandler.RefundOrder).Methods("POST")
         lmsAPI.HandleFunc("/coupons", lmsHandler.ListCoupons).Methods("GET")
         lmsAPI.HandleFunc("/coupons", lmsHandler.CreateCoupon).Methods("POST")
         // /coupons/validate must be registered BEFORE /coupons/{id} so the
@@ -488,19 +518,28 @@ func main() {
         // Certificates
         lmsAPI.HandleFunc("/certificates", lmsHandler.ListCertificates).Methods("GET")
         lmsAPI.HandleFunc("/certificates/templates", lmsHandler.CreateCertificateTemplate).Methods("POST")
-        // Bundles
-        lmsAPI.HandleFunc("/bundles", lmsHandler.ListBundles).Methods("GET")
-        lmsAPI.HandleFunc("/bundles", lmsHandler.CreateBundle).Methods("POST")
-        // Memberships
-        lmsAPI.HandleFunc("/memberships", lmsHandler.ListMemberships).Methods("GET")
-        lmsAPI.HandleFunc("/memberships", lmsHandler.CreateMembership).Methods("POST")
-        // Gifts
-        lmsAPI.HandleFunc("/gifts", lmsHandler.CreateGift).Methods("POST")
-        lmsAPI.HandleFunc("/gifts/{code}/redeem", lmsHandler.RedeemGift).Methods("POST")
+        // Bundles (Phase 3 — replaces LMSHandler stubs)
+        lmsAPI.HandleFunc("/bundles", ecommerceBundleHandler.ListBundles).Methods("GET")
+        lmsAPI.HandleFunc("/bundles", ecommerceBundleHandler.CreateBundle).Methods("POST")
+        lmsAPI.HandleFunc("/bundles/{id}", ecommerceBundleHandler.GetBundle).Methods("GET")
+        lmsAPI.HandleFunc("/bundles/{id}", ecommerceBundleHandler.UpdateBundle).Methods("PATCH")
+        lmsAPI.HandleFunc("/bundles/{id}", ecommerceBundleHandler.DeleteBundle).Methods("DELETE")
+        // Memberships (Phase 3 — replaces LMSHandler stubs)
+        lmsAPI.HandleFunc("/memberships", ecommerceMembershipHandler.ListMemberships).Methods("GET")
+        lmsAPI.HandleFunc("/memberships", ecommerceMembershipHandler.CreateMembership).Methods("POST")
+        lmsAPI.HandleFunc("/memberships/{id}", ecommerceMembershipHandler.GetMembership).Methods("GET")
+        lmsAPI.HandleFunc("/memberships/{id}", ecommerceMembershipHandler.UpdateMembership).Methods("PATCH")
+        lmsAPI.HandleFunc("/memberships/{id}", ecommerceMembershipHandler.DeleteMembership).Methods("DELETE")
+        lmsAPI.HandleFunc("/memberships/{id}/purchase", ecommerceMembershipHandler.PurchaseMembership).Methods("POST")
+        // Gifts (Phase 3 — replaces LMSHandler stubs)
+        lmsAPI.HandleFunc("/gifts", ecommerceGiftHandler.CreateGift).Methods("POST")
+        lmsAPI.HandleFunc("/gifts", ecommerceGiftHandler.ListGifts).Methods("GET")
+        lmsAPI.HandleFunc("/gifts/{id}", ecommerceGiftHandler.GetGift).Methods("GET")
+        lmsAPI.HandleFunc("/gifts/{code}/redeem", ecommerceGiftHandler.RedeemGift).Methods("POST")
         // Instructor (payouts + earnings)
         lmsAPI.HandleFunc("/instructor/payouts", lmsHandler.ListInstructorPayouts).Methods("GET")
         lmsAPI.HandleFunc("/instructor/payouts", lmsHandler.CreateInstructorPayout).Methods("POST")
-        lmsAPI.HandleFunc("/instructor/earnings", lmsHandler.GetEarnings).Methods("GET")
+        lmsAPI.HandleFunc("/instructor/earnings", ecommerceRevenueHandler.InstructorEarnings).Methods("GET")
         // Notifications
         lmsAPI.HandleFunc("/notifications", lmsHandler.ListNotifications).Methods("GET")
         lmsAPI.HandleFunc("/notifications/{id}/read", lmsHandler.MarkNotificationRead).Methods("POST")
@@ -512,6 +551,61 @@ func main() {
         // Addons
         lmsAPI.HandleFunc("/addons", lmsHandler.ListAddons).Methods("GET")
         lmsAPI.HandleFunc("/addons/{id}/toggle", lmsHandler.ToggleAddon).Methods("POST")
+
+        // ============================================================
+        // Phase 3 eCommerce routes (cart/checkout/payment/subscription/
+        // invoice/refund/tax/revenue/withdrawal/gateway)
+        // ============================================================
+        // Checkout
+        lmsAPI.HandleFunc("/checkout", ecommerceCheckoutHandler.Checkout).Methods("POST")
+        lmsAPI.HandleFunc("/checkout/success", ecommerceCheckoutHandler.CheckoutSuccess).Methods("GET")
+        lmsAPI.HandleFunc("/checkout/cancel", ecommerceCheckoutHandler.CheckoutCancel).Methods("GET")
+        // Payments
+        lmsAPI.HandleFunc("/payments", ecommercePaymentHandler.ListPayments).Methods("GET")
+        lmsAPI.HandleFunc("/payments/{id}", ecommercePaymentHandler.GetPayment).Methods("GET")
+        // Subscription plans (admin-managed catalog)
+        lmsAPI.HandleFunc("/subscription-plans", ecommerceSubscriptionHandler.ListSubscriptionPlans).Methods("GET")
+        lmsAPI.HandleFunc("/subscription-plans", ecommerceSubscriptionHandler.CreateSubscriptionPlan).Methods("POST")
+        lmsAPI.HandleFunc("/subscription-plans/{id}", ecommerceSubscriptionHandler.GetSubscriptionPlan).Methods("GET")
+        lmsAPI.HandleFunc("/subscription-plans/{id}", ecommerceSubscriptionHandler.UpdateSubscriptionPlan).Methods("PATCH")
+        lmsAPI.HandleFunc("/subscription-plans/{id}", ecommerceSubscriptionHandler.DeleteSubscriptionPlan).Methods("DELETE")
+        // User subscriptions
+        lmsAPI.HandleFunc("/subscriptions", ecommerceSubscriptionHandler.ListSubscriptions).Methods("GET")
+        lmsAPI.HandleFunc("/subscriptions/{id}", ecommerceSubscriptionHandler.GetSubscription).Methods("GET")
+        lmsAPI.HandleFunc("/subscriptions/{id}/cancel", ecommerceSubscriptionHandler.CancelSubscription).Methods("POST")
+        lmsAPI.HandleFunc("/subscriptions/{id}/resume", ecommerceSubscriptionHandler.ResumeSubscription).Methods("POST")
+        lmsAPI.HandleFunc("/subscriptions/{id}/retry", ecommerceSubscriptionHandler.RetrySubscription).Methods("POST")
+        // Invoices
+        lmsAPI.HandleFunc("/invoices", ecommerceInvoiceHandler.ListInvoices).Methods("GET")
+        lmsAPI.HandleFunc("/invoices", ecommerceInvoiceHandler.CreateInvoice).Methods("POST")
+        lmsAPI.HandleFunc("/invoices/{id}", ecommerceInvoiceHandler.GetInvoice).Methods("GET")
+        lmsAPI.HandleFunc("/invoices/{id}/pdf", ecommerceInvoiceHandler.DownloadInvoicePdf).Methods("GET")
+        lmsAPI.HandleFunc("/invoices/{id}/void", ecommerceInvoiceHandler.VoidInvoice).Methods("PATCH")
+        // Refunds (POST /orders/{orderId}/refund replaces the LMSHandler.RefundOrder stub)
+        lmsAPI.HandleFunc("/refunds", ecommerceRefundHandler.ListRefunds).Methods("GET")
+        lmsAPI.HandleFunc("/refunds/{id}", ecommerceRefundHandler.GetRefund).Methods("GET")
+        lmsAPI.HandleFunc("/orders/{orderId}/refund", ecommerceRefundHandler.CreateRefund).Methods("POST")
+        // Tax rates
+        lmsAPI.HandleFunc("/taxes", ecommerceTaxHandler.ListTaxRates).Methods("GET")
+        lmsAPI.HandleFunc("/taxes", ecommerceTaxHandler.CreateTaxRate).Methods("POST")
+        lmsAPI.HandleFunc("/taxes/{id}", ecommerceTaxHandler.GetTaxRate).Methods("GET")
+        lmsAPI.HandleFunc("/taxes/{id}", ecommerceTaxHandler.UpdateTaxRate).Methods("PATCH")
+        lmsAPI.HandleFunc("/taxes/{id}", ecommerceTaxHandler.DeleteTaxRate).Methods("DELETE")
+        // Revenue (admin ledger + reports, instructor statements)
+        lmsAPI.HandleFunc("/admin/revenue-ledger", ecommerceRevenueHandler.ListRevenueLedger).Methods("GET")
+        lmsAPI.HandleFunc("/admin/reports/revenue", ecommerceRevenueHandler.RevenueReport).Methods("GET")
+        lmsAPI.HandleFunc("/instructor/statements", ecommerceRevenueHandler.InstructorStatements).Methods("GET")
+        // Withdrawals (instructor request + admin review)
+        lmsAPI.HandleFunc("/instructor/withdrawals", ecommerceWithdrawalHandler.RequestWithdrawal).Methods("POST")
+        lmsAPI.HandleFunc("/instructor/withdrawals", ecommerceWithdrawalHandler.ListMyWithdrawals).Methods("GET")
+        lmsAPI.HandleFunc("/admin/withdrawals", ecommerceWithdrawalHandler.ListAllWithdrawals).Methods("GET")
+        lmsAPI.HandleFunc("/admin/withdrawals/{id}/approve", ecommerceWithdrawalHandler.ApproveWithdrawal).Methods("POST")
+        lmsAPI.HandleFunc("/admin/withdrawals/{id}/reject", ecommerceWithdrawalHandler.RejectWithdrawal).Methods("POST")
+        // Payment gateway configs (admin)
+        lmsAPI.HandleFunc("/gateways", ecommerceGatewayHandler.ListGateways).Methods("GET")
+        lmsAPI.HandleFunc("/gateways", ecommerceGatewayHandler.CreateGateway).Methods("POST")
+        lmsAPI.HandleFunc("/gateways/{id}", ecommerceGatewayHandler.UpdateGateway).Methods("PATCH")
+        lmsAPI.HandleFunc("/gateways/{id}", ecommerceGatewayHandler.DeleteGateway).Methods("DELETE")
 
         // --- Guarded routes (require system to be initialized) ---
         guarded := api.PathPrefix("").Subrouter()

@@ -1097,6 +1097,142 @@ const protectedRoutes: RouteObject = {
               }),
             },
             {
+              path: "payment-settings",
+              lazy: async () => ({
+                Component: (
+                  await import("@/app/pages/apps/payment-settings")
+                ).default,
+              }),
+            },
+            {
+              path: "ecommerce-settings",
+              lazy: async () => ({
+                Component: (
+                  await import("@/app/pages/apps/ecommerce-settings")
+                ).default,
+              }),
+            },
+            {
+              path: "subscriptions",
+              lazy: async () => ({
+                Component: (
+                  await import("@/app/pages/apps/subscriptions")
+                ).default,
+              }),
+            },
+            {
+              path: "subscriptions/:id",
+              lazy: async () => ({
+                Component: (
+                  await import(
+                    "@/app/pages/apps/subscriptions/SubscriptionDetailPage"
+                  )
+                ).default,
+              }),
+            },
+            {
+              path: "gift-course",
+              lazy: async () => ({
+                Component: (await import("@/app/pages/apps/gift-course"))
+                  .default,
+              }),
+            },
+            {
+              path: "gift-course/redeem",
+              lazy: async () => ({
+                Component: (
+                  await import("@/app/pages/apps/gift-course/GiftRedeemPage")
+                ).default,
+              }),
+            },
+            {
+              path: "gift-course/sent",
+              lazy: async () => ({
+                Component: (
+                  await import("@/app/pages/apps/gift-course/GiftSentPage")
+                ).default,
+              }),
+            },
+            {
+              path: "orders-admin",
+              lazy: async () => ({
+                Component: (await import("@/app/pages/apps/orders-admin"))
+                  .default,
+              }),
+            },
+            {
+              path: "orders-admin/:id",
+              lazy: async () => ({
+                Component: (
+                  await import("@/app/pages/apps/orders-admin/OrderDetailPage")
+                ).default,
+              }),
+            },
+            {
+              path: "payouts-admin",
+              lazy: async () => ({
+                Component: (await import("@/app/pages/apps/payouts-admin"))
+                  .default,
+              }),
+            },
+            {
+              path: "payouts-admin/:id",
+              lazy: async () => ({
+                Component: (
+                  await import(
+                    "@/app/pages/apps/payouts-admin/WithdrawalDetailPage"
+                  )
+                ).default,
+              }),
+            },
+            {
+              path: "storefront",
+              lazy: async () => ({
+                Component: (await import("@/app/pages/apps/storefront")).default,
+              }),
+            },
+            {
+              path: "bundles",
+              lazy: async () => ({
+                Component: (await import("@/app/pages/apps/bundles")).default,
+              }),
+            },
+            {
+              path: "bundles/:id",
+              lazy: async () => ({
+                Component: (
+                  await import("@/app/pages/apps/bundles/BundleDetailPage")
+                ).default,
+              }),
+            },
+            {
+              path: "memberships",
+              lazy: async () => ({
+                Component: (await import("@/app/pages/apps/memberships"))
+                  .default,
+              }),
+            },
+            {
+              path: "memberships/checkout/:planId",
+              lazy: async () => ({
+                Component: (
+                  await import(
+                    "@/app/pages/apps/memberships/MembershipCheckoutPage"
+                  )
+                ).default,
+              }),
+            },
+            {
+              path: "memberships/admin",
+              lazy: async () => ({
+                Component: (
+                  await import(
+                    "@/app/pages/apps/memberships/MembershipAdminPage"
+                  )
+                ).default,
+              }),
+            },
+            {
               path: "settings-pages",
               lazy: async () => ({
                 Component: (await import("@/app/pages/apps/settings-pages"))

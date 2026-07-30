@@ -13,30 +13,37 @@
 import axios, { AxiosError, AxiosInstance } from "axios";
 
 import type {
+  AddToCartInput,
   AddonConfig,
   Assignment,
   AssignmentCreateInput,
   AssignmentSubmission,
   AssignmentSubmissionInput,
   CalendarEvent,
+  Cart,
   Category,
   CategoryCreateInput,
   Certificate,
   CertificateTemplate,
   CertificateTemplateCreateInput,
+  CheckoutInput,
+  CheckoutResult,
   Coupon,
   CouponCreateInput,
   Course,
   CourseBundle,
   CourseBundleCreateInput,
   CourseCreateInput,
+  CourseGift,
   CourseGiftCreateInput,
   CourseReview,
   CourseReviewCreateInput,
   CourseUpdateInput,
+  EarningsSummary,
   Enrollment,
   InstructorPayout,
   InstructorPayoutCreateInput,
+  Invoice,
   Lesson,
   LessonCreateInput,
   LessonProgress,
@@ -49,8 +56,11 @@ import type {
   MigrationCreateInput,
   Notification,
   Order,
+  OrderActivity,
   OrderCreateInput,
   PaginatedResponse,
+  PaymentGatewayConfig,
+  PaymentTransaction,
   QAQuestion,
   QAQuestionCreateInput,
   Question,
@@ -61,13 +71,26 @@ import type {
   QuizAttemptSubmitInput,
   QuizCreateInput,
   QuizUpdateInput,
+  Refund,
+  RefundInput,
+  RevenueLedgerEntry,
+  RevenueReport,
   StudentNote,
   StudentNoteCreateInput,
+  Subscription,
+  SubscriptionPlan,
+  SubscriptionPlanCreateInput,
   Tag,
   TagCreateInput,
+  TaxRate,
+  TaxRateCreateInput,
   Topic,
   TopicCreateInput,
   TopicUpdateInput,
+  UpdateCartItemInput,
+  WithdrawalRequest,
+  WithdrawalRequestInput,
+  Wishlist,
 } from "@/types/lms";
 
 // ---------------------------------------------------------------------------
@@ -493,9 +516,29 @@ export const orderApi = {
   list(params?: ListParams): Promise<Order[]> {
     return unwrap(lmsAxios.get("/orders", { params: toQuery(params) }));
   },
+  /** `GET /api/lms/orders/{id}` — fetch a single order with its items. */
+  get(id: string): Promise<Order> {
+    return unwrap(lmsAxios.get(`/orders/${encodeURIComponent(id)}`));
+  },
   /** `POST /api/lms/orders`. */
   create(input: OrderCreateInput): Promise<Order> {
     return unwrap(lmsAxios.post("/orders", input));
+  },
+  /** `POST /api/lms/orders/{id}/refund` — issue a full or partial refund. */
+  refund(id: string, input: RefundInput): Promise<Order> {
+    return unwrap(
+      lmsAxios.post(`/orders/${encodeURIComponent(id)}/refund`, input),
+    );
+  },
+  /** `POST /api/lms/orders/{id}/cancel` — cancel an unpaid/pending order. */
+  cancel(id: string): Promise<Order> {
+    return unwrap(lmsAxios.post(`/orders/${encodeURIComponent(id)}/cancel`));
+  },
+  /** `GET /api/lms/orders/{id}/activity` — audit trail for an order. */
+  getActivity(id: string): Promise<OrderActivity[]> {
+    return unwrap(
+      lmsAxios.get(`/orders/${encodeURIComponent(id)}/activity`),
+    );
   },
 };
 
@@ -507,6 +550,10 @@ export const couponApi = {
   /** `POST /api/lms/coupons`. */
   create(input: CouponCreateInput): Promise<Coupon> {
     return unwrap(lmsAxios.post("/coupons", input));
+  },
+  /** `DELETE /api/lms/coupons/{id}` — deactivate / remove a coupon. */
+  delete(id: string): Promise<{ success: boolean }> {
+    return unwrap(lmsAxios.delete(`/coupons/${encodeURIComponent(id)}`));
   },
 };
 
@@ -557,8 +604,20 @@ export const membershipApi = {
 
 export const giftApi = {
   /** `POST /api/lms/gifts`. */
-  create(input: CourseGiftCreateInput): Promise<unknown> {
+  create(input: CourseGiftCreateInput): Promise<CourseGift> {
     return unwrap(lmsAxios.post("/gifts", input));
+  },
+  /** `GET /api/lms/gifts/:id`. */
+  get(id: string): Promise<CourseGift> {
+    return unwrap(lmsAxios.get(`/gifts/${encodeURIComponent(id)}`));
+  },
+  /** `GET /api/lms/gifts` — list gifts (sent by the current user). */
+  list(params?: ListParams): Promise<CourseGift[]> {
+    return unwrap(lmsAxios.get("/gifts", { params: toQuery(params) }));
+  },
+  /** `POST /api/lms/gifts/redeem` — redeem a gift code (recipient flow). */
+  redeem(code: string): Promise<CourseGift> {
+    return unwrap(lmsAxios.post("/gifts/redeem", { code }));
   },
 };
 
@@ -624,6 +683,378 @@ export const addonApi = {
 };
 
 // ---------------------------------------------------------------------------
+// PHASE 3: eCommerce — Cart
+// ---------------------------------------------------------------------------
+
+export const cartApi = {
+  /** `GET /api/lms/cart` — fetch the current user's active cart. */
+  get(): Promise<Cart> {
+    return unwrap(lmsAxios.get("/cart"));
+  },
+  /** `POST /api/lms/cart/items` — add an item to the cart. */
+  addItem(input: AddToCartInput): Promise<Cart> {
+    return unwrap(lmsAxios.post("/cart/items", input));
+  },
+  /** `PATCH /api/lms/cart/items/{itemId}` — update an item's quantity. */
+  updateItem(itemId: string, input: UpdateCartItemInput): Promise<Cart> {
+    return unwrap(
+      lmsAxios.patch(`/cart/items/${encodeURIComponent(itemId)}`, input),
+    );
+  },
+  /** `DELETE /api/lms/cart/items/{itemId}` — remove an item from the cart. */
+  removeItem(itemId: string): Promise<Cart> {
+    return unwrap(
+      lmsAxios.delete(`/cart/items/${encodeURIComponent(itemId)}`),
+    );
+  },
+  /** `DELETE /api/lms/cart` — empty the cart entirely. */
+  clear(): Promise<{ success: boolean }> {
+    return unwrap(lmsAxios.delete("/cart"));
+  },
+  /** `POST /api/lms/cart/apply-coupon` — apply a coupon code to the cart. */
+  applyCoupon(code: string): Promise<Cart> {
+    return unwrap(lmsAxios.post("/cart/apply-coupon", { code }));
+  },
+  /** `DELETE /api/lms/cart/coupon` — remove the applied coupon. */
+  removeCoupon(): Promise<Cart> {
+    return unwrap(lmsAxios.delete("/cart/coupon"));
+  },
+};
+
+// ---------------------------------------------------------------------------
+// PHASE 3: eCommerce — Checkout
+// ---------------------------------------------------------------------------
+
+export const checkoutApi = {
+  /** `POST /api/lms/checkout` — start a checkout session. */
+  create(input: CheckoutInput): Promise<CheckoutResult> {
+    return unwrap(lmsAxios.post("/checkout", input));
+  },
+  /**
+   * `GET /api/lms/checkout/success?session_id=...` — confirm a successful
+   * redirect from the payment gateway. Returns the final order id + status.
+   */
+  success(
+    sessionId: string,
+  ): Promise<{ orderId: string; status: string }> {
+    return unwrap(
+      lmsAxios.get("/checkout/success", {
+        params: { session_id: sessionId },
+      }),
+    );
+  },
+  /** `GET /api/lms/checkout/cancel` — acknowledge a canceled checkout. */
+  cancel(): Promise<{ status: string }> {
+    return unwrap(lmsAxios.get("/checkout/cancel"));
+  },
+};
+
+// ---------------------------------------------------------------------------
+// PHASE 3: eCommerce — Invoices
+// ---------------------------------------------------------------------------
+
+export const invoiceApi = {
+  /** `GET /api/lms/invoices`. */
+  list(
+    params?: ListParams,
+  ): Promise<PaginatedResponse<Invoice>> {
+    return unwrap(
+      lmsAxios.get("/invoices", { params: toQuery(params) }),
+    );
+  },
+  /** `GET /api/lms/invoices/{id}`. */
+  get(id: string): Promise<Invoice> {
+    return unwrap(lmsAxios.get(`/invoices/${encodeURIComponent(id)}`));
+  },
+  /** `GET /api/lms/invoices/{id}/pdf` — get a pre-signed PDF URL. */
+  downloadPdf(id: string): Promise<{ pdfUrl: string }> {
+    return unwrap(
+      lmsAxios.get(`/invoices/${encodeURIComponent(id)}/pdf`),
+    );
+  },
+};
+
+// ---------------------------------------------------------------------------
+// PHASE 3: eCommerce — Tax Rates
+// ---------------------------------------------------------------------------
+
+export const taxRateApi = {
+  /** `GET /api/lms/taxes`. */
+  list(params?: ListParams): Promise<PaginatedResponse<TaxRate>> {
+    return unwrap(lmsAxios.get("/taxes", { params: toQuery(params) }));
+  },
+  /** `POST /api/lms/taxes`. */
+  create(input: TaxRateCreateInput): Promise<TaxRate> {
+    return unwrap(lmsAxios.post("/taxes", input));
+  },
+  /** `PATCH /api/lms/taxes/{id}`. */
+  update(
+    id: string,
+    input: Partial<TaxRateCreateInput>,
+  ): Promise<TaxRate> {
+    return unwrap(lmsAxios.patch(`/taxes/${encodeURIComponent(id)}`, input));
+  },
+  /** `DELETE /api/lms/taxes/{id}`. */
+  delete(id: string): Promise<{ success: boolean }> {
+    return unwrap(lmsAxios.delete(`/taxes/${encodeURIComponent(id)}`));
+  },
+};
+
+// ---------------------------------------------------------------------------
+// PHASE 3: eCommerce — Subscription Plans (catalog)
+// ---------------------------------------------------------------------------
+
+export const subscriptionPlanApi = {
+  /** `GET /api/lms/subscription-plans`. */
+  list(
+    params?: ListParams,
+  ): Promise<PaginatedResponse<SubscriptionPlan>> {
+    return unwrap(
+      lmsAxios.get("/subscription-plans", { params: toQuery(params) }),
+    );
+  },
+  /** `GET /api/lms/subscription-plans/{id}`. */
+  get(id: string): Promise<SubscriptionPlan> {
+    return unwrap(
+      lmsAxios.get(`/subscription-plans/${encodeURIComponent(id)}`),
+    );
+  },
+  /** `POST /api/lms/subscription-plans`. */
+  create(input: SubscriptionPlanCreateInput): Promise<SubscriptionPlan> {
+    return unwrap(lmsAxios.post("/subscription-plans", input));
+  },
+  /** `PATCH /api/lms/subscription-plans/{id}`. */
+  update(
+    id: string,
+    input: Partial<SubscriptionPlanCreateInput>,
+  ): Promise<SubscriptionPlan> {
+    return unwrap(
+      lmsAxios.patch(`/subscription-plans/${encodeURIComponent(id)}`, input),
+    );
+  },
+  /** `DELETE /api/lms/subscription-plans/{id}`. */
+  delete(id: string): Promise<{ success: boolean }> {
+    return unwrap(
+      lmsAxios.delete(`/subscription-plans/${encodeURIComponent(id)}`),
+    );
+  },
+};
+
+// ---------------------------------------------------------------------------
+// PHASE 3: eCommerce — Subscriptions (user's active subscriptions)
+// ---------------------------------------------------------------------------
+
+export const subscriptionApi = {
+  /** `GET /api/lms/subscriptions`. */
+  list(params?: ListParams): Promise<PaginatedResponse<Subscription>> {
+    return unwrap(
+      lmsAxios.get("/subscriptions", { params: toQuery(params) }),
+    );
+  },
+  /** `GET /api/lms/subscriptions/{id}`. */
+  get(id: string): Promise<Subscription> {
+    return unwrap(
+      lmsAxios.get(`/subscriptions/${encodeURIComponent(id)}`),
+    );
+  },
+  /** `POST /api/lms/subscriptions/{id}/cancel`. */
+  cancel(id: string): Promise<Subscription> {
+    return unwrap(
+      lmsAxios.post(`/subscriptions/${encodeURIComponent(id)}/cancel`),
+    );
+  },
+  /** `POST /api/lms/subscriptions/{id}/resume`. */
+  resume(id: string): Promise<Subscription> {
+    return unwrap(
+      lmsAxios.post(`/subscriptions/${encodeURIComponent(id)}/resume`),
+    );
+  },
+  /** `POST /api/lms/subscriptions/{id}/retry` — retry a failed renewal. */
+  retry(id: string): Promise<Subscription> {
+    return unwrap(
+      lmsAxios.post(`/subscriptions/${encodeURIComponent(id)}/retry`),
+    );
+  },
+};
+
+// ---------------------------------------------------------------------------
+// PHASE 3: eCommerce — Payments
+// ---------------------------------------------------------------------------
+
+export const paymentApi = {
+  /** `GET /api/lms/payments`. */
+  list(
+    params?: ListParams,
+  ): Promise<PaginatedResponse<PaymentTransaction>> {
+    return unwrap(lmsAxios.get("/payments", { params: toQuery(params) }));
+  },
+  /** `GET /api/lms/payments/{id}`. */
+  get(id: string): Promise<PaymentTransaction> {
+    return unwrap(lmsAxios.get(`/payments/${encodeURIComponent(id)}`));
+  },
+};
+
+// ---------------------------------------------------------------------------
+// PHASE 3: eCommerce — Refunds
+// ---------------------------------------------------------------------------
+
+export const refundApi = {
+  /** `GET /api/lms/refunds`. */
+  list(params?: ListParams): Promise<PaginatedResponse<Refund>> {
+    return unwrap(lmsAxios.get("/refunds", { params: toQuery(params) }));
+  },
+  /** `GET /api/lms/refunds/{id}`. */
+  get(id: string): Promise<Refund> {
+    return unwrap(lmsAxios.get(`/refunds/${encodeURIComponent(id)}`));
+  },
+};
+
+// ---------------------------------------------------------------------------
+// PHASE 3: eCommerce — Wishlists
+// ---------------------------------------------------------------------------
+
+export const wishlistApi = {
+  /** `GET /api/lms/wishlist` — list the current user's wishlisted courses. */
+  list(): Promise<Wishlist[]> {
+    return unwrap(lmsAxios.get("/wishlist"));
+  },
+  /** `POST /api/lms/wishlist` — add a course to the wishlist. */
+  add(courseId: string): Promise<Wishlist> {
+    return unwrap(lmsAxios.post("/wishlist", { courseId }));
+  },
+  /** `DELETE /api/lms/wishlist/{id}` — remove a wishlist entry. */
+  remove(id: string): Promise<{ success: boolean }> {
+    return unwrap(lmsAxios.delete(`/wishlist/${encodeURIComponent(id)}`));
+  },
+};
+
+// ---------------------------------------------------------------------------
+// PHASE 3: eCommerce — Revenue (admin)
+// ---------------------------------------------------------------------------
+
+export const revenueApi = {
+  /** `GET /api/lms/admin/revenue-ledger`. */
+  ledger(
+    params?: ListParams,
+  ): Promise<PaginatedResponse<RevenueLedgerEntry>> {
+    return unwrap(
+      lmsAxios.get("/admin/revenue-ledger", { params: toQuery(params) }),
+    );
+  },
+  /**
+   * `GET /api/lms/admin/reports/revenue` — aggregated revenue report.
+   * `from` / `to` are optional ISO date strings used to bound the window.
+   */
+  report(params?: {
+    from?: string;
+    to?: string;
+  }): Promise<RevenueReport> {
+    return unwrap(
+      lmsAxios.get("/admin/reports/revenue", { params }),
+    );
+  },
+};
+
+// ---------------------------------------------------------------------------
+// PHASE 3: eCommerce — Withdrawals (instructor + admin)
+// ---------------------------------------------------------------------------
+
+export const withdrawalApi = {
+  /** `GET /api/lms/instructor/withdrawals` — list the instructor's own requests. */
+  listMine(
+    params?: ListParams,
+  ): Promise<PaginatedResponse<WithdrawalRequest>> {
+    return unwrap(
+      lmsAxios.get("/instructor/withdrawals", { params: toQuery(params) }),
+    );
+  },
+  /** `POST /api/lms/instructor/withdrawals` — request a new withdrawal. */
+  request(input: WithdrawalRequestInput): Promise<WithdrawalRequest> {
+    return unwrap(lmsAxios.post("/instructor/withdrawals", input));
+  },
+  /** `GET /api/lms/admin/withdrawals` — admin: list all withdrawal requests. */
+  listAll(
+    params?: ListParams,
+  ): Promise<PaginatedResponse<WithdrawalRequest>> {
+    return unwrap(
+      lmsAxios.get("/admin/withdrawals", { params: toQuery(params) }),
+    );
+  },
+  /** `POST /api/lms/admin/withdrawals/{id}/approve`. */
+  approve(id: string): Promise<WithdrawalRequest> {
+    return unwrap(
+      lmsAxios.post(`/admin/withdrawals/${encodeURIComponent(id)}/approve`),
+    );
+  },
+  /** `POST /api/lms/admin/withdrawals/{id}/reject`. */
+  reject(id: string, notes?: string): Promise<WithdrawalRequest> {
+    return unwrap(
+      lmsAxios.post(
+        `/admin/withdrawals/${encodeURIComponent(id)}/reject`,
+        { notes },
+      ),
+    );
+  },
+};
+
+// ---------------------------------------------------------------------------
+// PHASE 3: eCommerce — Earnings (instructor)
+// ---------------------------------------------------------------------------
+
+export const earningsApi = {
+  /**
+   * `GET /api/lms/instructor/earnings` — aggregated earnings summary with a
+   * 12-month series suitable for a dashboard chart.
+   */
+  summary(params?: {
+    from?: string;
+    to?: string;
+  }): Promise<EarningsSummary> {
+    return unwrap(
+      lmsAxios.get("/instructor/earnings", { params }),
+    );
+  },
+  /** `GET /api/lms/instructor/statements` — paginated ledger entries. */
+  statements(
+    params?: ListParams,
+  ): Promise<PaginatedResponse<RevenueLedgerEntry>> {
+    return unwrap(
+      lmsAxios.get("/instructor/statements", { params: toQuery(params) }),
+    );
+  },
+};
+
+// ---------------------------------------------------------------------------
+// PHASE 3: eCommerce — Payment Gateways (tenant admin config)
+// ---------------------------------------------------------------------------
+
+export const gatewayApi = {
+  /** `GET /api/lms/gateways` — list configured gateways for the tenant. */
+  list(): Promise<PaymentGatewayConfig[]> {
+    return unwrap(lmsAxios.get("/gateways"));
+  },
+  /** `POST /api/lms/gateways` — register a new gateway. */
+  create(
+    input: Partial<PaymentGatewayConfig>,
+  ): Promise<PaymentGatewayConfig> {
+    return unwrap(lmsAxios.post("/gateways", input));
+  },
+  /** `PATCH /api/lms/gateways/{id}` — update gateway config (e.g. toggle, mode). */
+  update(
+    id: string,
+    input: Partial<PaymentGatewayConfig>,
+  ): Promise<PaymentGatewayConfig> {
+    return unwrap(
+      lmsAxios.patch(`/gateways/${encodeURIComponent(id)}`, input),
+    );
+  },
+  /** `DELETE /api/lms/gateways/{id}`. */
+  delete(id: string): Promise<{ success: boolean }> {
+    return unwrap(lmsAxios.delete(`/gateways/${encodeURIComponent(id)}`));
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Barrel export
 // ---------------------------------------------------------------------------
 
@@ -651,6 +1082,20 @@ export const lmsApi = {
   calendar: calendarApi,
   migration: migrationApi,
   addon: addonApi,
+  // Phase 3 — eCommerce
+  cart: cartApi,
+  checkout: checkoutApi,
+  invoice: invoiceApi,
+  taxRate: taxRateApi,
+  subscriptionPlan: subscriptionPlanApi,
+  subscription: subscriptionApi,
+  payment: paymentApi,
+  refund: refundApi,
+  wishlist: wishlistApi,
+  revenue: revenueApi,
+  withdrawal: withdrawalApi,
+  earnings: earningsApi,
+  gateway: gatewayApi,
 };
 
 export default lmsApi;

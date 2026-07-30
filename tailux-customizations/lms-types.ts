@@ -836,6 +836,43 @@ export interface CourseGiftCreateInput {
   expiresAt?: ISODateString;
 }
 
+/**
+ * CourseGift — a purchased gift code that grants the recipient access to a
+ * specific course when redeemed.
+ */
+export type CourseGiftStatus =
+  | "pending"
+  | "sent"
+  | "redeemed"
+  | "expired"
+  | "canceled";
+
+export interface CourseGift {
+  id: ObjectID;
+  tenantId: ObjectID;
+  /** The user who purchased the gift. */
+  buyerId: ObjectID;
+  courseId: ObjectID;
+  courseTitle?: string;
+  recipientEmail: string;
+  recipientName?: string;
+  message?: string;
+  /** Price paid for the gift, in minor currency units. */
+  priceCents: number;
+  currency?: string;
+  /** Order that the gift was purchased through. */
+  orderId?: ObjectID;
+  /** Short, human-readable redemption code (e.g. "GIFT-AB12CD34"). */
+  code: string;
+  status: CourseGiftStatus;
+  redeemedAt?: ISODateString;
+  redeemedBy?: ObjectID;
+  expiresAt?: ISODateString;
+  sentAt?: ISODateString;
+  createdAt: ISODateString;
+  updatedAt: ISODateString;
+}
+
 // ---------------------------------------------------------------------------
 // Notification / CalendarEvent
 // ---------------------------------------------------------------------------
@@ -971,4 +1008,366 @@ export interface AddonConfig {
   settings?: Record<string, unknown>;
   createdAt: ISODateString;
   updatedAt: ISODateString;
+}
+
+// ---------------------------------------------------------------------------
+// PHASE 3: ECOMMERCE TYPES
+//
+// These extend the existing `Order`/`Coupon`/`Bundle`/`Membership` types with
+// the cart, checkout, subscription, invoice, refund, wishlist, withdrawal,
+// revenue, and gateway models required by the Phase 3 eCommerce pages.
+//
+// Conventions match the rest of this file: `ISODateString` for RFC 3339
+// timestamps and `ObjectID` for MongoDB hex-string IDs. Both are type aliases
+// for `string`, so callers that pass plain `string` literals will type-check.
+// ---------------------------------------------------------------------------
+
+// --- Cart ------------------------------------------------------------------
+
+export interface CartItem {
+  id: string;
+  itemType: "course" | "bundle" | "membership";
+  referenceId: string;
+  title: string;
+  unitPriceCents: number;
+  quantity: number;
+  subtotalCents: number;
+  imageUrl?: string;
+}
+
+export interface Cart {
+  id: string;
+  tenantId: string;
+  userId: string;
+  items: CartItem[];
+  couponId?: string;
+  couponCode?: string;
+  subtotalCents: number;
+  discountCents: number;
+  taxCents: number;
+  totalCents: number;
+  currency?: string;
+  expiresAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AddToCartInput {
+  itemType: "course" | "bundle" | "membership";
+  referenceId: string;
+  quantity?: number;
+}
+
+export interface UpdateCartItemInput {
+  quantity: number;
+}
+
+// --- Tax Rate --------------------------------------------------------------
+
+export interface TaxRate {
+  id: string;
+  tenantId: string;
+  name: string;
+  countryCode?: string;
+  regionCode?: string;
+  ratePercent: number;
+  isInclusive: boolean;
+  isActive: boolean;
+  priority?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TaxRateCreateInput {
+  name: string;
+  countryCode?: string;
+  regionCode?: string;
+  ratePercent: number;
+  isInclusive?: boolean;
+  isActive?: boolean;
+  priority?: number;
+}
+
+// --- Subscription Plan -----------------------------------------------------
+
+export type SubscriptionPlanType =
+  | "course"
+  | "bundle"
+  | "category"
+  | "full_site";
+
+export interface SubscriptionPlan {
+  id: string;
+  tenantId: string;
+  name: string;
+  slug: string;
+  description?: string;
+  planType: SubscriptionPlanType;
+  referenceId?: string;
+  priceCents: number;
+  currency?: string;
+  billingInterval: "monthly" | "quarterly" | "annual";
+  trialDays?: number;
+  isActive: boolean;
+  sortOrder?: number;
+  stripeProductId?: string;
+  stripePriceId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SubscriptionPlanCreateInput {
+  name: string;
+  slug: string;
+  description?: string;
+  planType: SubscriptionPlanType;
+  referenceId?: string;
+  priceCents: number;
+  currency?: string;
+  billingInterval: "monthly" | "quarterly" | "annual";
+  trialDays?: number;
+  isActive?: boolean;
+}
+
+// --- Subscription (user's active subscription) -----------------------------
+
+export type SubscriptionStatus =
+  | "trialing"
+  | "active"
+  | "past_due"
+  | "canceled"
+  | "expired";
+
+export interface Subscription {
+  id: string;
+  tenantId: string;
+  userId: string;
+  planId: string;
+  status: SubscriptionStatus;
+  stripeSubscriptionId?: string;
+  stripeCustomerId?: string;
+  currentPeriodStart: string;
+  currentPeriodEnd: string;
+  trialEnd?: string;
+  canceledAt?: string;
+  nextRetryAt?: string;
+  retryCount?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// --- Payment Transaction ---------------------------------------------------
+
+export type PaymentStatus = "pending" | "succeeded" | "failed" | "refunded";
+
+export interface PaymentTransaction {
+  id: string;
+  tenantId: string;
+  orderId: string;
+  userId: string;
+  gateway: string;
+  gatewayTransactionId?: string;
+  amountCents: number;
+  currency?: string;
+  status: PaymentStatus;
+  errorMessage?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// --- Invoice ---------------------------------------------------------------
+
+export interface InvoiceLineItem {
+  description: string;
+  amountCents: number;
+  quantity?: number;
+}
+
+export interface Invoice {
+  id: string;
+  tenantId: string;
+  orderId?: string;
+  userId: string;
+  invoiceNumber: string;
+  lineItems: InvoiceLineItem[];
+  subtotalCents: number;
+  discountCents?: number;
+  taxCents?: number;
+  totalCents: number;
+  currency?: string;
+  status: "draft" | "paid" | "void";
+  paidAt?: string;
+  pdfUrl?: string;
+  billingName?: string;
+  billingEmail?: string;
+  billingAddress?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// --- Refund ----------------------------------------------------------------
+
+export interface Refund {
+  id: string;
+  tenantId: string;
+  orderId: string;
+  paymentId?: string;
+  amountCents: number;
+  currency?: string;
+  reason?: string;
+  status: "pending" | "succeeded" | "failed";
+  gatewayRefundId?: string;
+  processedBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RefundInput {
+  /** Amount to refund in cents. Omit for a full refund. */
+  amountCents?: number;
+  reason?: string;
+}
+
+// --- Wishlist --------------------------------------------------------------
+
+export interface Wishlist {
+  id: string;
+  tenantId: string;
+  userId: string;
+  courseId: string;
+  createdAt: string;
+}
+
+// --- Withdrawal Request ----------------------------------------------------
+
+export type WithdrawalStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "paid"
+  | "failed";
+
+export interface WithdrawalRequest {
+  id: string;
+  tenantId: string;
+  instructorId: string;
+  amountCents: number;
+  currency?: string;
+  status: WithdrawalStatus;
+  paymentMethod?: string;
+  paymentRef?: string;
+  requestedAt: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WithdrawalRequestInput {
+  amountCents: number;
+  paymentMethod?: string;
+  notes?: string;
+}
+
+// --- Revenue Ledger --------------------------------------------------------
+
+export interface RevenueLedgerEntry {
+  id: string;
+  tenantId: string;
+  orderId: string;
+  instructorId?: string;
+  accountType: "instructor" | "platform";
+  amountCents: number;
+  currency?: string;
+  description?: string;
+  createdAt: string;
+}
+
+// --- Order Activity --------------------------------------------------------
+
+export interface OrderActivity {
+  id: string;
+  tenantId: string;
+  orderId: string;
+  action: string;
+  actorId?: string;
+  notes?: string;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+}
+
+// --- Checkout --------------------------------------------------------------
+
+export interface CheckoutInput {
+  /** Gateway key: stripe | paypal | razorpay | manual. */
+  paymentGateway: string;
+  couponCode?: string;
+  billingName?: string;
+  billingEmail?: string;
+  billingAddress?: string;
+}
+
+export interface CheckoutResult {
+  orderId: string;
+  /** Redirect URL for Stripe Checkout / PayPal. */
+  paymentUrl?: string;
+  /** Stripe Elements client secret (when using embedded UI). */
+  clientSecret?: string;
+  status: "pending" | "succeeded" | "requires_action";
+}
+
+// --- Earnings summary (instructor) -----------------------------------------
+
+export interface EarningsSummary {
+  totalEarningsCents: number;
+  totalWithdrawnCents: number;
+  pendingBalanceCents: number;
+  availableBalanceCents: number;
+  currency: string;
+  thisMonthCents: number;
+  lastMonthCents: number;
+  growthPercent: number;
+  monthlySeries: Array<{ month: string; earningsCents: number }>;
+}
+
+// --- Revenue report (admin) ------------------------------------------------
+
+export interface RevenueReport {
+  totalRevenueCents: number;
+  totalOrders: number;
+  totalRefundsCents: number;
+  netRevenueCents: number;
+  currency: string;
+  topCourses: Array<{
+    courseId: string;
+    title: string;
+    revenueCents: number;
+    enrollments: number;
+  }>;
+  topInstructors: Array<{
+    instructorId: string;
+    name: string;
+    revenueCents: number;
+  }>;
+  dailySeries: Array<{
+    date: string;
+    revenueCents: number;
+    orders: number;
+  }>;
+}
+
+// --- Payment Gateway Config ------------------------------------------------
+
+export interface PaymentGatewayConfig {
+  id: string;
+  tenantId: string;
+  gateway: string;
+  isEnabled: boolean;
+  isDefault: boolean;
+  mode?: "test" | "live";
+  credentials?: Record<string, unknown>;
+  settings?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
 }
