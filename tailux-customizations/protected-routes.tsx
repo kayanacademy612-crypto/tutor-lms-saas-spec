@@ -1239,6 +1239,39 @@ const protectedRoutes: RouteObject = {
                   .default,
               }),
             },
+            // Phase 5 — Pro Engagement (Notifications / Accessibility /
+            // Email Templates / Legal Consents)
+            {
+              path: "notification-settings",
+              lazy: async () => ({
+                Component: (
+                  await import("@/app/pages/apps/notification-settings")
+                ).default,
+              }),
+            },
+            {
+              path: "accessibility-settings",
+              lazy: async () => ({
+                Component: (
+                  await import("@/app/pages/apps/accessibility-settings")
+                ).default,
+              }),
+            },
+            {
+              path: "email-template-editor",
+              lazy: async () => ({
+                Component: (
+                  await import("@/app/pages/apps/email-template-editor")
+                ).default,
+              }),
+            },
+            {
+              path: "legal-consents",
+              lazy: async () => ({
+                Component: (await import("@/app/pages/apps/legal-consents"))
+                  .default,
+              }),
+            },
             // Phase 4 — Pro Authoring
             {
               path: "certificate-builder",
@@ -1271,6 +1304,13 @@ const protectedRoutes: RouteObject = {
                 Component: (
                   await import("@/app/pages/apps/prerequisite-manager")
                 ).default,
+              }),
+            },
+            {
+              path: "gamification",
+              lazy: async () => ({
+                Component: (await import("@/app/pages/apps/gamification"))
+                  .default,
               }),
             },
             {

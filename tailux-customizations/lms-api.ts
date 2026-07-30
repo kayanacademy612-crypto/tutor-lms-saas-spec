@@ -13,6 +13,8 @@
 import axios, { AxiosError, AxiosInstance } from "axios";
 
 import type {
+  AccessibilityPreferences,
+  AccessibilityPreferencesInput,
   AddToCartInput,
   AddonConfig,
   Assignment,
@@ -22,6 +24,8 @@ import type {
   AssignmentListParams,
   AssignmentSubmission,
   AssignmentSubmissionInput,
+  Badge,
+  BadgeCreateInput,
   CalendarEvent,
   Cart,
   Category,
@@ -38,6 +42,7 @@ import type {
   CertificateTemplateCreateInput,
   CheckoutInput,
   CheckoutResult,
+  ConsentInput,
   Coupon,
   CouponCreateInput,
   Course,
@@ -54,10 +59,17 @@ import type {
   DripRule,
   DripRuleCreateInput,
   EarningsSummary,
+  EmailPlaceholder,
+  EmailTemplate,
+  EmailTemplateUpdateInput,
   Enrollment,
   InstructorPayout,
   InstructorPayoutCreateInput,
   Invoice,
+  LegalConsent,
+  LeaderboardEntry,
+  LeaderboardPeriod,
+  LeaderboardScope,
   Lesson,
   LessonCreateInput,
   LessonProgress,
@@ -69,14 +81,19 @@ import type {
   Migration,
   MigrationCreateInput,
   Notification,
+  NotificationPreference,
+  NotificationPreferenceInput,
   Order,
   OrderActivity,
   OrderCreateInput,
   PaginatedResponse,
   PaymentGatewayConfig,
   PaymentTransaction,
+  PointTransaction,
   PrerequisiteChain,
   PrerequisiteChainCreateInput,
+  PushSubscribeInput,
+  PushSubscription,
   QAQuestion,
   QAQuestionCreateInput,
   Question,
@@ -91,6 +108,7 @@ import type {
   RefundInput,
   RevenueLedgerEntry,
   RevenueReport,
+  StudentBadge,
   StudentNote,
   StudentNoteCreateInput,
   Subscription,
@@ -1422,6 +1440,178 @@ export const assignmentApiExtended = {
   },
 };
 
+// ===========================================================================
+// Phase 5 — Pro Engagement resource groups
+// ===========================================================================
+// Gamification (badges, points, leaderboard), notification preferences +
+// push subscriptions, accessibility preferences, email templates, and legal
+// consents. Mirrors the Phase 5 backend handler routes.
+
+// --- Badges (admin) --------------------------------------------------------
+
+export const badgeApi = {
+  /** `GET /api/lms/badges` — list all badges for the tenant. */
+  list(params?: ListParams): Promise<Badge[]> {
+    return unwrap(lmsAxios.get("/badges", { params: toQuery(params) }));
+  },
+  /** `GET /api/lms/badges/{id}` — fetch a single badge. */
+  get(id: string): Promise<Badge> {
+    return unwrap(lmsAxios.get(`/badges/${encodeURIComponent(id)}`));
+  },
+  /** `POST /api/lms/badges` — create a new badge. */
+  create(input: BadgeCreateInput): Promise<Badge> {
+    return unwrap(lmsAxios.post("/badges", input));
+  },
+  /** `PATCH /api/lms/badges/{id}` — update a badge. */
+  update(id: string, input: Partial<BadgeCreateInput>): Promise<Badge> {
+    return unwrap(
+      lmsAxios.patch(`/badges/${encodeURIComponent(id)}`, input),
+    );
+  },
+  /** `DELETE /api/lms/badges/{id}`. */
+  delete(id: string): Promise<{ success: boolean }> {
+    return unwrap(lmsAxios.delete(`/badges/${encodeURIComponent(id)}`));
+  },
+};
+
+// --- Gamification (student-facing) -----------------------------------------
+
+export const gamificationApi = {
+  /** `GET /api/lms/student/badges` — list badges the current student has earned. */
+  myBadges(): Promise<StudentBadge[]> {
+    return unwrap(lmsAxios.get("/student/badges"));
+  },
+  /** `GET /api/lms/student/points` — paginated point-transaction ledger. */
+  myPoints(
+    params?: ListParams,
+  ): Promise<PointTransaction[] | PaginatedResponse<PointTransaction>> {
+    return unwrap(
+      lmsAxios.get("/student/points", { params: toQuery(params) }),
+    );
+  },
+  /** `GET /api/lms/leaderboard/{scope}?courseId=&period=` — leaderboard. */
+  leaderboard(
+    scope: LeaderboardScope,
+    courseId?: string,
+    period?: LeaderboardPeriod,
+  ): Promise<LeaderboardEntry[]> {
+    return unwrap(
+      lmsAxios.get(`/leaderboard/${encodeURIComponent(scope)}`, {
+        params: { courseId, period },
+      }),
+    );
+  },
+};
+
+// --- Notification Preferences ----------------------------------------------
+
+export const notificationPrefApi = {
+  /** `GET /api/lms/student/notification-preferences` — list current user prefs. */
+  list(): Promise<NotificationPreference[]> {
+    return unwrap(lmsAxios.get("/student/notification-preferences"));
+  },
+  /** `PUT /api/lms/student/notification-preferences` — upsert a preference. */
+  update(
+    input: NotificationPreferenceInput,
+  ): Promise<NotificationPreference> {
+    return unwrap(
+      lmsAxios.put("/student/notification-preferences", input),
+    );
+  },
+  /** `POST /api/lms/notifications/push/subscribe` — register a web-push sub. */
+  subscribePush(input: PushSubscribeInput): Promise<PushSubscription> {
+    return unwrap(lmsAxios.post("/notifications/push/subscribe", input));
+  },
+  /** `DELETE /api/lms/notifications/push/{id}` — remove a push subscription. */
+  unsubscribePush(id: string): Promise<{ success: boolean }> {
+    return unwrap(
+      lmsAxios.delete(`/notifications/push/${encodeURIComponent(id)}`),
+    );
+  },
+  /** `POST /api/lms/notifications/mark-all-read` — bulk-mark notifications. */
+  markAllRead(): Promise<{ success: boolean }> {
+    return unwrap(lmsAxios.post("/notifications/mark-all-read"));
+  },
+};
+
+// --- Accessibility ----------------------------------------------------------
+
+export const accessibilityApi = {
+  /** `GET /api/lms/student/preferences` — accessibility prefs for the user. */
+  get(): Promise<AccessibilityPreferences> {
+    return unwrap(lmsAxios.get("/student/preferences"));
+  },
+  /** `PUT /api/lms/student/preferences` — upsert accessibility prefs. */
+  update(
+    input: AccessibilityPreferencesInput,
+  ): Promise<AccessibilityPreferences> {
+    return unwrap(lmsAxios.put("/student/preferences", input));
+  },
+};
+
+// --- Email Templates --------------------------------------------------------
+
+export const emailTemplateApi = {
+  /** `GET /api/lms/email-templates?trigger=` — list templates (optionally by trigger). */
+  list(trigger?: string): Promise<EmailTemplate[]> {
+    return unwrap(
+      lmsAxios.get("/email-templates", { params: { trigger } }),
+    );
+  },
+  /** `GET /api/lms/email-templates/{id}` — fetch a single template. */
+  get(id: string): Promise<EmailTemplate> {
+    return unwrap(
+      lmsAxios.get(`/email-templates/${encodeURIComponent(id)}`),
+    );
+  },
+  /** `PATCH /api/lms/email-templates/{id}` — update a template. */
+  update(
+    id: string,
+    input: EmailTemplateUpdateInput,
+  ): Promise<EmailTemplate> {
+    return unwrap(
+      lmsAxios.patch(`/email-templates/${encodeURIComponent(id)}`, input),
+    );
+  },
+  /** `POST /api/lms/email-templates/{id}/reset` — reset to default content. */
+  reset(id: string): Promise<EmailTemplate> {
+    return unwrap(
+      lmsAxios.post(`/email-templates/${encodeURIComponent(id)}/reset`),
+    );
+  },
+  /** `GET /api/lms/email-placeholders?trigger=` — list available placeholders. */
+  placeholders(trigger?: string): Promise<EmailPlaceholder[]> {
+    return unwrap(
+      lmsAxios.get("/email-placeholders", { params: { trigger } }),
+    );
+  },
+  /** `POST /api/lms/email-templates/{id}/preview` — render a preview. */
+  preview(
+    id: string,
+    data: Record<string, string>,
+  ): Promise<{ html: string }> {
+    return unwrap(
+      lmsAxios.post(
+        `/email-templates/${encodeURIComponent(id)}/preview`,
+        data,
+      ),
+    );
+  },
+};
+
+// --- Legal Consents ---------------------------------------------------------
+
+export const consentApi = {
+  /** `GET /api/lms/student/consents` — list the current user's consents. */
+  list(): Promise<LegalConsent[]> {
+    return unwrap(lmsAxios.get("/student/consents"));
+  },
+  /** `POST /api/lms/student/consents` — grant/revoke a consent. */
+  grant(input: ConsentInput): Promise<LegalConsent> {
+    return unwrap(lmsAxios.post("/student/consents", input));
+  },
+};
+
 // ---------------------------------------------------------------------------
 // Barrel export
 // ---------------------------------------------------------------------------
@@ -1473,6 +1663,13 @@ export const lmsApi = {
   courseInstructor: courseInstructorApi,
   assignmentGrade: assignmentGradeApi,
   assignmentExtended: assignmentApiExtended,
+  // Phase 5 — Pro Engagement
+  badge: badgeApi,
+  gamification: gamificationApi,
+  notificationPref: notificationPrefApi,
+  accessibility: accessibilityApi,
+  emailTemplate: emailTemplateApi,
+  consent: consentApi,
 };
 
 export default lmsApi;

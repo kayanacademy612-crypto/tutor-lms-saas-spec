@@ -452,6 +452,66 @@ func (m *MongoDB) ensureIndexes() {
 				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "instructorId", Value: 1}, {Key: "gradedAt", Value: -1}}},
 			},
 		},
+
+		// --- Phase 5: Pro Engagement collections ---
+		{
+			"lms_badges",
+			[]mongo.IndexModel{
+				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "slug", Value: 1}}, Options: options.Index().SetUnique(true)},
+				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "isActive", Value: 1}}},
+			},
+		},
+		{
+			"lms_student_badges",
+			[]mongo.IndexModel{
+				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "studentId", Value: 1}, {Key: "badgeId", Value: 1}}, Options: options.Index().SetUnique(true)},
+			},
+		},
+		{
+			"lms_point_transactions",
+			[]mongo.IndexModel{
+				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "studentId", Value: 1}, {Key: "createdAt", Value: -1}}},
+			},
+		},
+		{
+			"lms_leaderboard_entries",
+			[]mongo.IndexModel{
+				// Sparse on courseId: tenant-scoped rows (scope=tenant) leave
+				// courseId unset, so the index must be sparse to allow multiple
+				// tenant-scope rows alongside course-scope rows.
+				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "scope", Value: 1}, {Key: "courseId", Value: 1}, {Key: "rank", Value: 1}}, Options: options.Index().SetSparse(true)},
+			},
+		},
+		{
+			"lms_notification_preferences",
+			[]mongo.IndexModel{
+				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "userId", Value: 1}, {Key: "eventType", Value: 1}}, Options: options.Index().SetUnique(true)},
+			},
+		},
+		{
+			"lms_push_subscriptions",
+			[]mongo.IndexModel{
+				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "userId", Value: 1}, {Key: "isActive", Value: 1}}},
+			},
+		},
+		{
+			"lms_accessibility_preferences",
+			[]mongo.IndexModel{
+				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "userId", Value: 1}}, Options: options.Index().SetUnique(true)},
+			},
+		},
+		{
+			"lms_email_templates",
+			[]mongo.IndexModel{
+				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "trigger", Value: 1}, {Key: "language", Value: 1}}, Options: options.Index().SetUnique(true).SetSparse(true)},
+			},
+		},
+		{
+			"lms_legal_consents",
+			[]mongo.IndexModel{
+				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "userId", Value: 1}, {Key: "consentType", Value: 1}}},
+			},
+		},
 	}
 
 	// Collections where unique index failure is a data integrity risk

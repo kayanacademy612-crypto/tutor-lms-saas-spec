@@ -1617,3 +1617,225 @@ export interface CertificatePreviewInput {
   instructorName?: string;
   score?: number;
 }
+
+// ===========================================================================
+// PHASE 5: PRO ENGAGEMENT TYPES
+// ===========================================================================
+// Gamification, notification preferences + push subscriptions, accessibility,
+// email templates, and legal consents. Mirrors the Phase 5 backend contract —
+// list endpoints return `T[]` (or `PaginatedResponse<T>`), single-resource
+// endpoints return the bare `T`, mutations return the updated `T` or
+// `{ success: boolean }` for deletes.
+
+// --- Gamification: Badges --------------------------------------------------
+
+export type BadgeCriteriaType =
+  | "course_completed"
+  | "lessons_completed"
+  | "quiz_passed"
+  | "points_earned"
+  | "streak_days";
+
+export interface BadgeCriteria {
+  type: BadgeCriteriaType;
+  threshold: number;
+  courseId?: string;
+}
+
+export interface Badge {
+  id: string;
+  tenantId: string;
+  name: string;
+  slug: string;
+  description?: string;
+  iconUrl?: string;
+  color?: string;
+  pointsReward?: number;
+  criteria: BadgeCriteria;
+  isActive: boolean;
+  sortOrder?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BadgeCreateInput {
+  name: string;
+  slug: string;
+  description?: string;
+  iconUrl?: string;
+  color?: string;
+  pointsReward?: number;
+  criteria: BadgeCriteria;
+  isActive?: boolean;
+}
+
+export interface StudentBadge {
+  id: string;
+  tenantId: string;
+  studentId: string;
+  badgeId: string;
+  /** Populated from the badge record on the server side. */
+  badge?: Badge;
+  awardedAt: string;
+  courseId?: string;
+  createdAt: string;
+}
+
+// --- Gamification: Points + Leaderboard -----------------------------------
+
+export interface PointTransaction {
+  id: string;
+  tenantId: string;
+  studentId: string;
+  points: number;
+  reason: string;
+  referenceId?: string;
+  createdAt: string;
+}
+
+export type LeaderboardScope = "tenant" | "course";
+export type LeaderboardPeriod = "weekly" | "monthly" | "alltime";
+
+export interface LeaderboardEntry {
+  id: string;
+  tenantId: string;
+  studentId: string;
+  studentName: string;
+  studentAvatar?: string;
+  totalPoints: number;
+  rank: number;
+  scope: LeaderboardScope;
+  courseId?: string;
+  period?: LeaderboardPeriod;
+  updatedAt: string;
+}
+
+// --- Notification Preferences ----------------------------------------------
+
+export interface NotificationPreference {
+  id: string;
+  tenantId: string;
+  userId: string;
+  eventType: string;
+  onsiteEnabled: boolean;
+  emailEnabled: boolean;
+  pushEnabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NotificationPreferenceInput {
+  eventType: string;
+  onsiteEnabled?: boolean;
+  emailEnabled?: boolean;
+  pushEnabled?: boolean;
+}
+
+// --- Push Subscription -----------------------------------------------------
+
+export interface PushSubscription {
+  id: string;
+  tenantId: string;
+  userId: string;
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface PushSubscribeInput {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+}
+
+// --- Accessibility ---------------------------------------------------------
+
+export type AccessibilityFontSize =
+  | "small"
+  | "medium"
+  | "large"
+  | "xlarge";
+
+export type ColorBlindMode =
+  | "none"
+  | "protanopia"
+  | "deuteranopia"
+  | "tritanopia";
+
+export interface AccessibilityPreferences {
+  id: string;
+  tenantId: string;
+  userId: string;
+  fontSize?: AccessibilityFontSize;
+  highContrast: boolean;
+  screenReader: boolean;
+  reducedMotion: boolean;
+  dyslexiaFont: boolean;
+  colorBlindMode?: ColorBlindMode;
+  updatedAt: string;
+  createdAt: string;
+}
+
+export interface AccessibilityPreferencesInput {
+  fontSize?: AccessibilityFontSize;
+  highContrast?: boolean;
+  screenReader?: boolean;
+  reducedMotion?: boolean;
+  dyslexiaFont?: boolean;
+  colorBlindMode?: ColorBlindMode;
+}
+
+// --- Email Templates -------------------------------------------------------
+
+export interface EmailTemplate {
+  id: string;
+  tenantId: string;
+  trigger: string;
+  subject: string;
+  bodyHtml: string;
+  bodyText?: string;
+  isDefault: boolean;
+  isActive: boolean;
+  language?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EmailTemplateUpdateInput {
+  subject?: string;
+  bodyHtml?: string;
+  bodyText?: string;
+  isActive?: boolean;
+}
+
+export interface EmailPlaceholder {
+  id: string;
+  tenantId: string;
+  trigger: string;
+  key: string;
+  description?: string;
+  example?: string;
+}
+
+// --- Legal Consents --------------------------------------------------------
+
+export type ConsentType = "terms" | "privacy" | "marketing" | "cookies";
+
+export interface LegalConsent {
+  id: string;
+  tenantId: string;
+  userId: string;
+  consentType: ConsentType;
+  version: string;
+  granted: boolean;
+  ipAddress?: string;
+  userAgent?: string;
+  grantedAt: string;
+  createdAt: string;
+}
+
+export interface ConsentInput {
+  consentType: ConsentType;
+  version: string;
+  granted: boolean;
+}
