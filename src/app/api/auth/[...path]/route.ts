@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-const BACKEND_ORIGIN = 'http://localhost:4290';
+const BACKEND_ORIGIN = 'http://127.0.0.1:4290';
 
 // Proxy /api/auth/* → http://localhost:4290/api/auth/*
 // This makes the Go backend's auth endpoints accessible from the preview URL.
