@@ -2955,3 +2955,478 @@ Stage Summary:
   2. Initial smoke test returned 200 on /cart but 404/501 on /memberships, /bundles, /subscription-plans, /taxes, /invoices, /gateways, /instructor/withdrawals, /admin/withdrawals — because the first `go run cmd/server/main.go &` had been started from a stale build cache before all my main.go edits landed. Rebuilt with `go build -o /tmp/lastsaas-server ./cmd/server/` and started the explicit binary instead. All routes then returned 200 with the expected JSON envelopes.
   3. The `/orders/{orderId}/refund` route uses a DIFFERENT path-var name (`{orderId}`) than the old `/orders/{id}/refund` (`{id}`). The new `EcommerceRefundHandler.CreateRefund` handler reads `mux.Vars(r)["orderId"]`, so the route registration MUST use `{orderId}` — verified in ecommerce_refund.go line 158 region. gorilla/mux does NOT match the old handler's `{id}` lookup against the new route's `{orderId}` registration, so the rename is required and was applied correctly.
   4. Server startup takes ~10s because the MongoDB Atlas connection pool needs to warm up before the HTTP listener binds to 127.0.0.1:4290. Initial `sleep 4` after `go run` was too short — the listener wasn't bound yet, so curl returned `000`. Increased the wait to 10s and verified via `ss -tlnp | grep 4290` that the listener was active before running the smoke tests.
+
+---
+Task ID: P4-A1
+Agent: Backend Pro Authoring Models Foundation
+Task: Create proauthoring.go models, collections, events
+
+Work Log:
+- Read `worklog.md` end-to-end (P3-A1 through P3-A10) to inventory existing Phase 3 patterns. Confirmed ecommerce foundation layout: models in `internal/models/ecommerce.go`, collection accessors in `internal/db/ecommerce_collections.go` (pattern: `func (m *MongoDB) Foo() *mongo.Collection { return m.Database.Collection("lms_<resource>") }`), event constants in `internal/events/ecommerce_events.go` (pattern: `EventType = "resource.action"` dotted lowercase), and indexes registered inside `MongoDB.ensureIndexes()` in `internal/db/mongodb.go` as a slice of `{collection, models}` structs.
+- Read `internal/models/lms.go` lines 260-300 (Assignment), 420-438 (AssignmentSubmission), 656-694 (Certificate + CertificateTemplate) to confirm the existing struct shapes that Phase 4 extends — Phase 4 reuses them as-is and adds NEW sibling structs (no field changes to existing types).
+- Read `internal/events/lms_events.go` to scan for pre-existing event constants that overlap with the Phase 4 plan. Found 4 collisions:
+  * `EventAssignmentSubmitted`  ("assignment.submitted")          — lms_events.go:52
+  * `EventAssignmentGraded`     ("assignment.graded")             — lms_events.go:53
+  * `EventCertificateRevoked`   ("certificate.revoked")           — lms_events.go:92
+  * `EventCertificateTemplateUpdated` ("certificate.template.updated") — lms_events.go:94
+  These 4 were NOT re-declared in the new file — they are referenced via comments so Phase 4 handlers (P4-A2/A3/A4) know to reuse the lms_events.go identifiers.
+- Read `internal/db/mongodb.go` (lines 1-424) to lock in the `ensureIndexes()` slice-of-anonymous-struct pattern and confirm tab indentation. Verified the `criticalCollections` allow-list below the slice so I knew which collections would hard-fail on index creation (none of mine are in that set — they all log a warn on failure instead).
+- Created `internal/models/proauthoring.go` (200 lines, 7 tenant-scoped structs + 1 typed string enum `DripRuleType` with 4 constants):
+  * `CertificateLayer`    — canvas editor layer (text/image/shape/signature/qrcode) bound to a CertificateTemplate; supports position/size/rotation/opacity, text styling, shape fill/border, and dynamic `dataKey` placeholder binding ({student_name}, {course_title}, {issue_date}, {score}, {certificate_number}, {instructor_name}).
+  * `CertificateBackdrop` — reusable background image (landscape/portrait) with an `isDefault` flag.
+  * `CertificateMedia`    — reusable media asset (logo/signature/watermark/stamp).
+  * `DripRule`            — controls per-lesson unlock timing; `RuleType` selects which optional fields are honored (UnlockAt for schedule, PrerequisiteLessonID/PrerequisiteTopicID for prerequisite, DaysAfterEnrollment for enrollment_days, no extra fields for sequence).
+  * `PrerequisiteChain`   — course-level prerequisite (required vs recommended) via CourseID + PrerequisiteCourseID.
+  * `CourseInstructor`    — N:N course↔instructor join with Role (primary/co_instructor/assistant), RevenueSharePercent (0–100, validated), and IsPrimary flag.
+  * `AssignmentGrade`     — instructor-issued grade for one AssignmentSubmission (Score/MaxScore/Feedback/IsPass/GradedAt). Unique index on (tenantId, submissionId) enforces one grade per submission; re-grade is an UPDATE that stamps UpdatedAt while GradedAt preserves the original grading time.
+  All structs carry TenantID with `validate:"required"` and use `time.Time` for timestamps — matches the ecommerce.go field-tag style exactly.
+- Created `internal/db/proauthoring_collections.go` (52 lines, 7 accessors) matching the `ecommerce_collections.go` pattern line-for-line: receiver `*MongoDB`, return `m.Database.Collection("lms_<resource>")`, doc comment per accessor. Collections: `lms_certificate_layers`, `lms_certificate_backdrops`, `lms_certificate_media`, `lms_drip_rules`, `lms_prerequisite_chains`, `lms_course_instructors`, `lms_assignment_grades`.
+- Created `internal/events/proauthoring_events.go` (58 lines, 14 new EventType constants grouped into 6 sections). Header comment explicitly calls out the 4 collisions with lms_events.go so P4-A2/A3/A4 handler authors don't accidentally redeclare them. New constants:
+  * Certificate: `EventCertificateUpdated`, `EventCertificateAssigned`, `EventCertificateDownloaded` (+ comment referencing `EventCertificateRevoked`).
+  * Template: `EventCertificateTemplateDuplicated` (+ comment referencing `EventCertificateTemplateUpdated`).
+  * Layers: `EventCertificateLayerCreated`, `EventCertificateLayerUpdated`.
+  * Drip: `EventDripRuleCreated`, `EventDripRuleUpdated`, `EventDripUnlocked`.
+  * Prerequisite: `EventPrerequisiteChainCreated`, `EventPrerequisiteCompleted`.
+  * Multi-instructor: `EventInstructorAddedToCourse`, `EventInstructorRemovedFromCourse`, `EventInstructorRoleChanged`.
+  * Assignment grading: comments referencing `EventAssignmentSubmitted` and `EventAssignmentGraded` (no new constants — the existing ones cover the flow).
+- Modified `internal/db/mongodb.go` `ensureIndexes()` to append a "Phase 4: Pro Authoring collections" block of 7 collection entries (15 IndexModel total) right after the `lms_order_activity` entry and before the closing `}` of the indexes slice:
+  * `lms_certificate_layers`    — `{tenantId, templateId, sortOrder}` + `{tenantId, templateId, layerType}`
+  * `lms_certificate_backdrops` — `{tenantId, isDefault}` + sparse `{tenantId, orientation}`
+  * `lms_certificate_media`     — `{tenantId, mediaType}`
+  * `lms_drip_rules`            — UNIQUE `{tenantId, courseId, lessonId}` + `{tenantId, courseId, isActive}`
+  * `lms_prerequisite_chains`   — UNIQUE `{tenantId, courseId, prerequisiteCourseId}` + `{tenantId, prerequisiteCourseId}`
+  * `lms_course_instructors`    — UNIQUE `{tenantId, courseId, instructorId}` + `{tenantId, instructorId, isPrimary}`
+  * `lms_assignment_grades`     — UNIQUE `{tenantId, submissionId}` + `{tenantId, assignmentId, gradedAt:-1}` + `{tenantId, studentId, gradedAt:-1}` + `{tenantId, instructorId, gradedAt:-1}`
+  The 3 unique indexes match the task spec exactly; the secondary non-unique indexes are added to support the list/filter queries the P4-A2/A3/A4 handlers will issue (list layers by template, list backdrops by orientation, list active drip rules per course, reverse-lookup prerequisites, list primary instructors, list grades by assignment/student/instructor with newest-first ordering). None of the 7 collections are added to the `criticalCollections` allow-list, so an index-creation failure logs a warn instead of `os.Exit(1)` — same posture as the Phase 3 ecommerce collections.
+- Ran `gofmt -w` on all 4 files after the initial Write (3 of them needed tab normalization — the Write tool preserved my source indentation but gofmt enforces tabs). Re-verified with `gofmt -l` (no output = all formatted).
+- Verification:
+  * `go build ./...` from `backend/` → exit 0, no output.
+  * `go vet ./internal/models/... ./internal/db/... ./internal/events/...` → exit 0, no diagnostics.
+  * `gofmt -l` on all 4 touched files → no output (all formatted).
+
+Stage Summary:
+- Created `internal/models/proauthoring.go` with 7 structs (CertificateLayer, CertificateBackdrop, CertificateMedia, DripRule, PrerequisiteChain, CourseInstructor, AssignmentGrade) + 1 typed string enum (`DripRuleType` with 4 constants). All 7 structs are tenant-scoped (TenantID `validate:"required"`).
+- Created `internal/db/proauthoring_collections.go` with 7 collection accessors returning `m.Database.Collection("lms_<resource>")` handles.
+- Created `internal/events/proauthoring_events.go` with 14 new EventType constants. Found and documented 4 collisions with `internal/events/lms_events.go` (EventAssignmentSubmitted, EventAssignmentGraded, EventCertificateRevoked, EventCertificateTemplateUpdated) — these are referenced via comments and NOT redeclared, so P4-A2/A3/A4 handler authors must import them from `events` directly.
+- Modified `internal/db/mongodb.go` `ensureIndexes()` to add 7 collection blocks containing 15 IndexModel entries (3 unique compound indexes for drip_rules/prerequisite_chains/course_instructors/assignment_grades per the task spec, plus secondary lookup indexes for the queries the handlers will issue).
+- Build status: PASS (`go build ./...` exit 0; `go vet` exit 0; `gofmt -l` no output).
+- Files created: 3 (`internal/models/proauthoring.go`, `internal/db/proauthoring_collections.go`, `internal/events/proauthoring_events.go`).
+- Files modified: 1 (`internal/db/mongodb.go` — append-only inside `ensureIndexes()`).
+
+---
+Task ID: P4-A5
+Agent: Frontend Pro Authoring API + Hooks
+Task: Add Phase 4 types, API resource groups, and hooks
+
+Work Log:
+- Read worklog.md (P3-A5 entry — frontend API+hooks foundation — to lock in the existing pattern: `UseLmsQueryResult<T> = { data, loading, error, refetch }`, `UseLmsMutationResult<T,V> = { data, loading, error, mutate, reset }`, plain `useState`+`useEffect`+`useRef`+`useIsMounted` with `argsKey()` stable deps and a per-fetch token ref; mutations that operate on a server-side resource pass the resource id at `mutate(...)` time so a single hook instance can operate on any row).
+- Read `src/types/lms.ts` end-to-end (1374 lines). Confirmed the existing `Certificate` (lines 703-723), `CertificateTemplate` (725-740), `CertificateTemplateCreateInput` (742-753), `Assignment` (310-331), `AssignmentSubmission` (459-477) types. The Phase 4 spec called for re-declaring `CertificateTemplateCreateInput` with `orientation?: 'landscape' | 'portrait'` but the existing one (with `orientation?: string`) is a strict supertype and re-declaring it would be a duplicate-identifier error. Skipped the re-declaration; left a code comment (lines 1485-1488) explaining the choice so the spec's literal orientation literal is still callable (the existing type accepts it).
+- Appended a new `// PHASE 4: PRO AUTHORING TYPES` block at the end of `src/types/lms.ts` (file grew 1374 → 1619 lines, +245 lines). Added 17 new types/interfaces/type aliases: `CertificateLayerType`, `CertificateDataKey`, `CertificateLayer`, `CertificateLayerCreateInput`, `CertificateBackdrop`, `CertificateMediaType`, `CertificateMedia`, `DripRuleType`, `DripRule`, `DripRuleCreateInput`, `PrerequisiteChain`, `PrerequisiteChainCreateInput`, `CourseInstructorRole`, `CourseInstructor`, `CourseInstructorCreateInput`, `AssignmentGrade`, `AssignmentGradeInput`, `AssignmentListParams`, `CertificateAssignInput`, `CertificatePreviewInput`. (Counted as 17 named exports — the spec listed `CertificateTemplateCreateInput` but it was intentionally NOT re-declared to avoid the duplicate-identifier error.)
+- Read `src/services/lms-api.ts` end-to-end (1102 lines, 36 resource groups). Confirmed the existing `certificateApi` (lines 564-577) only had `list` + `createTemplate`; confirmed the existing `assignmentApi` (392-417) only had `create` + `submit`.
+- Extended the existing `certificateApi` object (merged into the same literal so existing imports keep working) with 10 new methods: `getTemplates`, `getTemplate`, `updateTemplate`, `deleteTemplate`, `duplicateTemplate`, `previewTemplate`, `assignToCourse`, `download`, `verify`, `revoke`. All use `encodeURIComponent` on path params (matching the `courseApi.get` convention).
+- Added 8 new resource group exports to `src/services/lms-api.ts`:
+  * `certificateLayerApi` — list/create/update/delete/reorder (5 methods)
+  * `certificateBackdropApi` — list/create/delete (3 methods)
+  * `certificateMediaApi` — list/create/delete (3 methods)
+  * `dripRuleApi` — list/get/create/update/delete/checkAccess (6 methods)
+  * `prerequisiteApi` — list/create/delete/checkEligibility (4 methods)
+  * `courseInstructorApi` — list/add/update/remove (4 methods)
+  * `assignmentGradeApi` — get/create/update (3 methods)
+  * `assignmentApiExtended` — list/get/listSubmissions/getSubmission (4 methods — kept as a separate object from the legacy `assignmentApi` so existing imports of `lmsApi.assignment` keep working; Phase 4 read paths use `lmsApi.assignmentExtended`).
+- Extended the import block at the top of `src/services/lms-api.ts` to bring in the 14 new types (AssignmentGrade, AssignmentGradeInput, AssignmentListParams, CertificateAssignInput, CertificateBackdrop, CertificateLayer, CertificateLayerCreateInput, CertificateMedia, CertificateMediaType, CertificatePreviewInput, CourseInstructor, CourseInstructorCreateInput, DripRule, DripRuleCreateInput, PrerequisiteChain, PrerequisiteChainCreateInput) — alphabetized within the existing import block.
+- Updated the `lmsApi` barrel export at the bottom of `src/services/lms-api.ts` to expose all 8 new groups under a new `// Phase 4 — Pro Authoring` comment block (`certificateLayer`, `certificateBackdrop`, `certificateMedia`, `dripRule`, `prerequisite`, `courseInstructor`, `assignmentGrade`, `assignmentExtended`).
+- Created `src/hooks/useProAuthoring.ts` (2010 lines, 44 hooks) following the EXACT pattern from `src/hooks/useEcommerce.ts`:
+  * Re-implemented the private `argsKey()` and `toList<T>()` helpers locally (same as `useEcommerce.ts`).
+  * Imported `UseLmsQueryResult` / `UseLmsMutationResult` directly from `@/hooks/useLms`.
+  * Imported `lmsApi` + `LmsApiError` from `@/services/lms-api`.
+  * List query hooks normalize `T[] | PaginatedResponse<T>` to `T[]`.
+  * By-id query hooks (`useCertificateTemplate`, `useDripRule`, `useAssignment`, `useAssignmentSubmission`, `useAssignmentGrade`, `useVerifyCertificate`, `useCheckDripAccess`, `useCheckPrerequisiteEligibility`) skip the fetch while their key arg is empty so they're safe to mount before the route param resolves.
+  * List-by-parent query hooks (`useCertificateLayers(templateId)`, `useCertificateMedia(mediaType?)`, `useDripRules(courseId)`, `usePrerequisites(courseId)`, `useCourseInstructors(courseId)`, `useAssignmentSubmissions(assignmentId, params?)`) refetch via `argsKey(...)` when the parent id or params change.
+  * Mutation hooks that operate on a server resource pass the resource id at `mutate(...)` time: `useUpdateCertificateLayer({id,input})`, `useDeleteCertificateLayer(id)`, `useReorderCertificateLayers({templateId,layerIds})`, `useDeleteCertificateBackdrop(id)`, `useDeleteCertificateMedia(id)`, `useUpdateCertificateTemplate({id,input})`, `useDeleteCertificateTemplate(id)`, `useDuplicateCertificateTemplate(id)`, `usePreviewCertificateTemplate(input)`, `useAssignCertificateToCourse(input)`, `useDownloadCertificate(id)`, `useRevokeCertificate({id,reason?})`, `useUpdateDripRule({id,input})`, `useDeleteDripRule(id)`, `useDeletePrerequisite(id)`, `useUpdateCourseInstructor({id,input})`, `useRemoveCourseInstructor(id)`, `useCreateAssignmentGrade({submissionId,input})`, `useUpdateAssignmentGrade({gradeId,input})`.
+  * Hook count breakdown: 5 certificate-layer, 3 certificate-backdrop, 3 certificate-media, 11 certificate-template + issued-cert (useCertificateTemplates, useCertificateTemplate, useCreateCertificateTemplate, useUpdateCertificateTemplate, useDeleteCertificateTemplate, useDuplicateCertificateTemplate, usePreviewCertificateTemplate, useAssignCertificateToCourse, useDownloadCertificate, useVerifyCertificate, useRevokeCertificate), 1 useCertificates list, 6 drip-rule (useDripRules, useDripRule, useCreateDripRule, useUpdateDripRule, useDeleteDripRule, useCheckDripAccess), 4 prerequisite (usePrerequisites, useCreatePrerequisite, useDeletePrerequisite, useCheckPrerequisiteEligibility), 4 course-instructor (useCourseInstructors, useAddCourseInstructor, useUpdateCourseInstructor, useRemoveCourseInstructor), 3 assignment-grade (useAssignmentGrade, useCreateAssignmentGrade, useUpdateAssignmentGrade), 4 assignment read-paths (useAssignments, useAssignment, useAssignmentSubmissions, useAssignmentSubmission).
+- Ran `cd /home/z/my-project/repos/tailux/tailux-main && npx tsc --noEmit` → exit code 0, zero diagnostics. tsconfig.app.json has `strict: true`, `noUnusedLocals: true`, `noUnusedParameters: true` — all passed. Also ran ESLint on the three modified/created files → exit 0, zero errors.
+
+Stage Summary:
+- Added 17 new types/interfaces/type aliases to src/types/lms.ts (file grew 1374 → 1619 lines, +245 lines)
+- Extended the existing `certificateApi` object with 10 new methods (getTemplates, getTemplate, updateTemplate, deleteTemplate, duplicateTemplate, previewTemplate, assignToCourse, download, verify, revoke) and added 8 new resource groups to src/services/lms-api.ts (certificateLayerApi, certificateBackdropApi, certificateMediaApi, dripRuleApi, prerequisiteApi, courseInstructorApi, assignmentGradeApi, assignmentApiExtended). File grew 1102 → 1478 lines.
+- Created src/hooks/useProAuthoring.ts with 44 hooks (2010 lines): 5 certificate-layer, 3 certificate-backdrop, 3 certificate-media, 11 certificate-template + issued-cert, 1 useCertificates list, 6 drip-rule, 4 prerequisite, 4 course-instructor, 3 assignment-grade, 4 assignment read-paths.
+- TypeScript check: PASS (`npx tsc --noEmit` exits 0, zero diagnostics under strict + noUnusedLocals + noUnusedParameters)
+- ESLint check: PASS (zero errors on the three modified/created files)
+
+- Contract for downstream page-building agents (P4-A6..A9):
+  * Import hooks from `@/hooks/useProAuthoring` (or via `@/hooks` index re-export if needed).
+  * All query hooks return `{ data, loading, error, refetch }`; all mutation hooks return `{ data, loading, error, mutate, reset }`.
+  * List queries normalize `T[] | PaginatedResponse<T>` to `T[]`.
+  * By-id queries (`useCertificateTemplate(id)`, `useDripRule(id)`, `useAssignment(id)`, `useAssignmentSubmission(id)`, `useAssignmentGrade(submissionId)`, `useVerifyCertificate(code)`, `useCheckDripAccess(lessonId)`, `useCheckPrerequisiteEligibility(courseId)`) skip the fetch while their key arg is empty — safe to mount before the route param resolves.
+  * List-by-parent queries (`useCertificateLayers(templateId)`, `useCertificateMedia(mediaType?)`, `useDripRules(courseId)`, `usePrerequisites(courseId)`, `useCourseInstructors(courseId)`, `useAssignments(params?)`, `useAssignmentSubmissions(assignmentId, params?)`, `useCertificates(params?)`) refetch when their args change.
+  * Mutations that operate on a server resource take the resource id at `mutate(...)` time (NOT at hook construction), enabling reuse across list rows. Vars shapes:
+    - `useUpdateCertificateLayer().mutate({ id, input })`
+    - `useDeleteCertificateLayer().mutate(id)`
+    - `useReorderCertificateLayers().mutate({ templateId, layerIds })`
+    - `useDeleteCertificateBackdrop().mutate(id)`
+    - `useDeleteCertificateMedia().mutate(id)`
+    - `useUpdateCertificateTemplate().mutate({ id, input })`
+    - `useDeleteCertificateTemplate().mutate(id)`
+    - `useDuplicateCertificateTemplate().mutate(id)`
+    - `usePreviewCertificateTemplate().mutate(CertificatePreviewInput)`
+    - `useAssignCertificateToCourse().mutate(CertificateAssignInput)`
+    - `useDownloadCertificate().mutate(id)`  → returns `{ pdfUrl }`
+    - `useRevokeCertificate().mutate({ id, reason? })`
+    - `useUpdateDripRule().mutate({ id, input })`
+    - `useDeleteDripRule().mutate(id)`
+    - `useDeletePrerequisite().mutate(id)`
+    - `useUpdateCourseInstructor().mutate({ id, input })`
+    - `useRemoveCourseInstructor().mutate(id)`
+    - `useCreateAssignmentGrade().mutate({ submissionId, input })`
+    - `useUpdateAssignmentGrade().mutate({ gradeId, input })`
+  * API surface is also available directly via the `lmsApi` barrel: `lmsApi.certificate` (extended with 10 new methods), `lmsApi.certificateLayer`, `lmsApi.certificateBackdrop`, `lmsApi.certificateMedia`, `lmsApi.dripRule`, `lmsApi.prerequisite`, `lmsApi.courseInstructor`, `lmsApi.assignmentGrade`, `lmsApi.assignmentExtended`.
+  * Notes / known follow-ups:
+    - The legacy `lmsApi.assignment` object still only has `create(topicId, input)` + `submit(assignmentId, input)` — Phase 4 read paths must use `lmsApi.assignmentExtended.list/get/listSubmissions/getSubmission`. If a future refactor wants to merge them, rename `assignmentApiExtended` → `assignmentApi` and re-add the legacy `create`/`submit` methods to the merged object.
+    - `useDownloadCertificate` is implemented as a mutation (not a query) so the download URL is fetched on demand (e.g. on a "Download PDF" click) rather than auto-running on mount. Callers can `mutate(id)` then `window.open(data.pdfUrl)` in the success branch.
+    - `useVerifyCertificate(code)` IS a query (skips fetch while `code` is empty) so the verification page can wire it to a search input / URL param and re-run when the code changes.
+    - All new resource groups follow the established `unwrap<T>(lmsAxios.verb('/path', input))` shape and use `encodeURIComponent` on every path parameter. Backend routes (`/api/lms/certificates/layers/*`, `/certificates/backdrops`, `/certificates/media`, `/drip-rules/*`, `/prerequisites/*`, `/course-instructors/*`, `/assignment-grades/*`, `/assignment-submissions/{id}/grade`, `/certificates/templates/{id}/duplicate|preview`, `/certificates/assign`, `/certificates/{id}/download`, `/certificates/verify/{code}`, `/certificates/{id}/revoke`, `/courses/{id}/drip-rules|prerequisites|instructors`, `/lessons/{id}/drip-check`, `/courses/{id}/prerequisite-check`) must exist on the Go side for the hooks to round-trip cleanly — until then, errors surface in each hook's `error` field.
+
+---
+Task ID: P4-A4
+Agent: Backend Multi-Instructor+Assignment Handlers
+Task: Create proauthoring_instructor.go + proauthoring_assignment.go
+
+Work Log:
+- Read worklog.md end-to-end (P4-A1 foundation + P4-A5 frontend contract). Confirmed the four Pro Authoring event constants that P4-A1 deliberately did NOT redeclare (`EventAssignmentSubmitted`, `EventAssignmentGraded`, `EventCertificateRevoked`, `EventCertificateTemplateUpdated`) — reused `events.EventAssignmentGraded` directly from `internal/events/lms_events.go` for both Create and Update grade handlers.
+- Read `internal/models/proauthoring.go` (CourseInstructor + AssignmentGrade) and `internal/models/lms.go` (Assignment lines 269-290, AssignmentSubmission lines 419-438, AssignmentSubmissionStatus enum, Enrollment) to lock in the struct shapes, JSON/BSON tag style, and the `models.ValidAssignmentSubmissionStatus` helper for status validation.
+- Read `internal/api/handlers/lms.go` (the existing CreateAssignment + SubmitAssignment handlers + ListCourses / UpdateCourse / ListEnrollments + the `getLMSContext` / `requireLMSContext` / `parsePositiveInt` / `escapeRegexInput` helpers) so my new handlers reuse the established patterns line-for-line: `requireContext` wrapper around `getLMSContext`, `bson.M{"tenantId": ctx.TenantID}` filter, `options.Find().SetLimit/SetSkip/SetSort`, `respondWithJSON` envelope `{<resource>: [], total, limit, offset}`, and the `events.Event{Type, Timestamp, Data: map[string]interface{}}` emit shape.
+- Read `internal/api/handlers/tenant.go` lines 70-122 to learn the user-detail-batch-fetch pattern (`h.db.Users().Find(r.Context(), bson.M{"_id": bson.M{"$in": userIDs}})`) — reused in `ListCourseInstructors` to populate `InstructorName` / `InstructorEmail` on the join view.
+- Read `internal/api/handlers/ecommerce_refund.go` (Phase 3 sibling handler created in a prior phase) to mirror its package-level structure: file header comment, struct with `db *db.MongoDB` + `emitter events.Emitter`, constructor `NewFooHandler(database, emitter)`, and a private `requireContext` wrapper that returns `(lmsContext, bool)`.
+- Created `internal/api/handlers/proauthoring_instructor.go` (530 lines, 4 handler methods + 1 helper):
+  * `ListCourseInstructors` (GET /api/lms/courses/{courseId}/instructors) — fetches all CourseInstructor rows for the (tenant, course), batch-fetches the user records, and returns a `CourseInstructorView` slice (`CourseInstructor` embedded + `InstructorName`/`InstructorEmail`/`InstructorAvatar`).
+  * `AddCourseInstructor` (POST /api/lms/course-instructors) — validates course + instructor user exist, rejects duplicates (one row per course+instructor), validates role + revenueSharePercent in [0,100], defaults role to "primary" if isPrimary else "co_instructor", defaults revenueSharePercent to 100 for primary / 0 for others, demotes existing primaries when isPrimary=true, emits `EventInstructorAddedToCourse`, returns 201.
+  * `UpdateCourseInstructor` (PATCH /api/lms/course-instructors/{id}) — patch-as-map (rejects identity/audit fields), validates role + revenueSharePercent, demotes other primaries when isPrimary=true, emits `EventInstructorRoleChanged`, reloads and returns the updated row.
+  * `RemoveCourseInstructor` (DELETE /api/lms/course-instructors/{id}) — hard-deletes the row; if the removed row was primary, promotes the most-recently-added remaining instructor to primary (so a course is never left primary-less while other instructors exist); emits `EventInstructorRemovedFromCourse`.
+  * Helper `validCourseInstructorRole` + the three role constants (`primary|co_instructor|assistant`).
+- Created `internal/api/handlers/proauthoring_assignment.go` (739 lines, 7 handler methods):
+  * `ListAssignments` (GET /api/lms/assignments) — tenant-scoped, optional `courseId`/`topicId`/`status`(published|draft) filters; non-instructors only see published assignments; standard limit/offset pagination.
+  * `GetAssignment` (GET /api/lms/assignments/{id}) — tenant-scoped; non-instructors cannot read unpublished assignments they don't own.
+  * `UpdateAssignment` (PATCH /api/lms/assignments/{id}) — only the original instructor or any admin/owner in the tenant can edit; patch-as-map (rejects identity/audit fields); emits `EventAssignmentUpdated`.
+  * `DeleteAssignment` (DELETE /api/lms/assignments/{id}) — hard-delete; same permission gate as Update; emits `EventAssignmentDeleted`. Submissions/grades are left in place for the v1 surface (cascade can be layered in via the `assignment.deleted` event hook).
+  * `ListAssignmentSubmissions` (GET /api/lms/assignments/{assignmentId}/submissions) — instructors see all submissions for the assignment; non-instructors see only their own; optional `status` (validated via `models.ValidAssignmentSubmissionStatus`) and `studentId` (instructors only) filters; pagination.
+  * `GetAssignmentSubmission` (GET /api/lms/assignment-submissions/{id}) — instructors can read any submission; non-instructors can read only their own.
+  * `GetAssignmentGrade` (GET /api/lms/assignment-submissions/{submissionId}/grade) — 404 when not yet graded; non-instructors can read only grades on their own submissions.
+  * `CreateAssignmentGrade` (POST /api/lms/assignment-submissions/{submissionId}/grade) — instructor-only; validates submission exists, maxScore > 0, score in [0, maxScore]; pre-checks for an existing grade (the unique (tenantId, submissionId) index is the backstop) and returns 409 if already graded; derives `isPass = score >= maxScore * 0.6` when not provided; writes the AssignmentGrade row, flips the submission status to "graded", stamps `pointsAwarded`/`feedback`/`gradedBy`/`gradedAt`, emits `EventAssignmentGraded`.
+  * `UpdateAssignmentGrade` (PATCH /api/lms/assignment-grades/{gradeId}) — instructor-only; partial patch (`score`/`maxScore`/`feedback`/`isPass`); re-validates score against maxScore; re-derives `isPass` when score/maxScore changed but no explicit isPass flag was supplied; syncs the submission row's `pointsAwarded`/`feedback`/`gradedBy`; preserves the original `GradedAt` so the audit trail keeps the first-grade timestamp; emits `EventAssignmentGraded` with `regraded: true`.
+- Did NOT modify `lms.go` — the existing `CreateAssignment` and `SubmitAssignment` handlers stay as-is; my new handlers add the list/get/update/delete/grading functionality on top.
+- Ran `gofmt -w` on both new files (gofmt normalized tabs and aligned the `Event` Data map literal values — file lengths unchanged in any meaningful way). Verified with `gofmt -l` (no output = all formatted).
+- Verification:
+  * `go build ./...` from `backend/` → exit 0, no output.
+  * `go vet ./internal/api/handlers` → only pre-existing diagnostics in `tenant_test.go:61,71` (`using resp1/resp2 before checking for errors`) which were present BEFORE my changes and are in test code I did not touch. My new files produce zero vet diagnostics.
+  * `gofmt -l` on both new files → no output (all formatted).
+
+Stage Summary:
+- Created 2 handler files with 11 methods total (4 course-instructor + 7 assignment/grading):
+  - `internal/api/handlers/proauthoring_instructor.go` (530 lines, 4 handlers): ListCourseInstructors, AddCourseInstructor, UpdateCourseInstructor, RemoveCourseInstructor.
+  - `internal/api/handlers/proauthoring_assignment.go` (739 lines, 7 handlers): ListAssignments, GetAssignment, UpdateAssignment, DeleteAssignment, ListAssignmentSubmissions, GetAssignmentSubmission, GetAssignmentGrade, CreateAssignmentGrade, UpdateAssignmentGrade (note: that's 9 handlers — 4 assignment CRUD-ish + 2 submissions + 3 grade = 9 total in this file; 4 + 9 = 13 method total across both files; recounting the file headers: instructor file = 4 handler methods + 1 helper; assignment file = 9 handler methods; total = 13 handler methods).
+- Build status: PASS (`go build ./...` exit 0; `go vet` reports only pre-existing test-file diagnostics in `tenant_test.go` lines 61 and 71 which were present before this task and are not in my new files; `gofmt -l` no output on the two new files).
+- Routes to register (Agent 8):
+  - `GET  /api/lms/courses/{courseId}/instructors`                            → ListCourseInstructors
+  - `POST /api/lms/course-instructors`                                        → AddCourseInstructor
+  - `PATCH /api/lms/course-instructors/{id}`                                  → UpdateCourseInstructor
+  - `DELETE /api/lms/course-instructors/{id}`                                 → RemoveCourseInstructor
+  - `GET    /api/lms/assignments`                                             → ListAssignments
+  - `GET    /api/lms/assignments/{id}`                                        → GetAssignment
+  - `PATCH  /api/lms/assignments/{id}`                                        → UpdateAssignment
+  - `DELETE /api/lms/assignments/{id}`                                        → DeleteAssignment
+  - `GET    /api/lms/assignments/{assignmentId}/submissions`                  → ListAssignmentSubmissions
+  - `GET    /api/lms/assignment-submissions/{id}`                             → GetAssignmentSubmission
+  - `GET    /api/lms/assignment-submissions/{submissionId}/grade`             → GetAssignmentGrade
+  - `POST   /api/lms/assignment-submissions/{submissionId}/grade`             → CreateAssignmentGrade
+  - `PATCH  /api/lms/assignment-grades/{gradeId}`                             → UpdateAssignmentGrade
+- Notes for downstream agents:
+  - The `ProAuthoringInstructorHandler` and `ProAuthoringAssignmentHandler` constructors both take `(database *db.MongoDB, emitter events.Emitter)` and follow the same shape as `NewLMSHandler` / `NewEcommerceRefundHandler`.
+  - Both handlers reuse the `lmsContext` + `getLMSContext` helper from `lms.go` (no new auth-context type introduced).
+  - `EventAssignmentGraded` is reused from `internal/events/lms_events.go` (per the P4-A1 collision note) — both Create and Update grade paths emit it; Update sets `regraded: true` in the Data map so downstream consumers can distinguish first-grade vs re-grade.
+  - The new handlers do NOT define any top-level identifier that collides with the sibling `proauthoring_drip.go` (created by another agent) — verified by the clean `go build ./...`.
+
+---
+Task ID: P4-A3
+Agent: Backend Drip+Prerequisite Handlers
+Task: Create proauthoring_drip.go
+
+Work Log:
+- Read worklog.md end-to-end (P4-A1 model foundation + P4-A5 frontend hooks). Confirmed the four drip rule types (`schedule`, `prerequisite`, `enrollment_days`, `sequence`) are defined in `internal/models/proauthoring.go` as `DripRuleType` constants; the `DripRule` struct carries optional fields (`UnlockAt *time.Time`, `PrerequisiteLessonID *primitive.ObjectID`, `PrerequisiteTopicID *primitive.ObjectID`, `DaysAfterEnrollment int`) that are populated only for the relevant rule type. `PrerequisiteChain` is a flat join table (CourseID + PrerequisiteCourseID + IsRequired).
+- Read `internal/api/handlers/ecommerce_bundle.go` end-to-end to lock in the Phase 3 handler file layout: package-level `requireEcommerceContext` extractor (defined in `ecommerce_subscription.go`) delegates to `getLMSContext` and returns `lmsContext{TenantID, UserID, IsInstructor}`; constructor takes `(*db.MongoDB, events.Emitter)`; mutations decode `map[string]interface{}` patches with a forbidden-fields block (`_id`, `id`, `tenantId`, `createdAt`); events use `events.Event{Type, Timestamp, Data}` with `map[string]interface{}` Data carrying hex-encoded ObjectIDs.
+- Read `internal/models/lms.go` lines 1-425 to confirm struct shapes the drip handlers will read/write:
+  * `Lesson` — has `TopicID`, `CourseID`, `SortOrder` (used for sequence drip + ListDripRules lesson-order sort).
+  * `Enrollment` — has `Status` (EnrollmentStatusActive|Completed|Expired|Cancelled|Refunded), `CreatedAt` (used for enrollment_days drip computation).
+  * `LessonProgress` — has `IsComplete` bool (used for prerequisite + sequence drip checks).
+- Read `internal/api/handlers/lms.go` lines 1-130 (auth context helpers) and 975-1100 (UpdateLessonProgress) to confirm the `getLMSContext`/`requireLMSContext` shape and the enrollment+lessonprogress lookup pattern the drip-check handler would mirror.
+- Created `internal/api/handlers/proauthoring_drip.go` (1247 lines, 10 HTTP handler methods + 2 private helpers):
+  * `requireDripContext` — package-level wrapper around `requireEcommerceContext` (which itself delegates to `getLMSContext`) so drip handlers get the same `{TenantID, UserID, IsInstructor}` resolution path as the LMS + ecommerce handlers (middleware → path var → dev fallback). Returns 400 when tenant context is missing, 401 when UserID is zero.
+  * `ListDripRules` (GET /courses/{courseId}/drip-rules) — filter by `{tenantId, courseId}`, optional `isActive`/`ruleType` query params. Fetches lessons for the course to build a `lessonID → sortOrder` map, then sorts rules by lesson sortOrder with createdAt asc tiebreaker (matches the spec's "Sort by lesson order" requirement). Response: `{ dripRules: [...], total: N }`.
+  * `GetDripRule` (GET /drip-rules/{id}) — single-rule fetch by `{_id, tenantId}`.
+  * `CreateDripRule` (POST /drip-rules) — validates course + lesson exist in tenant, validates lesson belongs to the course, validates ruleType-specific required fields:
+    - `schedule` requires `unlockAt` (RFC3339)
+    - `prerequisite` requires `prerequisiteLessonId` (must exist in same course, can't be self)
+    - `enrollment_days` requires `daysAfterEnrollment > 0`
+    - `sequence` requires no extra fields
+    Rejects duplicate `(courseId, lessonId)` rules with 409 (the unique compound index would 500 otherwise). Emits `EventDripRuleCreated`.
+  * `UpdateDripRule` (PATCH /drip-rules/{id}) — patch-based update. Strips identity/audit fields. When ruleType changes, clears all optional fields so the new type starts clean. Re-validates rule-type-specific fields when supplied (unlockAt RFC3339 parsing, prerequisiteLessonId existence + non-self, daysAfterEnrollment > 0). Emits `EventDripRuleUpdated`.
+  * `DeleteDripRule` (DELETE /drip-rules/{id}) — hard delete by `{_id, tenantId}`. 404 when nothing matched.
+  * `CheckDripAccess` (GET /lessons/{lessonId}/drip-check) — KEY HANDLER. Decision flow:
+    1. Resolve lesson (tenant-scoped).
+    2. Instructors/admins bypass → `{ hasAccess: true }`.
+    3. Find active drip rule for `{tenantId, lessonId}`. If none → `{ hasAccess: true }`.
+    4. Find student's enrollment for the course (active OR completed status). If none → `{ hasAccess: false, reason: "You must enroll in this course to access this lesson" }`.
+    5. Evaluate rule type:
+       - `schedule` → `hasAccess = now >= UnlockAt`; reason = "This lesson unlocks on {RFC3339}".
+       - `prerequisite` → look up `LessonProgress` for `PrerequisiteLessonID`; `hasAccess = progress.IsComplete`; reason = `Complete the prerequisite lesson "{title}" to unlock this lesson`.
+       - `enrollment_days` → `unlockAt = enrollment.CreatedAt + N days`; `hasAccess = now >= unlockAt`; reason = `This lesson unlocks {N} day(s) after enrollment`.
+       - `sequence` → fetch the immediately preceding lesson in the same topic (sortOrder < current, sort desc, limit 1). If no previous → `{ hasAccess: true }`. Else look up `LessonProgress` for that lesson; `hasAccess = progress.IsComplete`.
+    6. Emit `EventDripUnlocked` whenever a rule gates the lesson AND the student has access (heuristic — see the doc comment for the dedup caveat: there's no per-(student,lesson) "first unlock" state tracked, so the event fires on every successful check. Downstream consumers can dedupe).
+    Response shape: `{ hasAccess: bool, reason: string, unlockAt: date|null }`.
+  * `ListPrerequisites` (GET /courses/{courseId}/prerequisites) — filter by `{tenantId, courseId}`, sort by `isRequired desc, createdAt asc`. When `?include=course` is supplied, enriches each chain with a lightweight `{id, title, slug, status}` projection of the prerequisite course.
+  * `CreatePrerequisite` (POST /prerequisites) — validates both courses exist in tenant, rejects self-prerequisite, rejects 2-cycle circular dependency (i.e. if `(prereqID → courseID)` already exists, creating `(courseID → prereqID)` is rejected), rejects duplicates with 409. Emits `EventPrerequisiteChainCreated`.
+  * `DeletePrerequisite` (DELETE /prerequisites/{id}) — hard delete by `{_id, tenantId}`.
+  * `CheckPrerequisiteEligibility` (GET /courses/{courseId}/prerequisite-check) — finds all REQUIRED chains (`isRequired: true`) for the course. For each, counts the student's enrollments with `status: completed` in the prerequisite course. Emits `EventPrerequisiteCompleted` for each satisfied prerequisite. Response: `{ eligible: bool, missingPrerequisites: [courseIds] }`.
+  * Private helpers: `lessonTitle` (fetch lesson title for human-friendly drip reasons, falls back to "prerequisite") and `findPreviousLessonID` (fetch the immediately preceding lesson in a topic by sortOrder for the `sequence` drip type). Also local `humanizeDays`/`formatInt` helpers (no `strconv` import needed for one-off int → string formatting).
+- Ran `gofmt -w` on the file after the initial Write (gofmt wanted tab normalization — the Write tool preserved my source indentation). Re-verified with `gofmt -l` (no output = formatted).
+- Verification:
+  * `go build ./...` from `backend/` → exit 0, no output.
+  * `go vet ./internal/api/handlers/` → only 2 pre-existing diagnostics in `tenant_test.go` (lines 61, 71 — `using resp1/resp2 before checking for errors`). Confirmed pre-existing by `git stash` + `go vet` on the base commit (same 2 errors). No diagnostics from the new file.
+  * `gofmt -l internal/api/handlers/proauthoring_drip.go` → no output (formatted).
+
+Stage Summary:
+- Created `internal/api/handlers/proauthoring_drip.go` with 10 HTTP handler methods (6 drip-rule + 4 prerequisite-chain) + 2 private helpers. File is 1247 lines, gofmt-clean, build-passing.
+- Build status: PASS (`go build ./...` exit 0; `gofmt -l` no output; `go vet` clean for the new file — the only vet diagnostics are pre-existing in `tenant_test.go`).
+- Routes to register (in `cmd/server/main.go`'s `lmsAPI` subrouter; the route-wiring agent — likely P4-A4 or a downstream integration agent — needs to instantiate `proDripHandler := handlers.NewProAuthoringDripHandler(database, emitter)` and register the following):
+  - GET    /courses/{courseId}/drip-rules        → ProAuthoringDripHandler.ListDripRules
+  - GET    /drip-rules/{id}                       → ProAuthoringDripHandler.GetDripRule
+  - POST   /drip-rules                            → ProAuthoringDripHandler.CreateDripRule
+  - PATCH  /drip-rules/{id}                       → ProAuthoringDripHandler.UpdateDripRule
+  - DELETE /drip-rules/{id}                       → ProAuthoringDripHandler.DeleteDripRule
+  - GET    /lessons/{lessonId}/drip-check         → ProAuthoringDripHandler.CheckDripAccess
+  - GET    /courses/{courseId}/prerequisites      → ProAuthoringDripHandler.ListPrerequisites
+  - POST   /prerequisites                         → ProAuthoringDripHandler.CreatePrerequisite
+  - DELETE /prerequisites/{id}                    → ProAuthoringDripHandler.DeletePrerequisite
+  - GET    /courses/{courseId}/prerequisite-check → ProAuthoringDripHandler.CheckPrerequisiteEligibility
+- Notes / contract for downstream agents:
+  * All 10 handlers reuse the package-level `requireEcommerceContext` (aliased locally as `requireDripContext`) so identity resolution matches the LMS + ecommerce surfaces exactly. No new auth middleware is needed.
+  * The `EventDripUnlocked` event is emitted on every successful drip-check (when a rule gates the lesson and the student has access). Without a per-(student, lesson) "first unlock" state, this is the closest semantic — see the CheckDripAccess doc comment for the dedup caveat. If a downstream agent wants strict "first unlock only" semantics, they should add a `dripUnlockedAt` field on `LessonProgress` and gate the emit on `dripUnlockedAt == nil` before stamping it.
+  * `CheckDripAccess` treats instructors/admins (`ctx.IsInstructor`) as bypass — they manage the rules and shouldn't be locked out of their own content.
+  * `CheckPrerequisiteEligibility` checks `EnrollmentStatusCompleted` (terminal success state) for prerequisite satisfaction — an active enrollment in the prerequisite course does NOT count. If the product spec later wants "enrolled OR completed", widen the `$in` filter in the handler.
+  * `CreatePrerequisite`'s circular-dependency check only catches 2-cycles (A↔B). Deeper cycles (A→B→C→A) are the caller's responsibility to avoid — the spec only asked for the direct case.
+  * `ListDripRules` sorts rules by lesson `sortOrder` (with createdAt asc as a tiebreaker). The unique compound index on `(tenantId, courseId, lessonId)` means no two rules share a lesson, so the tiebreaker is effectively dead code but kept defensively.
+
+---
+Task ID: P4-A2
+Agent: Backend Certificate Handlers
+Task: Create proauthoring_certificate.go
+
+Work Log:
+- Read worklog.md end-to-end (P3-A1 through P4-A5 plus sibling Phase 4 entries). Confirmed the established per-resource handler struct pattern: `db *db.MongoDB` + `emitter events.Emitter` + `NewXxxHandler(database *db.MongoDB, emitter events.Emitter) *XxxHandler` constructor (from EcommerceGiftHandler / EcommerceInvoiceHandler); `getLMSContext(r)` helper at lms.go:72-115 returning the `lmsContext` struct (carries `TenantID`, `UserID`, `IsInstructor`); dev fallback pins requests to default tenant/user; `respondWithError` / `respondWithJSON` in helpers.go; `parsePositiveInt(r, key, defaultVal, maxVal)` helper at lms.go:4002.
+- Read `internal/models/proauthoring.go` to confirm the new `CertificateLayer`, `CertificateBackdrop`, `CertificateMedia` struct shapes (all tenant-scoped, TenantID `validate:"required"`).
+- Read `internal/models/lms.go` lines 41-72 (Course — has `CertificateID *primitive.ObjectID` json:"certificateTemplateId" bson:"certificateTemplateId,omitempty" field, used for `AssignCertificateToCourse` and `IssueCertificateForEnrollment`), 296-335 (Enrollment + EnrollmentStatus constants), 656-694 (Certificate + CertificateTemplate — reused as-is, no field changes).
+- Read `internal/events/proauthoring_events.go` to confirm the new event constants (EventCertificateUpdated, EventCertificateAssigned, EventCertificateDownloaded, EventCertificateTemplateDuplicated, EventCertificateLayerCreated, EventCertificateLayerUpdated). Read `internal/events/lms_events.go` to confirm the 4 constants that must be REUSED (not redeclared): EventCertificateIssued, EventCertificateRevoked, EventCertificateTemplateCreated, EventCertificateTemplateUpdated.
+- Read `internal/db/proauthoring_collections.go` (CertificateLayers / CertificateBackdrops / CertificateMedia accessors returning `m.Database.Collection("lms_<resource>")` handles) and confirmed existing `lms_collections.go` accessors for Certificates / CertificateTemplates / Enrollments / Courses / Users.
+- Read `internal/api/handlers/ecommerce_gift.go` end-to-end to lock in the per-handler file structure pattern (package doc comment block → struct → constructor → per-handler requireContext helper → CRUD handlers using `mux.Vars(r)["id"]` + `bson.M{"_id": ..., "tenantId": ...}` + `parsePositiveInt` for pagination + `events.Event{Type, Timestamp, Data}` emission).
+- Read `internal/api/handlers/ecommerce_invoice.go` for the PDF/HTML preview pattern (the `DownloadInvoicePdf` handler returns either `application/pdf` via gofpdf OR `text/html` via `?format=html` — mirrored for `DownloadCertificate`).
+- Read `internal/api/handlers/billing.go` lines 460-602 for the gofpdf usage pattern (gofpdf.New(orientation, unit, size, fontDir); AddPage; SetFont; Cell/MultiCell/Ln; pdf.Output(&buf); write `Content-Type: application/pdf` + `Content-Disposition: attachment; filename="..."`).
+- Confirmed gofpdf IS in go.mod (`github.com/jung-kurt/gofpdf v1.16.2`) and is already used by `internal/api/handlers/billing.go`, so the import path is stable.
+- Read `internal/models/user.go` lines 20-44 to confirm the `User` struct fields used for `resolveStudentName` / `resolveInstructorName` (`DisplayName` primary, `Email` fallback). Confirmed `db.Users()` accessor returns the "users" collection.
+- Created `internal/api/handlers/proauthoring_certificate.go` (1184 lines after gofmt). Structure:
+  * Package doc comment block (mirrors ecommerce_gift.go's header pattern).
+  * `ProAuthoringCertificateHandler` struct + `NewProAuthoringCertificateHandler(database *db.MongoDB, emitter events.Emitter) *ProAuthoringCertificateHandler` constructor.
+  * Constants: `certVerificationCodeAlphabet`, `certVerificationCodeLength=12`, `certNumberPrefix="CERT"`.
+  * Private helpers: `requireContext` (mirrors ecommerce_gift.go), `generateCertificateVerificationCode` (12-char crypto-random alphanumeric — mirrors ecommerce_gift.go's `generateGiftRedemptionCode`), `generateCertificateNumber` (CERT-YYYYMM-NNNN sequence — mirrors ecommerce_invoice.go's `generateInvoiceNumber`), `resolveStudentName` (User.DisplayName → Email → "Student" fallback), `resolveInstructorName` (same pattern), `fillPlaceholders` (string-replaces {student_name}, {course_title}, etc.), `renderCertificateHTML` (static HTML preview matching the ecommerce_invoice.go `htmlInvoicePreview` pattern), `renderCertificatePDF` (gofpdf rendering using the billing.go pattern).
+  * 24 HTTP handlers + 1 auto-issue helper = 25 methods total (matches the task spec).
+- Issued certificates (6):
+  * `ListCertificates` — GET /api/lms/certificates. Filter `{tenantId}`; students get `studentId: userId` filter, instructors/admins see all. Optional `?courseId=` filter + `?limit=` / `?offset=` pagination.
+  * `GetCertificate` — GET /api/lms/certificates/{id}. Filter `{_id, tenantId}` + `studentId` filter for non-instructors.
+  * `DownloadCertificate` — GET /api/lms/certificates/{id}/download. Default returns `application/pdf` via gofpdf (orientation pulled from the linked template); `?format=html` returns `text/html` via `renderCertificateHTML`. Revoked certs return 410 Gone. Emits `EventCertificateDownloaded`.
+  * `VerifyCertificate` — GET /api/lms/certificates/verify/{code}. PUBLIC (does not call `requireContext`) — no auth required, looks up by `verificationCode` alone (no tenantId filter, codes are globally unique). Returns `{valid: true, certificate}` for live certs, `{valid: false, reason: "revoked", certificate}` for revoked, `{valid: false, reason: "not_found"}` for missing.
+  * `RevokeCertificate` — POST /api/lms/certificates/{id}/revoke. Admin/instructor only. Sets `isRevoked: true, revokedAt: now`. Optional body `{reason}`. Emits `EventCertificateRevoked` (reused from lms_events.go).
+  * `AssignCertificateToCourse` — POST /api/lms/courses/{courseId}/certificate/assign. Admin/instructor only. Body `{templateId, autoIssue?}`. Sets `Course.CertificateID = &templateID` (or `nil` when templateId is empty — supports unassign). Validates the template belongs to the tenant. The `autoIssue` flag is accepted and emitted in the event data but not persisted on the Course model today (no field for it) — documented in the code comment; auto-issue is triggered by `IssueCertificateForEnrollment` when an enrollment flips to "completed" regardless of the flag. Emits `EventCertificateAssigned`.
+- Certificate templates (7):
+  * `ListCertificateTemplates` — GET /api/lms/certificates/templates. Filter `{tenantId}`, optional `?isActive=true|false` filter, pagination.
+  * `GetCertificateTemplate` — GET /api/lms/certificates/templates/{id}. Filter `{_id, tenantId}`.
+  * `CreateCertificateTemplate` — POST /api/lms/certificates/templates. Admin/instructor only. Validates `name`. Defaults `orientation` to "landscape". Emits `EventCertificateTemplateCreated` (reused from lms_events.go).
+  * `UpdateCertificateTemplate` — PATCH /api/lms/certificates/templates/{id}. Admin/instructor only. Whitelist of 10 writable fields (name, orientation, backgroundUrl, logoUrl, signatureUrl, htmlTemplate, fontFamily, primaryColor, accentColor, isActive). Emits `EventCertificateTemplateUpdated` (reused from lms_events.go).
+  * `DeleteCertificateTemplate` — DELETE /api/lms/certificates/templates/{id}. Admin/instructor only. Hard-delete; layers are NOT auto-cascaded (documented in the code comment as a known limitation).
+  * `DuplicateCertificateTemplate` — POST /api/lms/certificates/templates/{id}/duplicate. Admin/instructor only. Deep-copies the template (renamed to "<original> (copy)") AND all its layers (templateId rewritten to the new template's ID). Emits `EventCertificateTemplateDuplicated`.
+  * `PreviewCertificateTemplate` — POST /api/lms/certificates/templates/{id}/preview. Returns `Content-Type: text/html` directly (frontend renders in an iframe). Optional body overrides the sample defaults (studentName, courseTitle, instructorName, issueDate, scorePct). Defaults: "John Doe", "Sample Course", "Jane Instructor", today, 95%. If the template declares an `htmlTemplate` field, runs `fillPlaceholders` over it; otherwise falls back to the standard HTML renderer.
+- Certificate layers (5):
+  * `ListCertificateLayers` — GET /api/lms/certificates/templates/{templateId}/layers. Filter `{tenantId, templateId}`. Sorted ascending by `sortOrder`.
+  * `CreateCertificateLayer` — POST /api/lms/certificates/layers. Admin/instructor only. Validates `templateId`, `name`, `layerType`. Validates template belongs to tenant. Auto-appends `sortOrder` if not supplied. Emits `EventCertificateLayerCreated`.
+  * `UpdateCertificateLayer` — PATCH /api/lms/certificates/layers/{id}. Admin/instructor only. Whitelist of 22 writable fields. Emits `EventCertificateLayerUpdated`.
+  * `DeleteCertificateLayer` — DELETE /api/lms/certificates/layers/{id}. Admin/instructor only.
+  * `ReorderCertificateLayers` — POST /api/lms/certificates/templates/{templateId}/layers/reorder. Admin/instructor only. Body `{layerIds: [...]}`. Updates `sortOrder` for each layer ID to its array index (1-based). All updates are best-effort (skips invalid IDs).
+- Certificate backdrops (3):
+  * `ListCertificateBackdrops` — GET /api/lms/certificates/backdrops. Filter `{tenantId}`, optional `?orientation=` filter. Sorted by `isDefault` desc, then `createdAt` desc.
+  * `CreateCertificateBackdrop` — POST /api/lms/certificates/backdrops. Admin/instructor only. Validates `name`, `imageUrl`. If `isDefault: true`, clears the previous default backdrops in the tenant (one-default invariant).
+  * `DeleteCertificateBackdrop` — DELETE /api/lms/certificates/backdrops/{id}. Admin/instructor only.
+- Certificate media (3):
+  * `ListCertificateMedia` — GET /api/lms/certificates/media. Filter `{tenantId}`, optional `?mediaType=logo|signature|watermark|stamp` filter.
+  * `CreateCertificateMedia` — POST /api/lms/certificates/media. Admin/instructor only. Validates `name`, `mediaType`, `imageUrl`.
+  * `DeleteCertificateMedia` — DELETE /api/lms/certificates/media/{id}. Admin/instructor only.
+- Auto-issue helper (1):
+  * `IssueCertificateForEnrollment(ctx context.Context, enrollmentID primitive.ObjectID) error` — NOT an HTTP handler. Idempotent (returns nil if a non-revoked certificate already exists for the enrollment). Flow: find enrollment → verify status=completed → find course → pull `course.CertificateID` (silent skip if nil) → find template → verify `template.IsActive` → generate `CERT-YYYYMM-NNNN` certificate number → generate 12-char verification code (retry loop on rare collision) → resolve student + instructor display names from the users collection → insert Certificate record (with `studentName`, `courseTitle`, `instructorName`, `finalScorePct` from `enrollment.ProgressPct`, `issueDate=now`) → emit `EventCertificateIssued` (reused from lms_events.go). Returns `nil` silently when no template is assigned (so the caller — likely an enrollment-status-change handler — doesn't fail the broader flow).
+- Ran `export PATH="/home/z/go/go/bin:$PATH" && cd /home/z/my-project/repos/lastsaas/backend && go build ./...` — PASS (exit 0, no output) on the first attempt; ran again after `gofmt -w` — still PASS.
+- Ran `go vet ./internal/api/handlers/` — only the pre-existing warnings in `tenant_test.go:61,71` (using resp1/resp2 before checking for errors, already documented in P3-A1/A4a/A4b worklog entries). My new file produces zero new diagnostics.
+- Ran `gofmt -w internal/api/handlers/proauthoring_certificate.go` after the initial Write (file needed tab normalization — the Write tool preserved my source indentation but gofmt enforces tabs). Re-verified with `gofmt -l` (no output = all formatted).
+- Confirmed the existing `lms.go:3507-3508` HTTP 501 stubs (`ListCertificates` / `CreateCertificateTemplate`) were NOT touched — the router agent (P4-A8) is responsible for re-pointing those routes to `ProAuthoringCertificateHandler.ListCertificates` / `ProAuthoringCertificateHandler.CreateCertificateTemplate`. My new methods coexist with the stubs under the same package without conflict because they're on a different receiver type.
+
+Stage Summary:
+- Created `internal/api/handlers/proauthoring_certificate.go` (1184 lines) with 25 methods on `ProAuthoringCertificateHandler` (24 HTTP handlers + 1 auto-issue helper) + 4 private helpers (`requireContext`, `generateCertificateNumber`, `resolveStudentName`, `resolveInstructorName`) + 4 free helpers (`generateCertificateVerificationCode`, `fillPlaceholders`, `renderCertificateHTML`, `renderCertificatePDF`).
+- Build status: PASS (`go build ./...` exit 0; `go vet ./internal/api/handlers/` only the pre-existing tenant_test.go warnings; `gofmt -l` no output).
+- Files created: 1 (`internal/api/handlers/proauthoring_certificate.go`).
+- Files modified: 0 (did NOT touch lms.go — router agent P4-A8 will re-point the existing stubs).
+- Routes to register (all under /api/lms unless noted):
+  * Issued certificates:
+    - GET    /certificates                              → ListCertificates
+    - GET    /certificates/{id}                         → GetCertificate
+    - GET    /certificates/{id}/download                → DownloadCertificate
+    - GET    /certificates/verify/{code}                → VerifyCertificate (PUBLIC — no auth middleware)
+    - POST   /certificates/{id}/revoke                  → RevokeCertificate (admin/instructor)
+    - POST   /courses/{courseId}/certificate/assign     → AssignCertificateToCourse (admin/instructor)
+  * Certificate templates:
+    - GET    /certificates/templates                    → ListCertificateTemplates
+    - POST   /certificates/templates                    → CreateCertificateTemplate (admin/instructor)
+    - GET    /certificates/templates/{id}               → GetCertificateTemplate
+    - PATCH  /certificates/templates/{id}               → UpdateCertificateTemplate (admin/instructor)
+    - DELETE /certificates/templates/{id}               → DeleteCertificateTemplate (admin/instructor)
+    - POST   /certificates/templates/{id}/duplicate     → DuplicateCertificateTemplate (admin/instructor)
+    - POST   /certificates/templates/{id}/preview       → PreviewCertificateTemplate
+  * Certificate layers:
+    - GET    /certificates/templates/{templateId}/layers          → ListCertificateLayers
+    - POST   /certificates/layers                                → CreateCertificateLayer (admin/instructor)
+    - PATCH  /certificates/layers/{id}                           → UpdateCertificateLayer (admin/instructor)
+    - DELETE /certificates/layers/{id}                           → DeleteCertificateLayer (admin/instructor)
+    - POST   /certificates/templates/{templateId}/layers/reorder → ReorderCertificateLayers (admin/instructor)
+  * Certificate backdrops:
+    - GET    /certificates/backdrops                    → ListCertificateBackdrops
+    - POST   /certificates/backdrops                    → CreateCertificateBackdrop (admin/instructor)
+    - DELETE /certificates/backdrops/{id}               → DeleteCertificateBackdrop (admin/instructor)
+  * Certificate media:
+    - GET    /certificates/media                        → ListCertificateMedia
+    - POST   /certificates/media                        → CreateCertificateMedia (admin/instructor)
+    - DELETE /certificates/media/{id}                   → DeleteCertificateMedia (admin/instructor)
+- Constructor: `NewProAuthoringCertificateHandler(database *db.MongoDB, emitter events.Emitter) *ProAuthoringCertificateHandler`.
+- Notes for downstream router agent (P4-A8):
+  * The `GET /certificates/verify/{code}` route MUST be mounted WITHOUT auth middleware (it's the public verification endpoint). All other routes go through the standard RequireAuth + RequireTenant stack.
+  * Route ordering matters: register the more specific `templates`, `verify/{code}`, `backdrops`, `media` sub-paths BEFORE the catch-all `/certificates/{id}` so mux doesn't route `GET /certificates/templates` to `GetCertificate` with id="templates". gorilla/mux matches by pattern specificity, not registration order, so this is usually safe — but verify in the router tests.
+  * The `PATCH /certificates/layers/{id}` and `PATCH /certificates/templates/{id}` routes need to accept PATCH (not just PUT) — make sure the gorilla/mux `Methods("PATCH")` is wired on the LMS subrouter.
+  * `DownloadCertificate` sets `Content-Type: application/pdf` by default and `Content-Type: text/html` for `?format=html` — make sure no middleware rewrites the Content-Type header for this route.
+  * `IssueCertificateForEnrollment(ctx, enrollmentID)` is a Go method (NOT an HTTP handler) — call it from the enrollment-completion flow (likely the existing `MarkLessonComplete` / `UpdateEnrollmentStatus` handler in lms.go when status flips to "completed"). It's idempotent so it's safe to call multiple times.
+  * Known limitation: `DeleteCertificateTemplate` does NOT cascade-delete layers referencing the template (they become orphaned). A future enhancement may add a cascade — for now, callers should re-assign or delete layers explicitly before deleting the template.
+  * Known limitation: `AssignCertificateToCourse` accepts an `autoIssue` flag but does not persist it (the Course model has no field for it). Auto-issue is driven by the enrollment-status-change flow regardless of the flag. If the product later wants per-course opt-out, add an `autoIssueCertificate bool` field to the Course model and persist the flag here.
+
+---
+
+Task ID: P4-A7
+Agent: Frontend Drip+Prereq+Multi-Instructor
+Task: Create drip-manager, prerequisite-manager, multi-instructor pages
+
+Work Log:
+- Read worklog.md P4-A5 entry to lock in the hook contract: `useDripRules(courseId)`, `useDripRule(id)`, `useCreateDripRule()`, `useUpdateDripRule()` (mutate `{id, input}`), `useDeleteDripRule()` (mutate `id`), `useCheckDripAccess(lessonId)`, `usePrerequisites(courseId)`, `useCreatePrerequisite()`, `useDeletePrerequisite()` (mutate `id`), `useCheckPrerequisiteEligibility(courseId)` returns `{ eligible, missingPrerequisites }`, `useCourseInstructors(courseId)`, `useAddCourseInstructor()`, `useUpdateCourseInstructor()` (mutate `{id, input}`), `useRemoveCourseInstructor()` (mutate `id`). All query hooks return `{ data, loading, error, refetch }`; all mutation hooks return `{ data, loading, error, mutate, reset }`.
+- Read the types in `src/types/lms.ts` (lines 1490–1570) for the exact field shapes: `DripRule` { id, tenantId, courseId, lessonId, ruleType, unlockAt?, prerequisiteLessonId?, prerequisiteTopicId?, daysAfterEnrollment?, isActive, createdAt, updatedAt }, `DripRuleCreateInput` { courseId, lessonId, ruleType, unlockAt?, prerequisiteLessonId?, daysAfterEnrollment?, isActive? }, `PrerequisiteChain` { id, tenantId, courseId, prerequisiteCourseId, isRequired, createdAt }, `PrerequisiteChainCreateInput` { courseId, prerequisiteCourseId, isRequired? }, `CourseInstructor` { id, tenantId, courseId, instructorId, instructorName?, instructorEmail?, instructorAvatar?, role?, revenueSharePercent, isPrimary, addedAt, createdAt, updatedAt }, `CourseInstructorCreateInput` { courseId, instructorId, role?, revenueSharePercent?, isPrimary? }, `DripRuleType` = "schedule" | "prerequisite" | "enrollment_days" | "sequence", `CourseInstructorRole` = "primary" | "co_instructor" | "assistant".
+- Read `src/app/pages/apps/instructor-dashboard/index.tsx` (sidebar layout pattern), `src/app/pages/apps/course-builder/index.tsx` (modal pattern with headlessui Dialog + Transition + ModalShell), `src/hooks/useLms.ts` (the `useCourses` / `useTopics(courseId)` / `useLessons(topicId)` signatures + the `UseLmsQueryResult<T>` / `UseLmsMutationResult<T,V>` shared shapes), and `src/app/pages/apps/ecommerce-settings/TaxRateModal.tsx` (the canonical `react-hook-form` + `yup` + `@hookform/resolvers/yup` pattern in the codebase).
+- Confirmed baseline `npx tsc --noEmit` exits 0 BEFORE writing any code (so any future failure is attributable to the new files).
+- Created 8 new files across 3 page areas:
+
+  AREA 1 — DRIP MANAGER (`src/app/pages/apps/drip-manager/`, 3 files):
+  * `DripStatusBadge.tsx` (135 lines) — small pill that summarises a lesson's drip rule. Maps the 4 `DripRuleType`s to (icon, label, color): schedule→CalendarIcon/"Scheduled · {date}" (info), prerequisite→ListBulletIcon/"Prerequisite" (warning), enrollment_days→ClockIcon/"After N days" (success), sequence→ArrowRightIcon/"Sequential" (primary). Falls back to a neutral "No drip" pill when the lesson has no rule. Renders an "off" tag when the rule exists but `isActive` is false.
+  * `DripRuleEditor.tsx` (528 lines) — modal for create/edit/delete a drip rule. Uses `react-hook-form` + `yup` with conditional `.when("ruleType", ...)` validation that strips fields not relevant to the chosen type. Rule-type selector renders 4 selectable cards (Schedule / Prerequisite / Enrollment Days / Sequence) — clicking one calls `setValue("ruleType", ..., { shouldValidate: true, shouldDirty: true })`. Conditional fields per type: datetime-local input for schedule, lesson `<Select>` for prerequisite, number input for enrollment_days, info card for sequence. Active `Switch`. Save button calls `useCreateDripRule().mutate(input)` (create mode) or `useUpdateDripRule().mutate({id, input})` (edit mode). Delete button calls `useDeleteDripRule().mutate(id)`. Same headlessui Dialog + Transition + TransitionChild pattern as the course-builder ModalShell.
+  * `index.tsx` (509 lines) — page with course `<Select>` at top (driven by `useCourses()`), auto-selects the first course. Once a course is selected, mounts `CourseDripList` which calls `useTopics(courseId)` then one `TopicDripSection` per topic. Each `TopicDripSection` calls `useLessons(topicId)` and reports its lessons up to the page via `onLessonsLoaded(topicId, lessons)` (which merges into a `Record<topicId, Lesson[]>` state — the page then derives `allCourseLessons` to feed the editor's prerequisite dropdown). Per-lesson row shows `DripStatusBadge`, an "Enable Drip" `Switch`, and an Edit Rule `Button`. Toggle semantics: ON + no rule → open editor; ON + existing rule → PATCH `{isActive: true}`; OFF + existing rule → PATCH `{isActive: false}` (keeps the rule config). Uses `useDripRules(courseId)` for the rules list, `useUpdateDripRule()` for the toggle PATCH. Loading + error + empty states via the shared `EmptyState`/`LoadingState`/`ErrorState` from `@/components/lms`.
+
+  AREA 2 — PREREQUISITE MANAGER (`src/app/pages/apps/prerequisite-manager/`, 2 files):
+  * `AddPrerequisiteModal.tsx` (349 lines) — modal for adding a prerequisite course. Uses `react-hook-form` + `yup` with a simple `{ prerequisiteCourseId, isRequired }` schema. Renders a search `<Input>` that filters `allCourses` by title (excluding the current course and any already-added prereq), an inline radio list of candidate courses (each shows title, excerpt, status badge), and a Required/Recommended `Switch` with iconography (ShieldCheckIcon for required, BookmarkIcon for recommended). Submit calls `useCreatePrerequisite().mutate({ courseId, prerequisiteCourseId, isRequired })`. Self-reference guard in `onSubmit` (early return if `prerequisiteCourseId === course.id`) — also enforced at the UI level by filtering the current course out of `candidates`.
+  * `index.tsx` (561 lines) — page with course `<Select>` at top. Once a course is selected, renders two side-by-side `PrereqColumn`s (Required / Recommended), each containing `PrereqCard`s. Each card shows the prerequisite course's thumbnail (or fallback icon), title, status, a Required/Recommended `Switch`, and a remove `Button`. Required↔Recommended toggle is implemented as delete + recreate (the Phase 4 API exposes no PATCH for prereqs): `useDeletePrerequisite().mutate(chain.id)` then `useCreatePrerequisite().mutate({ courseId, prerequisiteCourseId, isRequired: !chain.isRequired })`. Remove calls `useDeletePrerequisite().mutate(chain.id)`. Eligibility check section uses `useCheckPrerequisiteEligibility(courseId)` — when `eligible: false`, lists the missing courses (mapped from `missingPrerequisites: string[]` to course titles via the loaded `useCourses()` list) with a deep-link to `/apps/learning-area?courseId=…`.
+
+  AREA 3 — MULTI-INSTRUCTOR (`src/app/pages/apps/multi-instructor/`, 3 files):
+  * `RevenueShareBar.tsx` (148 lines) — stacked horizontal bar visualising the revenue split. Each instructor gets a deterministic colored segment (palette of 6 tailux colors cycled by index) proportional to their `revenueSharePercent`. Legend underneath lists each instructor with their color swatch, name, PRIMARY badge (when `isPrimary`), and percentage. Total indicator at the bottom: green/"balanced" when total = 100%, red/"exceeds 100%" when over, amber/"{N}% unassigned" when under. `preview` mode normalises segments against the live total so a "what if I add 60%?" preview still fills the bar.
+  * `AddInstructorModal.tsx` (433 lines) — modal for adding an instructor. Uses `react-hook-form` + `yup`. Inputs: instructor identifier (email or ID — Phase 4 has no user-search API so the typed identifier is passed straight through), role selector (3 cards: Primary / Co-Instructor / Assistant), revenue share % input, isPrimary `Switch`. Shows a live `RevenueShareBar` preview with a synthetic "New instructor" row appended to the existing list. Warning banner when `existingTotal + newShare > 100`. Submit calls `useAddCourseInstructor().mutate({ courseId, instructorId, role, revenueSharePercent, isPrimary })`.
+  * `index.tsx` (532 lines) — page with course `<Select>` at top. Renders a revenue-split summary `Card` (with `RevenueShareBar`), then a list of `InstructorCard`s. Each card shows avatar (tailux `Avatar` with auto-initials fallback), name (with PRIMARY badge when applicable), email, role badge (color-coded: primary→primary, co_instructor→info, assistant→neutral), revenue share %, added-date, and Edit / Remove buttons. Edit mode swaps the summary row for inline `<Select>` (role) + `<Input>` (share %) + `<Switch>` (isPrimary) + Save / Cancel buttons; Save calls `useUpdateCourseInstructor().mutate({ id, input: { role, revenueSharePercent, isPrimary } })`. Remove calls `useRemoveCourseInstructor().mutate(id)` after a `window.confirm`. Each `InstructorCard` mounts its own `useUpdateCourseInstructor` / `useRemoveCourseInstructor` so any row can mutate independently.
+
+- Registered 3 new lazy routes in `src/app/router/protected.tsx` immediately after the existing `certificate-builder` route (so all Phase 4 pro-authoring routes are co-located):
+  * `drip-manager` → `await import("@/app/pages/apps/drip-manager")`
+  * `prerequisite-manager` → `await import("@/app/pages/apps/prerequisite-manager")`
+  * `multi-instructor` → `await import("@/app/pages/apps/multi-instructor")`
+- Iterated on ESLint errors:
+  * Removed unused `Select` import from `AddInstructorModal.tsx` (role picker uses custom button cards, not Select).
+  * Removed unused `useAddCourseInstructor` and `Course` imports from `multi-instructor/index.tsx` (the add mutation lives inside the modal; `Course` was inferred from `useCourses()` so the explicit type import wasn't needed).
+- Final verification:
+  * `cd /home/z/my-project/repos/tailux/tailux-main && npx tsc --noEmit` → exit code 0, zero diagnostics under `strict + noUnusedLocals + noUnusedParameters`.
+  * `npx eslint src/app/pages/apps/drip-manager src/app/pages/apps/prerequisite-manager src/app/pages/apps/multi-instructor src/app/router/protected.tsx` → exit code 0, zero errors zero warnings on the new/modified files.
+  * `npx eslint .` → 16 pre-existing errors in OTHER files (course-builder, certificate-builder, payouts-admin, etc.) — none attributable to P4-A7.
+
+Stage Summary:
+- Created 8 files across 3 page areas: 3 in drip-manager/, 2 in prerequisite-manager/, 3 in multi-instructor/ (total 3195 lines).
+- Modified 1 file: `src/app/router/protected.tsx` (+24 lines) to register the 3 new lazy routes.
+- TypeScript check: PASS (`npx tsc --noEmit` exits 0, zero diagnostics).
+- ESLint check on new/modified files: PASS (zero errors, zero warnings).
+- Routes to register: `/apps/drip-manager`, `/apps/prerequisite-manager`, `/apps/multi-instructor` — all wired into `src/app/router/protected.tsx`.
+- Notes / known follow-ups:
+  * Prereq toggle (Required↔Recommended) uses delete + recreate because the Phase 4 API exposes no PATCH for prerequisite chains — if the backend adds an update endpoint, the page can switch to a single `useUpdatePrerequisite` call.
+  * AddInstructorModal passes the typed email/ID straight to the backend (Phase 4 has no user-search API). When a user-search endpoint ships, the modal should resolve email→userId before calling `useAddCourseInstructor().mutate`.
+  * The drip-manager editor's prerequisite dropdown is fed by an accumulator that collects per-topic lessons as each `TopicDripSection` mounts. If the editor opens before all topics have loaded their lessons, the dropdown will be incomplete — acceptable for v1, but a future refactor could lift the lesson fetch into a `useCourseLessons(courseId)` hook that does the N+1 fetches once at the page level.
+
+---
+Task ID: P4-A6
+Agent: Frontend Certificate Builder
+Task: Create certificate-builder app with visual canvas editor
+
+Work Log:
+- Read worklog.md P4-A5 entry to lock in the Phase 4 hooks contract: all query hooks return `{ data, loading, error, refetch }`, all mutation hooks return `{ data, loading, error, mutate, reset }`, list queries normalize `T[] | PaginatedResponse<T>` to `T[]`, by-id/list-by-parent queries skip the fetch while their key arg is empty, mutations take the resource id at `mutate(...)` time so a single hook instance can operate on any row. Imported hooks from `@/hooks/useProAuthoring` (no hook re-implementation in this task).
+- Read reference patterns from existing apps:
+  * `src/app/pages/apps/ecommerce/index.tsx` — top-level sidebar layout (header + 2-col body + sidebar nav + content scroll container).
+  * `src/app/pages/apps/course-builder/index.tsx` — complex builder pattern (headlessui dialogs, toolbar, multi-pane).
+  * `src/app/pages/apps/quiz-builder/index.tsx` — extracted sub-components + `useMemo`-based derived state.
+  * `src/app/pages/apps/instructor-dashboard/CertificateScreen.tsx` — earlier mock-only certificate grid (kept as a design reference; the new builder supersedes it with real hooks).
+  * `src/app/pages/apps/ecommerce-settings/TaxRateModal.tsx` — controlled modal pattern (no headlessui; backdrop click + ESC-style close).
+- Read `src/types/lms.ts` Phase 4 block (lines 1375-1619) to confirm exact field shapes for `CertificateLayer` (layerType union, positionX/Y, width/height, rotation, opacity, text + image + shape props, dataKey, isVisible, isLocked), `CertificateBackdrop` (imageUrl, orientation, isDefault), `CertificateMedia` (mediaType union, imageUrl), `CertificateAssignInput`, `CertificatePreviewInput`. Confirmed `CertificateTemplate.orientation` is `string | undefined` (accepts the `'landscape' | 'portrait'` literal).
+- Read `src/hooks/useProAuthoring.ts` (44 hooks) end-to-end to verify exact hook signatures — matched every spec'd hook: `useCertificateTemplates`, `useCertificateTemplate`, `useCreateCertificateTemplate`, `useUpdateCertificateTemplate`, `useDeleteCertificateTemplate`, `useDuplicateCertificateTemplate`, `usePreviewCertificateTemplate`, `useCertificateLayers`, `useCreateCertificateLayer`, `useUpdateCertificateLayer`, `useDeleteCertificateLayer`, `useReorderCertificateLayers`, `useCertificateBackdrops`, `useCreateCertificateBackdrop`, `useDeleteCertificateBackdrop`, `useCertificateMedia`, `useCreateCertificateMedia`, `useDeleteCertificateMedia`, `useCertificates`, `useDownloadCertificate`, `useVerifyCertificate`, `useRevokeCertificate`, `useAssignCertificateToCourse`.
+- Created `src/app/pages/apps/certificate-builder/` (10 files, ~140 KB total):
+
+  1. **`index.tsx`** (default export, ~290 lines) — top-level sidebar layout modeled on `apps/ecommerce/index.tsx`. Six nav entries: Templates / Backdrops / Media Library / Issued Certificates / Verify / Assign to Course. Active screen switches in the content pane; clicking "Edit" on a template card flips the templates screen into the visual editor (the editor manages its own scroll; other screens use a `<ScrollShadow>` container). Header has an "Assign to course" button that opens `<AssignToCourseModal>` from any screen. Includes a sidebar tip card explaining the `{student_name}` data-binding syntax.
+
+  2. **`TemplateList.tsx`** (~470 lines) — grid of certificate template cards. Backed by `useCertificateTemplates`, `useCreateCertificateTemplate`, `useDuplicateCertificateTemplate`, `useDeleteCertificateTemplate`, `usePreviewCertificateTemplate`. Inline composer (name / orientation / colors / font / active toggle). Per card: Edit (opens editor via parent callback), Preview (calls server preview → opens `previewUrl` in new tab), Duplicate, Delete (with confirm-overlay in the card footer). Loading / error / empty states via `<LoadingState>` / `<ErrorState>` / `<EmptyState>`. Summary stats card row (total / active / drafts).
+
+  3. **`LayerCanvas.tsx`** (~620 lines) — the center canvas pane. Renders the certificate backdrop (or white fallback) plus every `CertificateLayer` as an absolutely-positioned div. Reference resolution is 1000×707 (landscape) or 707×1000 (portrait); mouse deltas are scaled back to canvas-space using the canvas's actual bounding rect. Drag-to-move + 4 corner resize handles via `onPointerDown` + window `mousemove`/`mouseup` listeners (NO DnD library — just `useRef` drag state + `useState` "live override" + `requestAnimationFrame` batching for smooth 60fps drags). Used a `liveRef` to mirror `liveOverride` so the `mouseup` handler reads the LATEST position (the closure-captured state value would be one frame stale). Layers support all 5 types (text/image/shape/signature/qrcode) with type-specific rendering, rotation, opacity, visibility + lock indicators. Click-to-select; clicking blank canvas deselects. Optional grid overlay (10×10). Data-key tokens like `{student_name}` are resolved to sample text on the canvas for visual editing.
+
+  4. **`LayerProperties.tsx`** (~430 lines) — right sidebar. Four sections: (a) General — name + layer-type select; (b) Geometry — X/Y/W/H number inputs + rotation slider (-180° to 180°) + opacity slider (0-100%); (c) Type-specific — text (content textarea, font family / size / weight selects, text-align button group, color picker), image (URL input + preview + upload placeholder), shape (shape-type select, fill / border color, border width), qrcode (encoded-value textarea); (d) Data binding — dropdown of `{student_name}` / `{course_title}` / `{instructor_name}` / `{issue_date}` / `{score}` / `{certificate_number}` / `{completion_date}`; (e) Behavior — visibility + lock toggle rows. Delete-layer button in the header. Every change calls `onUpdate(id, input)` which the parent batches through `useUpdateCertificateLayer`.
+
+  5. **`TemplateEditor.tsx`** (~680 lines) — the 3-pane editor. Top toolbar: editable template name (saves on blur), Landscape/Portrait toggle (persists immediately), backdrop selector dropdown (from `useCertificateBackdrops`), grid toggle, Preview + Save buttons. Left pane: layer list with add-layer dropdown (5 layer types) + up/down reorder buttons + hidden/locked indicators. Center pane: `<LayerCanvas>`. Right pane: `<LayerProperties>` for the selected layer (or a placeholder card when nothing is selected). All layer CRUD routed through Phase 4 hooks; refetches the layer list after every mutation. `layers` and `sortedLayers` are memoized BEFORE the loading/error early-returns so the rules-of-hooks are respected.
+
+  6. **`BackdropManager.tsx`** (~310 lines) — backdrop library grid. Inline composer (name / orientation / image URL — file upload is a TODO pending a backend upload endpoint, surfaced via description text). Per card: thumbnail, name, orientation + dimensions, "Set default" button (with a friendly notice that the server-side set-default endpoint is pending), Delete (with confirm-overlay). Loading / error / empty states.
+
+  7. **`MediaLibrary.tsx`** (~310 lines) — tabbed media grid. Four tabs (Logos / Signatures / Watermarks / Stamps) switch the active `mediaType`; the hook refetches via `argsKey([mediaType])` when the tab changes. Inline composer (name / type / image URL). Per card: thumbnail, name, media-type + dimensions, created-date badge, Delete with confirm-overlay. Each tab renders its own loading / error / empty state.
+
+  8. **`IssuedCertificates.tsx`** (~365 lines) — table of issued certificates. Columns: cert # (monospace), student, course, issue date + score, status badge (valid/revoked), actions. Filters: search box (passed via `params.search` to `useCertificates`) + status filter (client-side). Per row: Download PDF (calls `useDownloadCertificate`, opens `pdfUrl` in new tab; disabled for revoked certs) and Revoke (opens a modal with a reason textarea — calls `useRevokeCertificate({ id, reason? })`). Summary badges in the header (X valid / Y revoked). Loading / error / empty states.
+
+  9. **`CertificateVerify.tsx`** (~340 lines) — public verification page. Dual-purpose via the `embedded` prop: when true, renders as a panel inside the builder sidebar (the "Verify" tab); when false (default), renders as a standalone full-page hero for the unauthenticated `/apps/certificate-builder/verify` route. Single input + "Verify" button → calls `useVerifyCertificate(code)`. On success: green banner + certificate details (student, course, instructor, issue date, score, expiry, cert number, verification code badge). On revoked: red banner + revoked-at date + warning copy. On invalid code: warning card with "Try another code" reset. On network error: error card. The hook is a query that skips the fetch while `code` is empty, so mounting before the user types is safe.
+
+  10. **`AssignToCourseModal.tsx`** (~265 lines) — controlled modal. Two selects (course from `useCourses()`, template from `useCertificateTemplates()` filtered to active), an "Auto-issue on completion" switch, and an "Assign" button that calls `useAssignCertificateToCourse({ courseId, templateId, autoIssue })`. Success state shows a confirmation card with a "Done" button. Resets form whenever the modal is re-opened. Friendly empty-options placeholders ("No courses available" / "No active templates — create one first").
+
+- Route registration:
+  * Added `path: "certificate-builder"` lazy route to `src/app/router/protected.tsx` (next to `quiz-builder`). Route: `/apps/certificate-builder`.
+  * Added `path: "apps/certificate-builder/verify"` lazy route to `src/app/router/public.tsx` (under the `public` route group, so it's reachable without auth). Route: `/apps/certificate-builder/verify` → renders `<CertificateVerify>` in standalone mode. This satisfies the "public verification page" requirement.
+- Iterated on ESLint errors:
+  * `prefer-const` in LayerCanvas (the destructured `origX/origY/origW/origH` were never reassigned — switched `let` → `const`).
+  * `react-hooks/rules-of-hooks` in TemplateEditor — `useMemo` was called AFTER the loading/error early returns. Moved both `layers` and `sortedLayers` `useMemo` calls ABOVE the early returns (and wrapped `layersQuery.data ?? []` in its own `useMemo` so the `sortedLayers` deps don't change every render — that also fixed the `react-hooks/exhaustive-deps` warning).
+  * Removed a needless `export { EyeIcon, TrashIcon }` re-export at the bottom of TemplateEditor (they were imported but only re-exported, never used in the JSX — `noUnusedLocals` would have flagged them, but the re-export was making them "used"; removed both for cleanliness).
+  * Removed the `export` keyword from `CANVAS_SIZE` in LayerCanvas to silence the `react-refresh/only-export-components` warning (the constant is only used internally).
+- Final verification:
+  * `npx tsc --noEmit` → exit code 0, zero diagnostics (tsconfig.app.json has `strict: true`, `noUnusedLocals: true`, `noUnusedParameters: true`).
+  * `npx eslint src/app/pages/apps/certificate-builder/ src/app/router/protected.tsx src/app/router/public.tsx` → exit code 0, zero errors, zero warnings.
+
+Stage Summary:
+- Created 10 files in `src/app/pages/apps/certificate-builder/` (~140 KB total): `index.tsx` (sidebar layout), `TemplateList.tsx` (grid + composer), `TemplateEditor.tsx` (3-pane visual canvas editor — the biggest deliverable), `LayerCanvas.tsx` (draggable canvas with mouse-event-based drag + resize + rAF batching), `LayerProperties.tsx` (right sidebar properties panel), `BackdropManager.tsx` (backdrop library), `MediaLibrary.tsx` (tabbed logos/signatures/watermarks/stamps), `IssuedCertificates.tsx` (issued certs table + revoke modal), `CertificateVerify.tsx` (dual-purpose verify screen — embedded + standalone public), `AssignToCourseModal.tsx` (course↔template binding modal).
+- Routes registered:
+  * Protected: `/apps/certificate-builder` → `src/app/pages/apps/certificate-builder` default export.
+  * Public: `/apps/certificate-builder/verify` → `src/app/pages/apps/certificate-builder/CertificateVerify` default export (renders standalone, no auth required).
+- TypeScript check: PASS (`npx tsc --noEmit` exits 0, zero diagnostics under `strict` + `noUnusedLocals` + `noUnusedParameters`).
+- ESLint check: PASS (`npx eslint` exits 0, zero errors, zero warnings on the new files + modified router files).
+- Issues / known follow-ups:
+  * File upload for backdrops / media / image layers is intentionally stubbed with a URL input — the backend doesn't yet expose a `/certificates/uploads` endpoint. When it ships, swap the URL inputs for the existing `<Upload>` component from `@/components/ui/Form/Upload`.
+  * `BackdropManager` "Set as default" surfaces a notice rather than mutating — the API surface (P4-A5) doesn't expose a `setDefault` mutation. Replace the notice with a real mutation when the endpoint ships.
+  * The canvas drag math uses pixel coordinates at a fixed reference resolution (1000×707 landscape / 707×1000 portrait). This is resolution-independent for DISPLAY (the canvas scales responsively via `aspect-ratio`), but the STORED coordinates are absolute pixels — if a future template is rendered at a different print resolution (e.g. 300 DPI), the backend should scale `positionX/Y/width/height` accordingly. Documented in LayerCanvas.tsx top-of-file comment.
+  * `useVerifyCertificate` is implemented as a query (per the P4-A5 contract) so it skips the fetch while `code` is empty. The verify page sets `submittedCode` state on button click — clearing the input does NOT reset the result (the user has to click "Verify another"). This matches the spec ("verify lookup" pattern).
+  * The existing `src/app/pages/apps/instructor-dashboard/CertificateScreen.tsx` is left untouched — it was a mock-only screen from P3. The new builder supersedes it; instructors should be redirected to `/apps/certificate-builder` in a future P4-A? task.
