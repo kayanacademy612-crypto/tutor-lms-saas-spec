@@ -182,19 +182,35 @@ function normalizeAuthResponse(raw: any): AuthResponse {
   const accessToken: string =
     raw?.accessToken ?? raw?.authToken ?? raw?.token ?? "";
 
+  // The backend login endpoint returns `displayName` (not `name`).
+  // The school-signup endpoint returns `name`. Handle both.
+  const userName =
+    raw?.user?.name ??
+    raw?.user?.displayName ??
+    raw?.user?.fullName ??
+    "";
+
+  // The login endpoint returns `memberships[]` (not a single `tenant`).
+  // The school-signup endpoint returns `tenant`. Handle both.
+  const membership = Array.isArray(raw?.memberships) && raw.memberships.length > 0
+    ? raw.memberships[0]
+    : null;
+
+  const tenantData = raw?.tenant ?? membership;
+
   return {
     accessToken,
     refreshToken: raw?.refreshToken,
     user: {
       id: String(raw?.user?.id ?? raw?.user?._id ?? ""),
       email: String(raw?.user?.email ?? ""),
-      name: String(raw?.user?.name ?? raw?.user?.fullName ?? ""),
+      name: String(userName),
     },
-    tenant: raw?.tenant
+    tenant: tenantData
       ? {
-          id: String(raw.tenant.id ?? raw.tenant._id ?? raw.tenant.tenantId ?? ""),
-          name: String(raw.tenant.name ?? raw.tenant.schoolName ?? ""),
-          slug: String(raw.tenant.slug ?? raw.tenant.subdomain ?? ""),
+          id: String(tenantData.id ?? tenantData._id ?? tenantData.tenantId ?? ""),
+          name: String(tenantData.name ?? tenantData.tenantName ?? tenantData.schoolName ?? ""),
+          slug: String(tenantData.slug ?? tenantData.tenantSlug ?? tenantData.subdomain ?? ""),
         }
       : undefined,
     requiresEmailVerification: Boolean(raw?.requiresEmailVerification),
