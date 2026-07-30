@@ -98,6 +98,14 @@ export const apps: NavigationTree = {
       icon: "apps.quiz-builder",
     },
     {
+      id: "apps.ecommerce",
+      path: path(ROOT_APPS, "/ecommerce"),
+      type: "item",
+      title: "Ecommerce",
+      transKey: "nav.apps.ecommerce",
+      icon: "apps.ecommerce",
+    },
+    {
       id: "apps.settings-pages",
       path: path(ROOT_APPS, "/settings-pages"),
       type: "item",

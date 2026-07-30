@@ -6,6 +6,7 @@ import {
   UserIcon as HiUserIcon,
   AcademicCapIcon,
   BookOpenIcon,
+  ShoppingCartIcon,
 } from "@heroicons/react/24/outline";
 import { TbCoins, TbDevices, TbPalette } from "react-icons/tb";
 
@@ -121,6 +122,7 @@ export const navigationIcons: Record<string, ElementType> = {
   "apps.learning-area": AcademicCapIcon,
   "apps.catalog": BookOpenIcon,
   "apps.quiz-builder": QuestionIcon,
+  "apps.ecommerce": ShoppingCartIcon,
   "apps.settings-pages": SettingIcon,
   "apps.nft-1": Nft1Icon,
   "apps.nft-2": Nft2Icon,

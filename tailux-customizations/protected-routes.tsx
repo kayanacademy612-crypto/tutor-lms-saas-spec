@@ -1090,6 +1090,13 @@ const protectedRoutes: RouteObject = {
               }),
             },
             {
+              path: "ecommerce",
+              lazy: async () => ({
+                Component: (await import("@/app/pages/apps/ecommerce"))
+                  .default,
+              }),
+            },
+            {
               path: "settings-pages",
               lazy: async () => ({
                 Component: (await import("@/app/pages/apps/settings-pages"))

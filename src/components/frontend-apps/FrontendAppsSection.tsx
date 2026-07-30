@@ -65,6 +65,14 @@ export function FrontendAppsSection({ onLaunch }: { onLaunch: (appId: string) =>
       tech: 'tailux',
       screens: 14,
     },
+    {
+      id: 'ecommerce',
+      title: 'Ecommerce',
+      description: 'Shopping cart, checkout with Stripe, coupon management, order history, instructor earnings + withdrawal. 6 screens. Backend: 15 API endpoints with real MongoDB persistence.',
+      status: 'live',
+      tech: 'tailux + Go API + MongoDB',
+      screens: 6,
+    },
   ]
 
   return (
