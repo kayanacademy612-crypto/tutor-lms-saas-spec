@@ -332,6 +332,13 @@ func main() {
 	if microsoftOAuth != nil {
 		authHandler.SetMicrosoftOAuth(microsoftOAuth)
 	}
+
+	// School signup handler — public multi-tenant onboarding endpoint.
+	schoolSignupHandler := handlers.NewSchoolSignupHandler(database, jwtService, passwordService, emailService, emitter, cfg.Frontend.URL, sysLogger)
+	schoolSignupHandler.SetGetConfig(cfgStore.Get)
+	schoolSignupHandler.SetRateLimiter(rateLimiter)
+	schoolSignupHandler.SetTelemetry(telemetrySvc)
+
 	tenantHandler := handlers.NewTenantHandler(database, emailService, emitter, sysLogger)
 	if stripeSvc != nil {
 		tenantHandler.SetStripe(stripeSvc)
@@ -689,6 +696,19 @@ func main() {
 		func(r *http.Request) string { return middleware.GetClientIP(r) },
 		authHandler.Register,
 	)).Methods("POST")
+
+	// Multi-tenant school signup — creates tenant + owner user + membership
+	// and returns JWT tokens. Reuses the AccountCreationLimit rate limit
+	// (5 signups per IP per hour) to match /auth/register's abuse posture.
+	guarded.HandleFunc("/auth/school-signup", rateLimiter.RateLimitHandler(
+		middleware.AccountCreationLimit,
+		func(r *http.Request) string { return middleware.GetClientIP(r) },
+		schoolSignupHandler.SchoolSignup,
+	)).Methods("POST")
+
+	// Returns the list of tenants a user belongs to (for the login screen's
+	// tenant picker). Public because the caller only knows the email.
+	guarded.HandleFunc("/auth/tenants", schoolSignupHandler.GetUserTenants).Methods("GET")
 
 	guarded.HandleFunc("/auth/login", rateLimiter.RateLimitHandler(
 		middleware.LoginAttemptLimit,

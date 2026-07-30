@@ -24,9 +24,15 @@ export default defineConfig({
     },
     // Allow being loaded in iframe from a different origin
     cors: true,
-    // Proxy /api/lms/* to the Go backend on port 4290
+    // Proxy /api/lms/* and /api/auth/* to the Go backend on port 4290.
+    // The same backend hosts both the LMS subrouter (guarded by tenant +
+    // JWT) and the auth subrouter (public: /login, /school-signup, etc.).
     proxy: {
       "/api/lms": {
+        target: "http://localhost:4290",
+        changeOrigin: true,
+      },
+      "/api/auth": {
         target: "http://localhost:4290",
         changeOrigin: true,
       },
