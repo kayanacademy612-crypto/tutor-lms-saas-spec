@@ -1038,6 +1038,50 @@ const protectedRoutes: RouteObject = {
                 Component: (await import("@/app/pages/apps/course-builder")).default,
               }),
             },
+            {
+              path: "student-dashboard",
+              lazy: async () => ({
+                Component: (await import("@/app/pages/apps/student-dashboard"))
+                  .default,
+              }),
+            },
+            {
+              path: "instructor-dashboard",
+              lazy: async () => ({
+                Component: (
+                  await import("@/app/pages/apps/instructor-dashboard")
+                ).default,
+              }),
+            },
+            {
+              path: "learning-area",
+              lazy: async () => ({
+                Component: (await import("@/app/pages/apps/learning-area"))
+                  .default,
+              }),
+            },
+            {
+              path: "catalog",
+              lazy: async () => ({
+                Component: (await import("@/app/pages/apps/catalog")).default,
+              }),
+            },
+            {
+              path: "course-detail",
+              lazy: async () => ({
+                Component: (
+                  await import("@/app/pages/apps/catalog/CourseDetailPage")
+                ).default,
+              }),
+            },
+            {
+              path: "checkout",
+              lazy: async () => ({
+                Component: (
+                  await import("@/app/pages/apps/catalog/CheckoutPage")
+                ).default,
+              }),
+            },
           ],
         },
         {

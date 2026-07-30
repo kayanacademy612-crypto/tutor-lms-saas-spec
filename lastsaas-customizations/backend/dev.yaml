@@ -1,0 +1,48 @@
+server:
+  host: ${SERVER_HOST:localhost}
+  port: ${SERVER_PORT:4290}
+
+database:
+  uri: ${MONGODB_URI:mongodb+srv://kayanacademy612_db_user:TBuVtQrWXqzO9kAI@cluster0.xuqtpg2.mongodb.net/?appName=Cluster0}
+  name: ${DATABASE_NAME:tutor_lms_saas}
+
+frontend:
+  url: ${FRONTEND_URL:http://localhost:4280}
+
+jwt:
+  access_secret: ${JWT_ACCESS_SECRET:dev-access-secret-minimum-32-characters-long-please-change}
+  refresh_secret: ${JWT_REFRESH_SECRET:dev-refresh-secret-minimum-32-characters-long-please-change}
+  access_ttl_minutes: 60
+  refresh_ttl_days: 30
+
+oauth:
+  google_client_id: ${GOOGLE_CLIENT_ID:}
+  google_client_secret: ${GOOGLE_CLIENT_SECRET:}
+  google_redirect_url: ${GOOGLE_REDIRECT_URL:http://localhost:4290/api/auth/google/callback}
+  github_client_id: ${GITHUB_CLIENT_ID:}
+  github_client_secret: ${GITHUB_CLIENT_SECRET:}
+  github_redirect_url: ${GITHUB_REDIRECT_URL:http://localhost:4290/api/auth/github/callback}
+  microsoft_client_id: ${MICROSOFT_CLIENT_ID:}
+  microsoft_client_secret: ${MICROSOFT_CLIENT_SECRET:}
+  microsoft_redirect_url: ${MICROSOFT_REDIRECT_URL:http://localhost:4290/api/auth/microsoft/callback}
+
+email:
+  resend_api_key: ${RESEND_API_KEY:}
+  from_email: ${FROM_EMAIL:noreply@yourdomain.com}
+  from_name: ${FROM_NAME:LastSaaS}
+
+app:
+  name: ${APP_NAME:LastSaaS}
+
+stripe:
+  secret_key: ${STRIPE_SECRET_KEY:}
+  publishable_key: ${STRIPE_PUBLISHABLE_KEY:}
+  webhook_secret: ${STRIPE_WEBHOOK_SECRET:}
+
+webhooks:
+  encryption_key: ${WEBHOOK_ENCRYPTION_KEY:}
+
+datadog:
+  api_key: ${DATADOG_API_KEY:}
+  site: ${DATADOG_SITE:us5.datadoghq.com}
+  hostname: ${DATADOG_HOSTNAME:}

@@ -24,6 +24,13 @@ export default defineConfig({
     },
     // Allow being loaded in iframe from a different origin
     cors: true,
+    // Proxy /api/lms/* to the Go backend on port 4290
+    proxy: {
+      "/api/lms": {
+        target: "http://localhost:4290",
+        changeOrigin: true,
+      },
+    },
   },
 });
 
