@@ -461,6 +461,11 @@ func main() {
         proEngagementEmailHandler := handlers.NewProEngagementEmailHandler(database, emitter)
         proEngagementConsentHandler := handlers.NewProEngagementConsentHandler(database, emitter)
 
+        // Phase 6: Reports + AI + Migration handlers
+        reportsHandler := handlers.NewReportsHandler(database, emitter)
+        aiHandler := handlers.NewAIHandler(database, emitter)
+        migrationHandler := handlers.NewMigrationHandler(database, emitter)
+
         // Ecommerce webhook — public, signature-verified (mount on the public
         // api router BEFORE the guarded subrouter, mirroring /billing/webhook).
         api.HandleFunc("/lms/ecommerce-webhook", ecommercePaymentHandler.Webhook).Methods("POST")
@@ -726,6 +731,37 @@ func main() {
         // Legal consents
         lmsAPI.HandleFunc("/student/consents", proEngagementConsentHandler.ListConsents).Methods("GET")
         lmsAPI.HandleFunc("/student/consents", proEngagementConsentHandler.GrantConsent).Methods("POST")
+
+        // === Phase 6: Reports ===
+        // Static paths (overview/sales/enrollments/completion/courses/students/
+        // export/save/saved) MUST come before any wildcard on the same prefix.
+        lmsAPI.HandleFunc("/admin/reports/overview", reportsHandler.OverviewReport).Methods("GET")
+        lmsAPI.HandleFunc("/admin/reports/sales", reportsHandler.SalesReport).Methods("GET")
+        lmsAPI.HandleFunc("/admin/reports/enrollments", reportsHandler.EnrollmentsReport).Methods("GET")
+        lmsAPI.HandleFunc("/admin/reports/completion", reportsHandler.CompletionReport).Methods("GET")
+        lmsAPI.HandleFunc("/admin/reports/courses", reportsHandler.CoursesReport).Methods("GET")
+        lmsAPI.HandleFunc("/admin/reports/students", reportsHandler.StudentsReport).Methods("GET")
+        lmsAPI.HandleFunc("/admin/reports/export", reportsHandler.ExportReport).Methods("POST")
+        lmsAPI.HandleFunc("/admin/reports/save", reportsHandler.SaveReport).Methods("POST")
+        lmsAPI.HandleFunc("/admin/reports/saved", reportsHandler.ListSavedReports).Methods("GET")
+        lmsAPI.HandleFunc("/admin/reports/saved/{id}", reportsHandler.DeleteSavedReport).Methods("DELETE")
+
+        // AI (TutorAI)
+        lmsAPI.HandleFunc("/ai/chat", aiHandler.Chat).Methods("POST")
+        lmsAPI.HandleFunc("/ai/conversations", aiHandler.ListConversations).Methods("GET")
+        lmsAPI.HandleFunc("/ai/conversations/{id}", aiHandler.GetConversation).Methods("GET")
+        lmsAPI.HandleFunc("/ai/conversations/{id}", aiHandler.DeleteConversation).Methods("DELETE")
+        lmsAPI.HandleFunc("/ai/usage", aiHandler.GetUsage).Methods("GET")
+        lmsAPI.HandleFunc("/ai/generate-course-outline", aiHandler.GenerateCourseOutline).Methods("POST")
+        lmsAPI.HandleFunc("/ai/generate-quiz", aiHandler.GenerateQuiz).Methods("POST")
+
+        // Migration
+        lmsAPI.HandleFunc("/migrations", migrationHandler.ListMigrations).Methods("GET")
+        lmsAPI.HandleFunc("/migrations", migrationHandler.CreateMigration).Methods("POST")
+        lmsAPI.HandleFunc("/migrations/{id}", migrationHandler.GetMigration).Methods("GET")
+        lmsAPI.HandleFunc("/migrations/{id}/start", migrationHandler.StartMigration).Methods("POST")
+        lmsAPI.HandleFunc("/migrations/{id}/cancel", migrationHandler.CancelMigration).Methods("POST")
+        lmsAPI.HandleFunc("/migrations/{id}/logs", migrationHandler.GetMigrationLogs).Methods("GET")
 
         // --- Guarded routes (require system to be initialized) ---
         guarded := api.PathPrefix("").Subrouter()

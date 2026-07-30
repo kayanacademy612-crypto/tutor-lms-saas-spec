@@ -512,6 +512,59 @@ func (m *MongoDB) ensureIndexes() {
 				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "userId", Value: 1}, {Key: "consentType", Value: 1}}},
 			},
 		},
+
+		// --- Phase 6: Reports + TutorAI + Migration collections ---
+		{
+			"lms_report_snapshots",
+			[]mongo.IndexModel{
+				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "reportType", Value: 1}, {Key: "createdAt", Value: -1}}},
+			},
+		},
+		{
+			"lms_saved_reports",
+			[]mongo.IndexModel{
+				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "createdBy", Value: 1}}},
+			},
+		},
+		{
+			"lms_ai_conversations",
+			[]mongo.IndexModel{
+				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "userId", Value: 1}, {Key: "updatedAt", Value: -1}}},
+			},
+		},
+		{
+			"lms_ai_messages",
+			[]mongo.IndexModel{
+				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "conversationId", Value: 1}, {Key: "createdAt", Value: 1}}},
+			},
+		},
+		{
+			"lms_ai_usage_stats",
+			[]mongo.IndexModel{
+				// One row per user per day; upserted by the metering job.
+				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "userId", Value: 1}, {Key: "date", Value: 1}}, Options: options.Index().SetUnique(true)},
+			},
+		},
+		{
+			"lms_migration_jobs",
+			[]mongo.IndexModel{
+				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "status", Value: 1}, {Key: "createdAt", Value: -1}}},
+			},
+		},
+		{
+			"lms_migration_logs",
+			[]mongo.IndexModel{
+				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "jobId", Value: 1}, {Key: "createdAt", Value: 1}}},
+			},
+		},
+		{
+			"lms_migration_mappings",
+			[]mongo.IndexModel{
+				// Idempotent re-runs: the importer checks this mapping before
+				// inserting and skips entities that already have a target ID.
+				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "jobId", Value: 1}, {Key: "entityType", Value: 1}, {Key: "sourceId", Value: 1}}, Options: options.Index().SetUnique(true)},
+			},
+		},
 	}
 
 	// Collections where unique index failure is a data integrity risk

@@ -1328,6 +1328,30 @@ const protectedRoutes: RouteObject = {
                 ).default,
               }),
             },
+            {
+              path: "reports-dashboard",
+              lazy: async () => ({
+                Component: (
+                  await import("@/app/pages/apps/reports-dashboard")
+                ).default,
+              }),
+            },
+            // Phase 6 — AI Assistant + Migration Wizard
+            {
+              path: "tutor-ai",
+              lazy: async () => ({
+                Component: (await import("@/app/pages/apps/tutor-ai"))
+                  .default,
+              }),
+            },
+            {
+              path: "migration-wizard",
+              lazy: async () => ({
+                Component: (
+                  await import("@/app/pages/apps/migration-wizard")
+                ).default,
+              }),
+            },
           ],
         },
         {

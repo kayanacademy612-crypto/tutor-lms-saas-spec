@@ -17,6 +17,11 @@ import type {
   AccessibilityPreferencesInput,
   AddToCartInput,
   AddonConfig,
+  AIConversation,
+  AIMessage,
+  AISendMessageInput,
+  AISendMessageResult,
+  AIUsageStats,
   Assignment,
   AssignmentCreateInput,
   AssignmentGrade,
@@ -42,6 +47,7 @@ import type {
   CertificateTemplateCreateInput,
   CheckoutInput,
   CheckoutResult,
+  CompletionReport,
   ConsentInput,
   Coupon,
   CouponCreateInput,
@@ -53,9 +59,11 @@ import type {
   CourseGiftCreateInput,
   CourseInstructor,
   CourseInstructorCreateInput,
+  CourseReport,
   CourseReview,
   CourseReviewCreateInput,
   CourseUpdateInput,
+  CreateMigrationInput,
   DripRule,
   DripRuleCreateInput,
   EarningsSummary,
@@ -63,6 +71,7 @@ import type {
   EmailTemplate,
   EmailTemplateUpdateInput,
   Enrollment,
+  EnrollmentReport,
   InstructorPayout,
   InstructorPayoutCreateInput,
   Invoice,
@@ -78,14 +87,16 @@ import type {
   ListParams,
   Membership,
   MembershipCreateInput,
-  Migration,
-  MigrationCreateInput,
+  MigrationJob,
+  MigrationLog,
+  MigrationPlatform,
   Notification,
   NotificationPreference,
   NotificationPreferenceInput,
   Order,
   OrderActivity,
   OrderCreateInput,
+  OverviewReport,
   PaginatedResponse,
   PaymentGatewayConfig,
   PaymentTransaction,
@@ -106,11 +117,16 @@ import type {
   QuizUpdateInput,
   Refund,
   RefundInput,
+  ReportFilters,
+  ReportType,
   RevenueLedgerEntry,
   RevenueReport,
+  SalesReport,
+  SavedReport,
   StudentBadge,
   StudentNote,
   StudentNoteCreateInput,
+  StudentReport,
   Subscription,
   SubscriptionPlan,
   SubscriptionPlanCreateInput,
@@ -773,14 +789,43 @@ export const calendarApi = {
 // Migrations / Addons
 // ---------------------------------------------------------------------------
 
+// Phase 6 — replaced the bare Phase-1 migration surface (list + create on the
+// legacy `Migration` model) with the full MigrationJob lifecycle (list / get /
+// create / start / cancel / logs) plus the typed `MigrationPlatform` enum and
+// per-entity counters.
 export const migrationApi = {
-  /** `GET /api/lms/migrations`. */
-  list(params?: ListParams): Promise<Migration[]> {
+  /** `GET /api/lms/migrations` — list migration jobs for the active tenant. */
+  list(params?: ListParams): Promise<MigrationJob[]> {
     return unwrap(lmsAxios.get("/migrations", { params: toQuery(params) }));
   },
-  /** `POST /api/lms/migrations`. */
-  create(input: MigrationCreateInput): Promise<Migration> {
+  /** `GET /api/lms/migrations/{id}` — fetch a single migration job. */
+  get(id: string): Promise<MigrationJob> {
+    return unwrap(lmsAxios.get(`/migrations/${encodeURIComponent(id)}`));
+  },
+  /** `POST /api/lms/migrations` — create a new migration job (does not start it). */
+  create(input: CreateMigrationInput): Promise<MigrationJob> {
     return unwrap(lmsAxios.post("/migrations", input));
+  },
+  /** `POST /api/lms/migrations/{id}/start` — begin processing a pending job. */
+  start(id: string): Promise<MigrationJob> {
+    return unwrap(lmsAxios.post(`/migrations/${encodeURIComponent(id)}/start`));
+  },
+  /** `POST /api/lms/migrations/{id}/cancel` — cancel a running/pending job. */
+  cancel(id: string): Promise<MigrationJob> {
+    return unwrap(
+      lmsAxios.post(`/migrations/${encodeURIComponent(id)}/cancel`),
+    );
+  },
+  /** `GET /api/lms/migrations/{id}/logs` — paginated log entries for a job. */
+  logs(
+    id: string,
+    params?: ListParams,
+  ): Promise<MigrationLog[]> {
+    return unwrap(
+      lmsAxios.get(`/migrations/${encodeURIComponent(id)}/logs`, {
+        params: toQuery(params),
+      }),
+    );
   },
 };
 
@@ -1613,6 +1658,128 @@ export const consentApi = {
 };
 
 // ---------------------------------------------------------------------------
+// PHASE 6: Reports + AI
+// ---------------------------------------------------------------------------
+
+// --- Reports ---------------------------------------------------------------
+
+export const reportApi = {
+  /** `GET /api/lms/admin/reports/overview` — top-line KPIs + daily series. */
+  overview(params?: ReportFilters): Promise<OverviewReport> {
+    return unwrap(
+      lmsAxios.get("/admin/reports/overview", { params: params ?? undefined }),
+    );
+  },
+  /** `GET /api/lms/admin/reports/sales` — sales totals + payment-method split. */
+  sales(params?: ReportFilters): Promise<SalesReport> {
+    return unwrap(
+      lmsAxios.get("/admin/reports/sales", { params: params ?? undefined }),
+    );
+  },
+  /** `GET /api/lms/admin/reports/enrollments` — enrollment counts + growth. */
+  enrollments(params?: ReportFilters): Promise<EnrollmentReport> {
+    return unwrap(
+      lmsAxios.get("/admin/reports/enrollments", {
+        params: params ?? undefined,
+      }),
+    );
+  },
+  /** `GET /api/lms/admin/reports/completion` — completion funnel + per-course. */
+  completion(params?: ReportFilters): Promise<CompletionReport> {
+    return unwrap(
+      lmsAxios.get("/admin/reports/completion", {
+        params: params ?? undefined,
+      }),
+    );
+  },
+  /** `GET /api/lms/admin/reports/courses` — per-course roll-up. */
+  courses(params?: ReportFilters): Promise<CourseReport> {
+    return unwrap(
+      lmsAxios.get("/admin/reports/courses", { params: params ?? undefined }),
+    );
+  },
+  /** `GET /api/lms/admin/reports/students` — per-student roll-up. */
+  students(params?: ReportFilters): Promise<StudentReport> {
+    return unwrap(
+      lmsAxios.get("/admin/reports/students", { params: params ?? undefined }),
+    );
+  },
+  /** `POST /api/lms/admin/reports/export` — request a CSV download URL. */
+  exportCsv(
+    reportType: ReportType,
+    params?: ReportFilters,
+  ): Promise<{ downloadUrl: string }> {
+    return unwrap(
+      lmsAxios.post("/admin/reports/export", { reportType, params }),
+    );
+  },
+  /** `POST /api/lms/admin/reports/save` — save a report config for re-use. */
+  save(input: {
+    name: string;
+    reportType: ReportType;
+    config: Record<string, unknown>;
+  }): Promise<SavedReport> {
+    return unwrap(lmsAxios.post("/admin/reports/save", input));
+  },
+  /** `GET /api/lms/admin/reports/saved` — list saved report configs. */
+  listSaved(): Promise<SavedReport[]> {
+    return unwrap(lmsAxios.get("/admin/reports/saved"));
+  },
+  /** `DELETE /api/lms/admin/reports/saved/{id}` — remove a saved report. */
+  deleteSaved(id: string): Promise<{ success: boolean }> {
+    return unwrap(
+      lmsAxios.delete(`/admin/reports/saved/${encodeURIComponent(id)}`),
+    );
+  },
+};
+
+// --- AI --------------------------------------------------------------------
+
+export const aiApi = {
+  /** `POST /api/lms/ai/chat` — send a message, get the assistant's reply. */
+  sendMessage(input: AISendMessageInput): Promise<AISendMessageResult> {
+    return unwrap(lmsAxios.post("/ai/chat", input));
+  },
+  /** `GET /api/lms/ai/conversations` — list conversations for the current user. */
+  conversations(): Promise<AIConversation[]> {
+    return unwrap(lmsAxios.get("/ai/conversations"));
+  },
+  /** `GET /api/lms/ai/conversations/{id}` — fetch a conversation + its messages. */
+  conversation(
+    id: string,
+  ): Promise<{ conversation: AIConversation; messages: AIMessage[] }> {
+    return unwrap(lmsAxios.get(`/ai/conversations/${encodeURIComponent(id)}`));
+  },
+  /** `DELETE /api/lms/ai/conversations/{id}` — remove a conversation. */
+  deleteConversation(id: string): Promise<{ success: boolean }> {
+    return unwrap(
+      lmsAxios.delete(`/ai/conversations/${encodeURIComponent(id)}`),
+    );
+  },
+  /** `GET /api/lms/ai/usage?from=&to=` — daily AI usage stats for the tenant. */
+  usage(params?: { from?: string; to?: string }): Promise<AIUsageStats[]> {
+    return unwrap(lmsAxios.get("/ai/usage", { params: params ?? undefined }));
+  },
+  /** `POST /api/lms/ai/generate-course-outline` — AI-generated course outline. */
+  generateCourseOutline(input: {
+    topic: string;
+    level?: string;
+    lessonsCount?: number;
+  }): Promise<{ outline: unknown }> {
+    return unwrap(lmsAxios.post("/ai/generate-course-outline", input));
+  },
+  /** `POST /api/lms/ai/generate-quiz` — AI-generated quiz from a topic/lesson. */
+  generateQuiz(input: {
+    lessonId?: string;
+    topic: string;
+    questionCount?: number;
+    questionTypes?: string[];
+  }): Promise<{ quiz: unknown }> {
+    return unwrap(lmsAxios.post("/ai/generate-quiz", input));
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Barrel export
 // ---------------------------------------------------------------------------
 
@@ -1670,6 +1837,9 @@ export const lmsApi = {
   accessibility: accessibilityApi,
   emailTemplate: emailTemplateApi,
   consent: consentApi,
+  // Phase 6 — Reports + AI
+  report: reportApi,
+  ai: aiApi,
 };
 
 export default lmsApi;

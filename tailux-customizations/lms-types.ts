@@ -1839,3 +1839,278 @@ export interface ConsentInput {
   version: string;
   granted: boolean;
 }
+
+// === PHASE 6: REPORTS + AI + MIGRATION TYPES ===
+
+// Reports
+export type ReportType =
+  | "overview"
+  | "sales"
+  | "enrollments"
+  | "completion"
+  | "courses"
+  | "students"
+  | "instructors";
+
+export interface ReportSnapshot {
+  id: string;
+  tenantId: string;
+  reportType: ReportType;
+  period?: string;
+  fromDate: string;
+  toDate: string;
+  filters?: Record<string, unknown>;
+  summary?: Record<string, unknown>;
+  data?: Array<Record<string, unknown>>;
+  generatedBy: string;
+  createdAt: string;
+}
+
+export interface SavedReport {
+  id: string;
+  tenantId: string;
+  name: string;
+  reportType: ReportType;
+  config: Record<string, unknown>;
+  scheduleCron?: string;
+  lastRunAt?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ReportFilters {
+  from?: string;
+  to?: string;
+  courseId?: string;
+  instructorId?: string;
+  category?: string;
+}
+
+export interface OverviewReport {
+  totalRevenueCents: number;
+  totalOrders: number;
+  totalRefundsCents: number;
+  netRevenueCents: number;
+  totalEnrollments: number;
+  totalStudents: number;
+  totalCourses: number;
+  totalInstructors: number;
+  completionRate: number;
+  avgRating: number;
+  revenueGrowth: number;
+  enrollmentGrowth: number;
+  dailySeries: Array<{
+    date: string;
+    revenueCents: number;
+    enrollments: number;
+    orders: number;
+  }>;
+}
+
+export interface SalesReport {
+  totalSalesCents: number;
+  totalOrders: number;
+  avgOrderValueCents: number;
+  refundRate: number;
+  topCourses: Array<{
+    courseId: string;
+    title: string;
+    salesCents: number;
+    orders: number;
+  }>;
+  paymentMethods: Array<{
+    gateway: string;
+    count: number;
+    totalCents: number;
+  }>;
+  dailySeries: Array<{
+    date: string;
+    salesCents: number;
+    orders: number;
+    refundsCents: number;
+  }>;
+}
+
+export interface EnrollmentReport {
+  totalEnrollments: number;
+  activeEnrollments: number;
+  completedEnrollments: number;
+  cancelledEnrollments: number;
+  enrollmentGrowth: number;
+  completionRate: number;
+  topCourses: Array<{
+    courseId: string;
+    title: string;
+    enrollments: number;
+    completions: number;
+    completionRate: number;
+  }>;
+  dailySeries: Array<{
+    date: string;
+    enrollments: number;
+    completions: number;
+  }>;
+}
+
+export interface CompletionReport {
+  overallCompletionRate: number;
+  avgCompletionDays: number;
+  courses: Array<{
+    courseId: string;
+    title: string;
+    enrolledCount: number;
+    completedCount: number;
+    completionRate: number;
+    avgScore: number;
+    dropoffRate: number;
+  }>;
+  funnel: Array<{ stage: string; count: number; percentage: number }>;
+}
+
+export interface CourseReport {
+  courses: Array<{
+    courseId: string;
+    title: string;
+    instructorName: string;
+    enrollments: number;
+    revenueCents: number;
+    avgRating: number;
+    completionRate: number;
+    status: string;
+  }>;
+  totalCourses: number;
+  publishedCourses: number;
+  draftCourses: number;
+}
+
+export interface StudentReport {
+  students: Array<{
+    studentId: string;
+    name: string;
+    email: string;
+    enrollments: number;
+    completedCourses: number;
+    totalSpentCents: number;
+    lastActiveAt: string;
+  }>;
+  totalStudents: number;
+  activeStudents: number;
+  newStudentsThisMonth: number;
+}
+
+// AI
+export interface AIConversation {
+  id: string;
+  tenantId: string;
+  userId: string;
+  title?: string;
+  context?: Record<string, unknown>;
+  usageTokens?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AIMessage {
+  id: string;
+  tenantId: string;
+  conversationId: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  tokensUsed?: number;
+  model?: string;
+  createdAt: string;
+}
+
+export interface AISendMessageInput {
+  /** If undefined, the backend creates a new conversation. */
+  conversationId?: string;
+  message: string;
+  context?: {
+    courseId?: string;
+    lessonId?: string;
+    action?:
+      | "generate_outline"
+      | "generate_quiz"
+      | "improve_content"
+      | "summarize"
+      | "chat";
+  };
+}
+
+export interface AISendMessageResult {
+  conversationId: string;
+  /** The assistant's response message. */
+  message: AIMessage;
+  usage: { tokensUsed: number; remainingTokens: number };
+}
+
+export interface AIUsageStats {
+  date: string;
+  totalRequests: number;
+  totalTokens: number;
+  estimatedCostCents: number;
+}
+
+// Migration
+export type MigrationPlatform =
+  | "learndash"
+  | "lifterlms"
+  | "learnpress"
+  | "woocommerce"
+  | "tutor_lms"
+  | "csv";
+
+export type MigrationJobStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export interface MigrationJob {
+  id: string;
+  tenantId: string;
+  platform: MigrationPlatform;
+  status: MigrationJobStatus;
+  sourceConfig?: Record<string, unknown>;
+  totalCourses?: number;
+  totalLessons?: number;
+  totalQuizzes?: number;
+  totalStudents?: number;
+  migratedCourses?: number;
+  migratedLessons?: number;
+  migratedQuizzes?: number;
+  migratedStudents?: number;
+  errorMessage?: string;
+  startedAt?: string;
+  completedAt?: string;
+  startedBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MigrationLog {
+  id: string;
+  tenantId: string;
+  jobId: string;
+  level: "info" | "warning" | "error";
+  entity?: string;
+  sourceId?: string;
+  targetId?: string;
+  message: string;
+  createdAt: string;
+}
+
+export interface CreateMigrationInput {
+  platform: MigrationPlatform;
+  sourceConfig: {
+    dbHost?: string;
+    dbName?: string;
+    dbUser?: string;
+    dbPassword?: string;
+    apiKey?: string;
+    apiUrl?: string;
+    filePath?: string;
+  };
+}
