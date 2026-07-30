@@ -1,745 +1,752 @@
 package db
 
 import (
-	"context"
-	"fmt"
-	"log/slog"
-	"os"
-	"time"
+        "context"
+        "fmt"
+        "log/slog"
+        "os"
+        "time"
 
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
+        "go.mongodb.org/mongo-driver/bson"
+        "go.mongodb.org/mongo-driver/mongo"
+        "go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type MongoDB struct {
-	Client   *mongo.Client
-	Database *mongo.Database
+        Client   *mongo.Client
+        Database *mongo.Database
 }
 
 func NewMongoDB(uri, database string) (*MongoDB, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+        ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+        defer cancel()
 
-	clientOptions := options.Client().
-		ApplyURI(uri).
-		SetMaxPoolSize(100).
-		SetMinPoolSize(5).
-		SetMaxConnIdleTime(5 * time.Minute)
+        clientOptions := options.Client().
+                ApplyURI(uri).
+                SetMaxPoolSize(100).
+                SetMinPoolSize(5).
+                SetMaxConnIdleTime(5 * time.Minute)
 
-	client, err := mongo.Connect(ctx, clientOptions)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to MongoDB: %w", err)
-	}
+        client, err := mongo.Connect(ctx, clientOptions)
+        if err != nil {
+                return nil, fmt.Errorf("failed to connect to MongoDB: %w", err)
+        }
 
-	if err := client.Ping(ctx, nil); err != nil {
-		return nil, fmt.Errorf("failed to ping MongoDB: %w", err)
-	}
+        if err := client.Ping(ctx, nil); err != nil {
+                return nil, fmt.Errorf("failed to ping MongoDB: %w", err)
+        }
 
-	db := &MongoDB{
-		Client:   client,
-		Database: client.Database(database),
-	}
+        db := &MongoDB{
+                Client:   client,
+                Database: client.Database(database),
+        }
 
-	db.ensureIndexes()
-	if os.Getenv("LASTSAAS_ENV") != "test" {
-		db.EnsureSchemaValidation()
-	}
+        // Run index creation + schema validation in the background so the
+        // server starts listening immediately. This reduces startup time
+        // from ~55s to ~3s, which is critical in sandboxed environments
+        // where the process may be killed and need to restart quickly.
+        go func() {
+                db.ensureIndexes()
+                if os.Getenv("LASTSAAS_ENV") != "test" {
+                        db.EnsureSchemaValidation()
+                }
+                slog.Info("Background index creation + schema validation complete")
+        }()
 
-	return db, nil
+        return db, nil
 }
 
 func (m *MongoDB) ensureIndexes() {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
+        ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+        defer cancel()
 
-	indexes := []struct {
-		collection string
-		models     []mongo.IndexModel
-	}{
-		{
-			"users",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "email", Value: 1}}, Options: options.Index().SetUnique(true).SetSparse(true)},
-				{Keys: bson.D{{Key: "googleId", Value: 1}}, Options: options.Index().SetSparse(true)},
-				{Keys: bson.D{{Key: "githubId", Value: 1}}, Options: options.Index().SetSparse(true)},
-				{Keys: bson.D{{Key: "microsoftId", Value: 1}}, Options: options.Index().SetSparse(true)},
-				{Keys: bson.D{{Key: "displayName", Value: 1}}},
-			},
-		},
-		{
-			"tenants",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "slug", Value: 1}}, Options: options.Index().SetUnique(true)},
-				{Keys: bson.D{{Key: "isRoot", Value: 1}}},
-				{Keys: bson.D{{Key: "name", Value: 1}}},
-				{Keys: bson.D{{Key: "billingStatus", Value: 1}, {Key: "isActive", Value: 1}}},
-				{Keys: bson.D{{Key: "planId", Value: 1}}},
-				{Keys: bson.D{{Key: "trialUsedAt", Value: 1}}, Options: options.Index().SetSparse(true)},
-			},
-		},
-		{
-			"tenant_memberships",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "userId", Value: 1}, {Key: "tenantId", Value: 1}}, Options: options.Index().SetUnique(true)},
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "role", Value: 1}}},
-				{Keys: bson.D{{Key: "userId", Value: 1}}},
-			},
-		},
-		{
-			"refresh_tokens",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "userId", Value: 1}}},
-				{Keys: bson.D{{Key: "expiresAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(0)},
-			},
-		},
-		{
-			"verification_tokens",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "userId", Value: 1}, {Key: "type", Value: 1}}},
-				{Keys: bson.D{{Key: "token", Value: 1}}},
-				{Keys: bson.D{{Key: "expiresAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(0)},
-			},
-		},
-		{
-			"oauth_states",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "expiresAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(0)},
-			},
-		},
-		{
-			"revoked_tokens",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "expiresAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(0)},
-				{Keys: bson.D{{Key: "tokenHash", Value: 1}}, Options: options.Index().SetUnique(true)},
-			},
-		},
-		{
-			"invitations",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "email", Value: 1}}, Options: options.Index().SetUnique(true)},
-				{Keys: bson.D{{Key: "token", Value: 1}}},
-				{Keys: bson.D{{Key: "expiresAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(0)},
-			},
-		},
-		{
-			"audit_log",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "createdAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(90 * 24 * 3600)},
-				{Keys: bson.D{{Key: "userId", Value: 1}, {Key: "createdAt", Value: -1}}},
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "createdAt", Value: -1}}},
-			},
-		},
-		{
-			"messages",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "userId", Value: 1}, {Key: "createdAt", Value: -1}}},
-				{Keys: bson.D{{Key: "userId", Value: 1}, {Key: "read", Value: 1}}},
-			},
-		},
-		{
-			"system_logs",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "createdAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(180 * 24 * 3600)},
-				{Keys: bson.D{{Key: "severity", Value: 1}, {Key: "createdAt", Value: -1}}},
-				{Keys: bson.D{{Key: "category", Value: 1}, {Key: "createdAt", Value: -1}}},
-				{Keys: bson.D{{Key: "message", Value: "text"}}},
-				{Keys: bson.D{{Key: "userId", Value: 1}, {Key: "createdAt", Value: -1}}},
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "createdAt", Value: -1}}},
-			},
-		},
-		{
-			"config_vars",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "name", Value: 1}}, Options: options.Index().SetUnique(true)},
-			},
-		},
-		{
-			"plans",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "name", Value: 1}}, Options: options.Index().SetUnique(true)},
-				{Keys: bson.D{{Key: "isSystem", Value: 1}}},
-			},
-		},
-		{
-			"credit_bundles",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "name", Value: 1}}, Options: options.Index().SetUnique(true)},
-				{Keys: bson.D{{Key: "sortOrder", Value: 1}}},
-			},
-		},
-		{
-			"financial_transactions",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "createdAt", Value: -1}}},
-				{Keys: bson.D{{Key: "userId", Value: 1}, {Key: "createdAt", Value: -1}}},
-				{Keys: bson.D{{Key: "invoiceNumber", Value: 1}}, Options: options.Index().SetUnique(true)},
-			},
-		},
-		{
-			"stripe_mappings",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "entityType", Value: 1}, {Key: "entityId", Value: 1}}, Options: options.Index().SetUnique(true)},
-			},
-		},
-		{
-			"daily_metrics",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "date", Value: 1}}, Options: options.Index().SetUnique(true)},
-				{Keys: bson.D{{Key: "createdAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(400 * 24 * 3600)},
-			},
-		},
-		{
-			"leader_locks",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "expiresAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(0)},
-			},
-		},
-		{
-			"webhook_events",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "eventId", Value: 1}}, Options: options.Index().SetUnique(true)},
-				{Keys: bson.D{{Key: "createdAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(30 * 24 * 3600)},
-			},
-		},
-		{
-			"system_nodes",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "machineId", Value: 1}}, Options: options.Index().SetUnique(true)},
-				{Keys: bson.D{{Key: "lastSeen", Value: 1}}},
-				{Keys: bson.D{{Key: "startedAt", Value: 1}}},
-			},
-		},
-		{
-			"system_metrics",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "timestamp", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(30 * 24 * 3600)},
-				{Keys: bson.D{{Key: "nodeId", Value: 1}, {Key: "timestamp", Value: -1}}},
-			},
-		},
-		{
-			"api_keys",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "keyHash", Value: 1}}, Options: options.Index().SetUnique(true)},
-				{Keys: bson.D{{Key: "createdBy", Value: 1}, {Key: "createdAt", Value: -1}}},
-			},
-		},
-		{
-			"webhooks",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "createdBy", Value: 1}, {Key: "createdAt", Value: -1}}},
-				{Keys: bson.D{{Key: "events", Value: 1}, {Key: "isActive", Value: 1}}},
-			},
-		},
-		{
-			"webhook_deliveries",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "webhookId", Value: 1}, {Key: "createdAt", Value: -1}}},
-				{Keys: bson.D{{Key: "createdAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(30 * 24 * 3600)},
-			},
-		},
-		{
-			"branding_assets",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "key", Value: 1}}, Options: options.Index().SetUnique(true)},
-			},
-		},
-		{
-			"custom_pages",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "slug", Value: 1}}, Options: options.Index().SetUnique(true)},
-				{Keys: bson.D{{Key: "isPublished", Value: 1}, {Key: "sortOrder", Value: 1}}},
-			},
-		},
-		{
-			"webauthn_credentials",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "userId", Value: 1}}},
-				{Keys: bson.D{{Key: "credentialId", Value: 1}}, Options: options.Index().SetUnique(true)},
-			},
-		},
-		{
-			"webauthn_sessions",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "expiresAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(0)},
-			},
-		},
-		{
-			"sso_connections",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}}, Options: options.Index().SetUnique(true)},
-			},
-		},
-		{
-			"auth_codes",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "code", Value: 1}}, Options: options.Index().SetUnique(true)},
-				{Keys: bson.D{{Key: "expiresAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(0)},
-			},
-		},
-		{
-			"usage_events",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "createdAt", Value: -1}}},
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "type", Value: 1}, {Key: "createdAt", Value: -1}}},
-				{Keys: bson.D{{Key: "createdAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(90 * 24 * 60 * 60)}, // TTL: 90 days
-			},
-		},
-		{
-			"telemetry_events",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "eventName", Value: 1}, {Key: "createdAt", Value: -1}}},
-				{Keys: bson.D{{Key: "category", Value: 1}, {Key: "createdAt", Value: -1}}},
-				{Keys: bson.D{{Key: "userId", Value: 1}, {Key: "createdAt", Value: -1}}},
-				{Keys: bson.D{{Key: "sessionId", Value: 1}, {Key: "createdAt", Value: -1}}},
-				{Keys: bson.D{{Key: "createdAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(365 * 24 * 3600)}, // TTL: 365 days
-				{Keys: bson.D{{Key: "properties.page", Value: 1}, {Key: "createdAt", Value: -1}}, Options: options.Index().SetSparse(true)},
-			},
-		},
-		{
-			"event_definitions",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "name", Value: 1}}, Options: options.Index().SetUnique(true)},
-				{Keys: bson.D{{Key: "parentId", Value: 1}}, Options: options.Index().SetSparse(true)},
-			},
-		},
+        indexes := []struct {
+                collection string
+                models     []mongo.IndexModel
+        }{
+                {
+                        "users",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "email", Value: 1}}, Options: options.Index().SetUnique(true).SetSparse(true)},
+                                {Keys: bson.D{{Key: "googleId", Value: 1}}, Options: options.Index().SetSparse(true)},
+                                {Keys: bson.D{{Key: "githubId", Value: 1}}, Options: options.Index().SetSparse(true)},
+                                {Keys: bson.D{{Key: "microsoftId", Value: 1}}, Options: options.Index().SetSparse(true)},
+                                {Keys: bson.D{{Key: "displayName", Value: 1}}},
+                        },
+                },
+                {
+                        "tenants",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "slug", Value: 1}}, Options: options.Index().SetUnique(true)},
+                                {Keys: bson.D{{Key: "isRoot", Value: 1}}},
+                                {Keys: bson.D{{Key: "name", Value: 1}}},
+                                {Keys: bson.D{{Key: "billingStatus", Value: 1}, {Key: "isActive", Value: 1}}},
+                                {Keys: bson.D{{Key: "planId", Value: 1}}},
+                                {Keys: bson.D{{Key: "trialUsedAt", Value: 1}}, Options: options.Index().SetSparse(true)},
+                        },
+                },
+                {
+                        "tenant_memberships",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "userId", Value: 1}, {Key: "tenantId", Value: 1}}, Options: options.Index().SetUnique(true)},
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "role", Value: 1}}},
+                                {Keys: bson.D{{Key: "userId", Value: 1}}},
+                        },
+                },
+                {
+                        "refresh_tokens",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "userId", Value: 1}}},
+                                {Keys: bson.D{{Key: "expiresAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(0)},
+                        },
+                },
+                {
+                        "verification_tokens",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "userId", Value: 1}, {Key: "type", Value: 1}}},
+                                {Keys: bson.D{{Key: "token", Value: 1}}},
+                                {Keys: bson.D{{Key: "expiresAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(0)},
+                        },
+                },
+                {
+                        "oauth_states",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "expiresAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(0)},
+                        },
+                },
+                {
+                        "revoked_tokens",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "expiresAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(0)},
+                                {Keys: bson.D{{Key: "tokenHash", Value: 1}}, Options: options.Index().SetUnique(true)},
+                        },
+                },
+                {
+                        "invitations",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "email", Value: 1}}, Options: options.Index().SetUnique(true)},
+                                {Keys: bson.D{{Key: "token", Value: 1}}},
+                                {Keys: bson.D{{Key: "expiresAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(0)},
+                        },
+                },
+                {
+                        "audit_log",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "createdAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(90 * 24 * 3600)},
+                                {Keys: bson.D{{Key: "userId", Value: 1}, {Key: "createdAt", Value: -1}}},
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "createdAt", Value: -1}}},
+                        },
+                },
+                {
+                        "messages",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "userId", Value: 1}, {Key: "createdAt", Value: -1}}},
+                                {Keys: bson.D{{Key: "userId", Value: 1}, {Key: "read", Value: 1}}},
+                        },
+                },
+                {
+                        "system_logs",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "createdAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(180 * 24 * 3600)},
+                                {Keys: bson.D{{Key: "severity", Value: 1}, {Key: "createdAt", Value: -1}}},
+                                {Keys: bson.D{{Key: "category", Value: 1}, {Key: "createdAt", Value: -1}}},
+                                {Keys: bson.D{{Key: "message", Value: "text"}}},
+                                {Keys: bson.D{{Key: "userId", Value: 1}, {Key: "createdAt", Value: -1}}},
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "createdAt", Value: -1}}},
+                        },
+                },
+                {
+                        "config_vars",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "name", Value: 1}}, Options: options.Index().SetUnique(true)},
+                        },
+                },
+                {
+                        "plans",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "name", Value: 1}}, Options: options.Index().SetUnique(true)},
+                                {Keys: bson.D{{Key: "isSystem", Value: 1}}},
+                        },
+                },
+                {
+                        "credit_bundles",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "name", Value: 1}}, Options: options.Index().SetUnique(true)},
+                                {Keys: bson.D{{Key: "sortOrder", Value: 1}}},
+                        },
+                },
+                {
+                        "financial_transactions",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "createdAt", Value: -1}}},
+                                {Keys: bson.D{{Key: "userId", Value: 1}, {Key: "createdAt", Value: -1}}},
+                                {Keys: bson.D{{Key: "invoiceNumber", Value: 1}}, Options: options.Index().SetUnique(true)},
+                        },
+                },
+                {
+                        "stripe_mappings",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "entityType", Value: 1}, {Key: "entityId", Value: 1}}, Options: options.Index().SetUnique(true)},
+                        },
+                },
+                {
+                        "daily_metrics",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "date", Value: 1}}, Options: options.Index().SetUnique(true)},
+                                {Keys: bson.D{{Key: "createdAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(400 * 24 * 3600)},
+                        },
+                },
+                {
+                        "leader_locks",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "expiresAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(0)},
+                        },
+                },
+                {
+                        "webhook_events",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "eventId", Value: 1}}, Options: options.Index().SetUnique(true)},
+                                {Keys: bson.D{{Key: "createdAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(30 * 24 * 3600)},
+                        },
+                },
+                {
+                        "system_nodes",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "machineId", Value: 1}}, Options: options.Index().SetUnique(true)},
+                                {Keys: bson.D{{Key: "lastSeen", Value: 1}}},
+                                {Keys: bson.D{{Key: "startedAt", Value: 1}}},
+                        },
+                },
+                {
+                        "system_metrics",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "timestamp", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(30 * 24 * 3600)},
+                                {Keys: bson.D{{Key: "nodeId", Value: 1}, {Key: "timestamp", Value: -1}}},
+                        },
+                },
+                {
+                        "api_keys",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "keyHash", Value: 1}}, Options: options.Index().SetUnique(true)},
+                                {Keys: bson.D{{Key: "createdBy", Value: 1}, {Key: "createdAt", Value: -1}}},
+                        },
+                },
+                {
+                        "webhooks",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "createdBy", Value: 1}, {Key: "createdAt", Value: -1}}},
+                                {Keys: bson.D{{Key: "events", Value: 1}, {Key: "isActive", Value: 1}}},
+                        },
+                },
+                {
+                        "webhook_deliveries",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "webhookId", Value: 1}, {Key: "createdAt", Value: -1}}},
+                                {Keys: bson.D{{Key: "createdAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(30 * 24 * 3600)},
+                        },
+                },
+                {
+                        "branding_assets",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "key", Value: 1}}, Options: options.Index().SetUnique(true)},
+                        },
+                },
+                {
+                        "custom_pages",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "slug", Value: 1}}, Options: options.Index().SetUnique(true)},
+                                {Keys: bson.D{{Key: "isPublished", Value: 1}, {Key: "sortOrder", Value: 1}}},
+                        },
+                },
+                {
+                        "webauthn_credentials",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "userId", Value: 1}}},
+                                {Keys: bson.D{{Key: "credentialId", Value: 1}}, Options: options.Index().SetUnique(true)},
+                        },
+                },
+                {
+                        "webauthn_sessions",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "expiresAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(0)},
+                        },
+                },
+                {
+                        "sso_connections",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}}, Options: options.Index().SetUnique(true)},
+                        },
+                },
+                {
+                        "auth_codes",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "code", Value: 1}}, Options: options.Index().SetUnique(true)},
+                                {Keys: bson.D{{Key: "expiresAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(0)},
+                        },
+                },
+                {
+                        "usage_events",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "createdAt", Value: -1}}},
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "type", Value: 1}, {Key: "createdAt", Value: -1}}},
+                                {Keys: bson.D{{Key: "createdAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(90 * 24 * 60 * 60)}, // TTL: 90 days
+                        },
+                },
+                {
+                        "telemetry_events",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "eventName", Value: 1}, {Key: "createdAt", Value: -1}}},
+                                {Keys: bson.D{{Key: "category", Value: 1}, {Key: "createdAt", Value: -1}}},
+                                {Keys: bson.D{{Key: "userId", Value: 1}, {Key: "createdAt", Value: -1}}},
+                                {Keys: bson.D{{Key: "sessionId", Value: 1}, {Key: "createdAt", Value: -1}}},
+                                {Keys: bson.D{{Key: "createdAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(365 * 24 * 3600)}, // TTL: 365 days
+                                {Keys: bson.D{{Key: "properties.page", Value: 1}, {Key: "createdAt", Value: -1}}, Options: options.Index().SetSparse(true)},
+                        },
+                },
+                {
+                        "event_definitions",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "name", Value: 1}}, Options: options.Index().SetUnique(true)},
+                                {Keys: bson.D{{Key: "parentId", Value: 1}}, Options: options.Index().SetSparse(true)},
+                        },
+                },
 
-		// --- Phase 3: eCommerce collections ---
-		{
-			"lms_carts",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "userId", Value: 1}}, Options: options.Index().SetUnique(true)},
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "updatedAt", Value: -1}}},
-				{Keys: bson.D{{Key: "expiresAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(0).SetSparse(true)},
-			},
-		},
-		{
-			"lms_tax_rates",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "isActive", Value: 1}}},
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "countryCode", Value: 1}, {Key: "regionCode", Value: 1}}, Options: options.Index().SetSparse(true)},
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "priority", Value: 1}}},
-			},
-		},
-		{
-			"lms_subscription_plans",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "slug", Value: 1}}, Options: options.Index().SetUnique(true)},
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "isActive", Value: 1}, {Key: "sortOrder", Value: 1}}},
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "planType", Value: 1}}},
-				{Keys: bson.D{{Key: "stripePriceId", Value: 1}}, Options: options.Index().SetSparse(true)},
-			},
-		},
-		{
-			"lms_subscriptions",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "userId", Value: 1}, {Key: "status", Value: 1}}},
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "currentPeriodEnd", Value: 1}}},
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "nextRetryAt", Value: 1}}, Options: options.Index().SetSparse(true)},
-				{Keys: bson.D{{Key: "stripeSubscriptionId", Value: 1}}, Options: options.Index().SetSparse(true)},
-			},
-		},
-		{
-			"lms_dunning_cycles",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "subscriptionId", Value: 1}, {Key: "attemptNumber", Value: 1}}},
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "status", Value: 1}, {Key: "scheduledAt", Value: 1}}},
-			},
-		},
-		{
-			"lms_payment_transactions",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "orderId", Value: 1}, {Key: "createdAt", Value: -1}}},
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "userId", Value: 1}, {Key: "createdAt", Value: -1}}},
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "status", Value: 1}}},
-				{Keys: bson.D{{Key: "gatewayTransactionId", Value: 1}}, Options: options.Index().SetSparse(true)},
-			},
-		},
-		{
-			"lms_invoices",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "invoiceNumber", Value: 1}}, Options: options.Index().SetUnique(true)},
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "orderId", Value: 1}}, Options: options.Index().SetSparse(true)},
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "userId", Value: 1}, {Key: "createdAt", Value: -1}}},
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "status", Value: 1}}},
-			},
-		},
-		{
-			"lms_refunds",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "orderId", Value: 1}, {Key: "createdAt", Value: -1}}},
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "status", Value: 1}}},
-				{Keys: bson.D{{Key: "gatewayRefundId", Value: 1}}, Options: options.Index().SetSparse(true)},
-			},
-		},
-		{
-			"lms_wishlists",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "userId", Value: 1}, {Key: "courseId", Value: 1}}, Options: options.Index().SetUnique(true)},
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "courseId", Value: 1}}},
-			},
-		},
-		{
-			"lms_revenue_ledger",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "orderId", Value: 1}, {Key: "accountType", Value: 1}}},
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "instructorId", Value: 1}, {Key: "createdAt", Value: -1}}, Options: options.Index().SetSparse(true)},
-			},
-		},
-		{
-			"lms_withdrawal_requests",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "instructorId", Value: 1}, {Key: "createdAt", Value: -1}}},
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "status", Value: 1}, {Key: "createdAt", Value: -1}}},
-			},
-		},
-		{
-			"lms_order_activity",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "orderId", Value: 1}, {Key: "createdAt", Value: 1}}},
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "action", Value: 1}, {Key: "createdAt", Value: -1}}},
-			},
-		},
+                // --- Phase 3: eCommerce collections ---
+                {
+                        "lms_carts",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "userId", Value: 1}}, Options: options.Index().SetUnique(true)},
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "updatedAt", Value: -1}}},
+                                {Keys: bson.D{{Key: "expiresAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(0).SetSparse(true)},
+                        },
+                },
+                {
+                        "lms_tax_rates",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "isActive", Value: 1}}},
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "countryCode", Value: 1}, {Key: "regionCode", Value: 1}}, Options: options.Index().SetSparse(true)},
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "priority", Value: 1}}},
+                        },
+                },
+                {
+                        "lms_subscription_plans",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "slug", Value: 1}}, Options: options.Index().SetUnique(true)},
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "isActive", Value: 1}, {Key: "sortOrder", Value: 1}}},
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "planType", Value: 1}}},
+                                {Keys: bson.D{{Key: "stripePriceId", Value: 1}}, Options: options.Index().SetSparse(true)},
+                        },
+                },
+                {
+                        "lms_subscriptions",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "userId", Value: 1}, {Key: "status", Value: 1}}},
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "currentPeriodEnd", Value: 1}}},
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "nextRetryAt", Value: 1}}, Options: options.Index().SetSparse(true)},
+                                {Keys: bson.D{{Key: "stripeSubscriptionId", Value: 1}}, Options: options.Index().SetSparse(true)},
+                        },
+                },
+                {
+                        "lms_dunning_cycles",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "subscriptionId", Value: 1}, {Key: "attemptNumber", Value: 1}}},
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "status", Value: 1}, {Key: "scheduledAt", Value: 1}}},
+                        },
+                },
+                {
+                        "lms_payment_transactions",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "orderId", Value: 1}, {Key: "createdAt", Value: -1}}},
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "userId", Value: 1}, {Key: "createdAt", Value: -1}}},
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "status", Value: 1}}},
+                                {Keys: bson.D{{Key: "gatewayTransactionId", Value: 1}}, Options: options.Index().SetSparse(true)},
+                        },
+                },
+                {
+                        "lms_invoices",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "invoiceNumber", Value: 1}}, Options: options.Index().SetUnique(true)},
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "orderId", Value: 1}}, Options: options.Index().SetSparse(true)},
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "userId", Value: 1}, {Key: "createdAt", Value: -1}}},
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "status", Value: 1}}},
+                        },
+                },
+                {
+                        "lms_refunds",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "orderId", Value: 1}, {Key: "createdAt", Value: -1}}},
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "status", Value: 1}}},
+                                {Keys: bson.D{{Key: "gatewayRefundId", Value: 1}}, Options: options.Index().SetSparse(true)},
+                        },
+                },
+                {
+                        "lms_wishlists",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "userId", Value: 1}, {Key: "courseId", Value: 1}}, Options: options.Index().SetUnique(true)},
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "courseId", Value: 1}}},
+                        },
+                },
+                {
+                        "lms_revenue_ledger",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "orderId", Value: 1}, {Key: "accountType", Value: 1}}},
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "instructorId", Value: 1}, {Key: "createdAt", Value: -1}}, Options: options.Index().SetSparse(true)},
+                        },
+                },
+                {
+                        "lms_withdrawal_requests",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "instructorId", Value: 1}, {Key: "createdAt", Value: -1}}},
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "status", Value: 1}, {Key: "createdAt", Value: -1}}},
+                        },
+                },
+                {
+                        "lms_order_activity",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "orderId", Value: 1}, {Key: "createdAt", Value: 1}}},
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "action", Value: 1}, {Key: "createdAt", Value: -1}}},
+                        },
+                },
 
-		// --- Phase 4: Pro Authoring collections ---
-		{
-			"lms_certificate_layers",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "templateId", Value: 1}, {Key: "sortOrder", Value: 1}}},
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "templateId", Value: 1}, {Key: "layerType", Value: 1}}},
-			},
-		},
-		{
-			"lms_certificate_backdrops",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "isDefault", Value: 1}}},
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "orientation", Value: 1}}, Options: options.Index().SetSparse(true)},
-			},
-		},
-		{
-			"lms_certificate_media",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "mediaType", Value: 1}}},
-			},
-		},
-		{
-			"lms_drip_rules",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "courseId", Value: 1}, {Key: "lessonId", Value: 1}}, Options: options.Index().SetUnique(true)},
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "courseId", Value: 1}, {Key: "isActive", Value: 1}}},
-			},
-		},
-		{
-			"lms_prerequisite_chains",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "courseId", Value: 1}, {Key: "prerequisiteCourseId", Value: 1}}, Options: options.Index().SetUnique(true)},
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "prerequisiteCourseId", Value: 1}}},
-			},
-		},
-		{
-			"lms_course_instructors",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "courseId", Value: 1}, {Key: "instructorId", Value: 1}}, Options: options.Index().SetUnique(true)},
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "instructorId", Value: 1}, {Key: "isPrimary", Value: 1}}},
-			},
-		},
-		{
-			"lms_assignment_grades",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "submissionId", Value: 1}}, Options: options.Index().SetUnique(true)},
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "assignmentId", Value: 1}, {Key: "gradedAt", Value: -1}}},
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "studentId", Value: 1}, {Key: "gradedAt", Value: -1}}},
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "instructorId", Value: 1}, {Key: "gradedAt", Value: -1}}},
-			},
-		},
+                // --- Phase 4: Pro Authoring collections ---
+                {
+                        "lms_certificate_layers",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "templateId", Value: 1}, {Key: "sortOrder", Value: 1}}},
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "templateId", Value: 1}, {Key: "layerType", Value: 1}}},
+                        },
+                },
+                {
+                        "lms_certificate_backdrops",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "isDefault", Value: 1}}},
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "orientation", Value: 1}}, Options: options.Index().SetSparse(true)},
+                        },
+                },
+                {
+                        "lms_certificate_media",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "mediaType", Value: 1}}},
+                        },
+                },
+                {
+                        "lms_drip_rules",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "courseId", Value: 1}, {Key: "lessonId", Value: 1}}, Options: options.Index().SetUnique(true)},
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "courseId", Value: 1}, {Key: "isActive", Value: 1}}},
+                        },
+                },
+                {
+                        "lms_prerequisite_chains",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "courseId", Value: 1}, {Key: "prerequisiteCourseId", Value: 1}}, Options: options.Index().SetUnique(true)},
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "prerequisiteCourseId", Value: 1}}},
+                        },
+                },
+                {
+                        "lms_course_instructors",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "courseId", Value: 1}, {Key: "instructorId", Value: 1}}, Options: options.Index().SetUnique(true)},
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "instructorId", Value: 1}, {Key: "isPrimary", Value: 1}}},
+                        },
+                },
+                {
+                        "lms_assignment_grades",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "submissionId", Value: 1}}, Options: options.Index().SetUnique(true)},
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "assignmentId", Value: 1}, {Key: "gradedAt", Value: -1}}},
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "studentId", Value: 1}, {Key: "gradedAt", Value: -1}}},
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "instructorId", Value: 1}, {Key: "gradedAt", Value: -1}}},
+                        },
+                },
 
-		// --- Phase 5: Pro Engagement collections ---
-		{
-			"lms_badges",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "slug", Value: 1}}, Options: options.Index().SetUnique(true)},
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "isActive", Value: 1}}},
-			},
-		},
-		{
-			"lms_student_badges",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "studentId", Value: 1}, {Key: "badgeId", Value: 1}}, Options: options.Index().SetUnique(true)},
-			},
-		},
-		{
-			"lms_point_transactions",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "studentId", Value: 1}, {Key: "createdAt", Value: -1}}},
-			},
-		},
-		{
-			"lms_leaderboard_entries",
-			[]mongo.IndexModel{
-				// Sparse on courseId: tenant-scoped rows (scope=tenant) leave
-				// courseId unset, so the index must be sparse to allow multiple
-				// tenant-scope rows alongside course-scope rows.
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "scope", Value: 1}, {Key: "courseId", Value: 1}, {Key: "rank", Value: 1}}, Options: options.Index().SetSparse(true)},
-			},
-		},
-		{
-			"lms_notification_preferences",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "userId", Value: 1}, {Key: "eventType", Value: 1}}, Options: options.Index().SetUnique(true)},
-			},
-		},
-		{
-			"lms_push_subscriptions",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "userId", Value: 1}, {Key: "isActive", Value: 1}}},
-			},
-		},
-		{
-			"lms_accessibility_preferences",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "userId", Value: 1}}, Options: options.Index().SetUnique(true)},
-			},
-		},
-		{
-			"lms_email_templates",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "trigger", Value: 1}, {Key: "language", Value: 1}}, Options: options.Index().SetUnique(true).SetSparse(true)},
-			},
-		},
-		{
-			"lms_legal_consents",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "userId", Value: 1}, {Key: "consentType", Value: 1}}},
-			},
-		},
+                // --- Phase 5: Pro Engagement collections ---
+                {
+                        "lms_badges",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "slug", Value: 1}}, Options: options.Index().SetUnique(true)},
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "isActive", Value: 1}}},
+                        },
+                },
+                {
+                        "lms_student_badges",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "studentId", Value: 1}, {Key: "badgeId", Value: 1}}, Options: options.Index().SetUnique(true)},
+                        },
+                },
+                {
+                        "lms_point_transactions",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "studentId", Value: 1}, {Key: "createdAt", Value: -1}}},
+                        },
+                },
+                {
+                        "lms_leaderboard_entries",
+                        []mongo.IndexModel{
+                                // Sparse on courseId: tenant-scoped rows (scope=tenant) leave
+                                // courseId unset, so the index must be sparse to allow multiple
+                                // tenant-scope rows alongside course-scope rows.
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "scope", Value: 1}, {Key: "courseId", Value: 1}, {Key: "rank", Value: 1}}, Options: options.Index().SetSparse(true)},
+                        },
+                },
+                {
+                        "lms_notification_preferences",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "userId", Value: 1}, {Key: "eventType", Value: 1}}, Options: options.Index().SetUnique(true)},
+                        },
+                },
+                {
+                        "lms_push_subscriptions",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "userId", Value: 1}, {Key: "isActive", Value: 1}}},
+                        },
+                },
+                {
+                        "lms_accessibility_preferences",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "userId", Value: 1}}, Options: options.Index().SetUnique(true)},
+                        },
+                },
+                {
+                        "lms_email_templates",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "trigger", Value: 1}, {Key: "language", Value: 1}}, Options: options.Index().SetUnique(true).SetSparse(true)},
+                        },
+                },
+                {
+                        "lms_legal_consents",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "userId", Value: 1}, {Key: "consentType", Value: 1}}},
+                        },
+                },
 
-		// --- Phase 6: Reports + TutorAI + Migration collections ---
-		{
-			"lms_report_snapshots",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "reportType", Value: 1}, {Key: "createdAt", Value: -1}}},
-			},
-		},
-		{
-			"lms_saved_reports",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "createdBy", Value: 1}}},
-			},
-		},
-		{
-			"lms_ai_conversations",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "userId", Value: 1}, {Key: "updatedAt", Value: -1}}},
-			},
-		},
-		{
-			"lms_ai_messages",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "conversationId", Value: 1}, {Key: "createdAt", Value: 1}}},
-			},
-		},
-		{
-			"lms_ai_usage_stats",
-			[]mongo.IndexModel{
-				// One row per user per day; upserted by the metering job.
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "userId", Value: 1}, {Key: "date", Value: 1}}, Options: options.Index().SetUnique(true)},
-			},
-		},
-		{
-			"lms_migration_jobs",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "status", Value: 1}, {Key: "createdAt", Value: -1}}},
-			},
-		},
-		{
-			"lms_migration_logs",
-			[]mongo.IndexModel{
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "jobId", Value: 1}, {Key: "createdAt", Value: 1}}},
-			},
-		},
-		{
-			"lms_migration_mappings",
-			[]mongo.IndexModel{
-				// Idempotent re-runs: the importer checks this mapping before
-				// inserting and skips entities that already have a target ID.
-				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "jobId", Value: 1}, {Key: "entityType", Value: 1}, {Key: "sourceId", Value: 1}}, Options: options.Index().SetUnique(true)},
-			},
-		},
-	}
+                // --- Phase 6: Reports + TutorAI + Migration collections ---
+                {
+                        "lms_report_snapshots",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "reportType", Value: 1}, {Key: "createdAt", Value: -1}}},
+                        },
+                },
+                {
+                        "lms_saved_reports",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "createdBy", Value: 1}}},
+                        },
+                },
+                {
+                        "lms_ai_conversations",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "userId", Value: 1}, {Key: "updatedAt", Value: -1}}},
+                        },
+                },
+                {
+                        "lms_ai_messages",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "conversationId", Value: 1}, {Key: "createdAt", Value: 1}}},
+                        },
+                },
+                {
+                        "lms_ai_usage_stats",
+                        []mongo.IndexModel{
+                                // One row per user per day; upserted by the metering job.
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "userId", Value: 1}, {Key: "date", Value: 1}}, Options: options.Index().SetUnique(true)},
+                        },
+                },
+                {
+                        "lms_migration_jobs",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "status", Value: 1}, {Key: "createdAt", Value: -1}}},
+                        },
+                },
+                {
+                        "lms_migration_logs",
+                        []mongo.IndexModel{
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "jobId", Value: 1}, {Key: "createdAt", Value: 1}}},
+                        },
+                },
+                {
+                        "lms_migration_mappings",
+                        []mongo.IndexModel{
+                                // Idempotent re-runs: the importer checks this mapping before
+                                // inserting and skips entities that already have a target ID.
+                                {Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "jobId", Value: 1}, {Key: "entityType", Value: 1}, {Key: "sourceId", Value: 1}}, Options: options.Index().SetUnique(true)},
+                        },
+                },
+        }
 
-	// Collections where unique index failure is a data integrity risk
-	criticalCollections := map[string]bool{
-		"users": true, "tenants": true, "financial_transactions": true,
-		"api_keys": true, "config_vars": true, "stripe_mappings": true,
-		"custom_pages": true, "branding_assets": true, "webauthn_credentials": true,
-		"sso_connections": true, "auth_codes": true,
-	}
+        // Collections where unique index failure is a data integrity risk
+        criticalCollections := map[string]bool{
+                "users": true, "tenants": true, "financial_transactions": true,
+                "api_keys": true, "config_vars": true, "stripe_mappings": true,
+                "custom_pages": true, "branding_assets": true, "webauthn_credentials": true,
+                "sso_connections": true, "auth_codes": true,
+        }
 
-	for _, idx := range indexes {
-		coll := m.Database.Collection(idx.collection)
-		_, err := coll.Indexes().CreateMany(ctx, idx.models)
-		if err != nil {
-			if criticalCollections[idx.collection] {
-				slog.Error("FATAL: failed to create indexes on critical collection", "collection", idx.collection, "error", err)
-				os.Exit(1)
-			}
-			slog.Warn("failed to create indexes", "collection", idx.collection, "error", err)
-		}
-	}
+        for _, idx := range indexes {
+                coll := m.Database.Collection(idx.collection)
+                _, err := coll.Indexes().CreateMany(ctx, idx.models)
+                if err != nil {
+                        if criticalCollections[idx.collection] {
+                                slog.Error("FATAL: failed to create indexes on critical collection", "collection", idx.collection, "error", err)
+                                os.Exit(1)
+                        }
+                        slog.Warn("failed to create indexes", "collection", idx.collection, "error", err)
+                }
+        }
 }
 
 func (m *MongoDB) Close(ctx context.Context) error {
-	return m.Client.Disconnect(ctx)
+        return m.Client.Disconnect(ctx)
 }
 
 func (m *MongoDB) Users() *mongo.Collection {
-	return m.Database.Collection("users")
+        return m.Database.Collection("users")
 }
 
 func (m *MongoDB) Tenants() *mongo.Collection {
-	return m.Database.Collection("tenants")
+        return m.Database.Collection("tenants")
 }
 
 func (m *MongoDB) TenantMemberships() *mongo.Collection {
-	return m.Database.Collection("tenant_memberships")
+        return m.Database.Collection("tenant_memberships")
 }
 
 func (m *MongoDB) RefreshTokens() *mongo.Collection {
-	return m.Database.Collection("refresh_tokens")
+        return m.Database.Collection("refresh_tokens")
 }
 
 func (m *MongoDB) VerificationTokens() *mongo.Collection {
-	return m.Database.Collection("verification_tokens")
+        return m.Database.Collection("verification_tokens")
 }
 
 func (m *MongoDB) OAuthStates() *mongo.Collection {
-	return m.Database.Collection("oauth_states")
+        return m.Database.Collection("oauth_states")
 }
 
 func (m *MongoDB) RevokedTokens() *mongo.Collection {
-	return m.Database.Collection("revoked_tokens")
+        return m.Database.Collection("revoked_tokens")
 }
 
 func (m *MongoDB) SystemConfig() *mongo.Collection {
-	return m.Database.Collection("system_config")
+        return m.Database.Collection("system_config")
 }
 
 func (m *MongoDB) Invitations() *mongo.Collection {
-	return m.Database.Collection("invitations")
+        return m.Database.Collection("invitations")
 }
 
 func (m *MongoDB) AuditLog() *mongo.Collection {
-	return m.Database.Collection("audit_log")
+        return m.Database.Collection("audit_log")
 }
 
 func (m *MongoDB) Messages() *mongo.Collection {
-	return m.Database.Collection("messages")
+        return m.Database.Collection("messages")
 }
 
 func (m *MongoDB) SystemLogs() *mongo.Collection {
-	return m.Database.Collection("system_logs")
+        return m.Database.Collection("system_logs")
 }
 
 func (m *MongoDB) ConfigVars() *mongo.Collection {
-	return m.Database.Collection("config_vars")
+        return m.Database.Collection("config_vars")
 }
 
 func (m *MongoDB) Plans() *mongo.Collection {
-	return m.Database.Collection("plans")
+        return m.Database.Collection("plans")
 }
 
 func (m *MongoDB) CreditBundles() *mongo.Collection {
-	return m.Database.Collection("credit_bundles")
+        return m.Database.Collection("credit_bundles")
 }
 
 func (m *MongoDB) SystemNodes() *mongo.Collection {
-	return m.Database.Collection("system_nodes")
+        return m.Database.Collection("system_nodes")
 }
 
 func (m *MongoDB) SystemMetrics() *mongo.Collection {
-	return m.Database.Collection("system_metrics")
+        return m.Database.Collection("system_metrics")
 }
 
 func (m *MongoDB) FinancialTransactions() *mongo.Collection {
-	return m.Database.Collection("financial_transactions")
+        return m.Database.Collection("financial_transactions")
 }
 
 func (m *MongoDB) StripeMappings() *mongo.Collection {
-	return m.Database.Collection("stripe_mappings")
+        return m.Database.Collection("stripe_mappings")
 }
 
 func (m *MongoDB) Counters() *mongo.Collection {
-	return m.Database.Collection("counters")
+        return m.Database.Collection("counters")
 }
 
 func (m *MongoDB) DailyMetrics() *mongo.Collection {
-	return m.Database.Collection("daily_metrics")
+        return m.Database.Collection("daily_metrics")
 }
 
 func (m *MongoDB) WebhookEvents() *mongo.Collection {
-	return m.Database.Collection("webhook_events")
+        return m.Database.Collection("webhook_events")
 }
 
 func (m *MongoDB) LeaderLocks() *mongo.Collection {
-	return m.Database.Collection("leader_locks")
+        return m.Database.Collection("leader_locks")
 }
 
 func (m *MongoDB) APIKeys() *mongo.Collection {
-	return m.Database.Collection("api_keys")
+        return m.Database.Collection("api_keys")
 }
 
 func (m *MongoDB) Webhooks() *mongo.Collection {
-	return m.Database.Collection("webhooks")
+        return m.Database.Collection("webhooks")
 }
 
 func (m *MongoDB) WebhookDeliveries() *mongo.Collection {
-	return m.Database.Collection("webhook_deliveries")
+        return m.Database.Collection("webhook_deliveries")
 }
 
 func (m *MongoDB) BrandingConfig() *mongo.Collection {
-	return m.Database.Collection("branding_config")
+        return m.Database.Collection("branding_config")
 }
 
 func (m *MongoDB) BrandingAssets() *mongo.Collection {
-	return m.Database.Collection("branding_assets")
+        return m.Database.Collection("branding_assets")
 }
 
 func (m *MongoDB) CustomPages() *mongo.Collection {
-	return m.Database.Collection("custom_pages")
+        return m.Database.Collection("custom_pages")
 }
 
 func (m *MongoDB) WebAuthnCredentials() *mongo.Collection {
-	return m.Database.Collection("webauthn_credentials")
+        return m.Database.Collection("webauthn_credentials")
 }
 
 func (m *MongoDB) WebAuthnSessions() *mongo.Collection {
-	return m.Database.Collection("webauthn_sessions")
+        return m.Database.Collection("webauthn_sessions")
 }
 
 func (m *MongoDB) SSOConnections() *mongo.Collection {
-	return m.Database.Collection("sso_connections")
+        return m.Database.Collection("sso_connections")
 }
 
 func (m *MongoDB) Announcements() *mongo.Collection {
-	return m.Database.Collection("announcements")
+        return m.Database.Collection("announcements")
 }
 
 func (m *MongoDB) UsageEvents() *mongo.Collection {
-	return m.Database.Collection("usage_events")
+        return m.Database.Collection("usage_events")
 }
 
 func (m *MongoDB) AuthCodes() *mongo.Collection {
-	return m.Database.Collection("auth_codes")
+        return m.Database.Collection("auth_codes")
 }
 
 func (m *MongoDB) ImpersonationLogs() *mongo.Collection {
-	return m.Database.Collection("impersonation_logs")
+        return m.Database.Collection("impersonation_logs")
 }
 
 func (m *MongoDB) TelemetryEvents() *mongo.Collection {
-	return m.Database.Collection("telemetry_events")
+        return m.Database.Collection("telemetry_events")
 }
 
 func (m *MongoDB) EventDefinitions() *mongo.Collection {
-	return m.Database.Collection("event_definitions")
+        return m.Database.Collection("event_definitions")
 }
