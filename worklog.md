@@ -2170,3 +2170,235 @@ All 6 remaining `tsc` errors are in `src/app/pages/apps/course-builder/index.tsx
 - **Backend question-type union.** `src/types/lms.ts` currently defines `QuestionType` as only 8 string literals (`single_choice | multiple_choice | true_false | short_answer | fill_blank | essay | matching | ordering`). When the backend adds the 5 new types (`image_answering`, `puzzle`, `scale`, `coordinates`, `pin_image`, `draw_image`), update the union there — the renderers themselves are already type-agnostic via the `question: any` prop.
 - **Pen-tool toolbar in `DrawImageRenderer`.** The task asked for "pen tool only" — implemented. If more tools are wanted later (eraser, shapes), they can be added to the toolbar; the canvas ref + pointer-events plumbing already supports it.
 - **`FillBlanksRenderer` answer shape.** Currently emits `{ values: Record<key,string>, blanks: string[] }`. If the grader expects a plain `string[]` (positional), the caller can map `blanks.map(k => values[k])`. Kept as an object to support named blanks.
+
+---
+
+# Worklog — phase2-backend1
+
+**Task ID:** `phase2-backend1`
+**Agent:** z.ai Code (single-agent execution)
+**Date:** 2026-07-30
+**Repo root:** `/home/z/my-project/repos/lastsaas/backend`
+**Module name:** `lastsaas`
+**Go toolchain:** `go1.25.0` at `/home/z/go/go/bin/go` (`GOPATH=/home/z/go`)
+**Server:** `localhost:4290` (config/dev.yaml `server.port` default)
+**MongoDB:** Atlas `cluster0.xuqtpg2.mongodb.net`, database `tutor_lms_saas`
+
+---
+
+## 1. Objective
+
+Implement the ecommerce backend surface (cart, orders, coupons, instructor
+revenue ledger) for the multi-tenant LMS SaaS. Reuse the existing `Order`,
+`OrderItem`, `Coupon`, and `InstructorPayout` models. Wire up the new
+endpoints in `cmd/server/main.go`. Build, restart, and verify all 15 endpoints
+end-to-end with curl against real MongoDB Atlas.
+
+---
+
+## 2. Files read for pattern discovery (BEFORE writing any code)
+
+| File | Why |
+|------|-----|
+| `/home/z/my-project/repos/tailux/tailux-main/PHASE1-CONTEXT.md` | Phase 1 contract: endpoint list, multi-tenant rule (`tenant_id` on every collection), auth bypass for dev. |
+| `internal/models/lms.go` | Confirmed `Order`, `OrderItem`, `Coupon`, `InstructorPayout` struct shapes + their enums (`OrderStatus` lacks a "cart" value — handled via a private const in `lms.go`). Confirmed `Enrollment.OrderID` is the link back to a refunded order. |
+| `internal/db/lms_collections.go` | Confirmed `Orders()`, `Coupons()`, `InstructorPayouts()`, `Courses()`, `Enrollments()` collection accessors exist. |
+| `internal/events/lms_events.go` | Confirmed all needed event types are already defined: `EventOrderCreated/Paid/Refunded`, `EventCouponCreated/Redeemed/Updated`, `EventInstructorPayoutCreated/Approved/Paid`. |
+| `internal/api/handlers/lms.go` (lines 1–600) | Studied the Course handler pattern: `requireLMSContext` → `mux.Vars(r)["id"]` → `json.NewDecoder(r.Body).Decode()` → `h.db.X().Find/InsertOne/UpdateByID` → `h.emitter.Emit(events.Event{...})` → `respondWithJSON(w, status, data)`. |
+| `internal/api/handlers/lms.go` (lines 2134–2275, EnrollCourse) | Studied the idempotent enroll/reactivate pattern + `EnrollmentStatusRefunded` constant. |
+| `internal/api/handlers/lms.go` (lines 2629–2666) | Identified the four stubs to replace: `ListOrders`, `CreateOrder`, `ListCoupons`, `CreateCoupon`, `ListInstructorPayouts`, `CreateInstructorPayout`. |
+| `internal/api/handlers/helpers.go` | Confirmed `respondWithJSON` / `respondWithError` / `escapeRegexInput` helpers. |
+| `cmd/server/main.go` (lines 418–503) | Confirmed the LMS subrouter is `api.PathPrefix("/lms").Subrouter()` (unguarded, dev-accessible). Confirmed route registration uses `lmsAPI.HandleFunc(path, handler).Methods(verb)`. |
+| `go.mod` | Confirmed mongo-driver v1.17.9 (uses `SetProjection`, not the deprecated `Projection` field-as-method pattern of v0.x). |
+
+---
+
+## 3. Files modified
+
+### 3.1 `internal/api/handlers/lms.go` (1 import added, ~1170 lines added)
+
+**Import:** added `"fmt"` for `fmt.Sprintf` (used to mint `ORD-<objectid>` / `CART-<objectid>` order numbers).
+
+**Private constants & helpers (lines 2641–2771):**
+
+```go
+const orderStatusCart models.OrderStatus = "cart"     // not in ValidOrderStatus enum (intentional)
+const defaultCommissionPct = 70.0                     // instructor revenue share default
+
+func (h *LMSHandler) findOrCreateCart(r *http.Request, ctx lmsContext) (models.Order, error)
+func recomputeOrderTotals(order *models.Order)        // subtotal from items; total = subtotal - discount + tax
+func applyCouponToOrder(order *models.Order, coupon *models.Coupon) int64
+func validateCouponForOrder(coupon *models.Coupon, order *models.Order, _ primitive.ObjectID) (string, bool)
+```
+
+`orderStatusCart` is intentionally **not** added to `models.ValidOrderStatus` —
+the enum covers post-checkout states only (pending/paid/failed/refunded/canceled).
+Treating "cart" as a sentinel value lets the cart persist freely without
+triggering the status-machine validator. MongoDB has no schema constraint on
+`lms_orders.status`, so this works end-to-end.
+
+**Cart handlers (4 new, lines 2773–2969):**
+
+| Handler | Route | Behaviour |
+|---------|-------|-----------|
+| `GetCart` | `GET /api/lms/cart` | Returns current user's cart; creates an empty cart on first access so the frontend always has a stable document to mutate. |
+| `AddToCart` | `POST /api/lms/cart/items` | Body `{courseId, quantity?}`. Looks up course via `Courses().FindOne({_id, tenantId})`, resolves current `priceCents`, adds a new `OrderItem` (or increments quantity if the same course is already in cart). |
+| `RemoveFromCart` | `DELETE /api/lms/cart/items/{itemId}` | Removes the line item by `OrderItem.ID`; 404s if the item isn't in the user's cart. |
+| `ClearCart` | `DELETE /api/lms/cart` | Empties `items[]`, zeroes totals, detaches any applied coupon. The cart document itself is preserved so the next `AddToCart` reuses the same cart ID. |
+
+**Order handlers (4 total — 2 new, 2 replacing stubs, lines 2971–3242):**
+
+| Handler | Route | Behaviour |
+|---------|-------|-----------|
+| `ListOrders` | `GET /api/lms/orders` | Lists the authenticated user's orders with `status: {$ne: "cart"}`. Supports `?status=`, `?limit=`, `?offset=`. |
+| `GetOrder` | `GET /api/lms/orders/{id}` | Single order, scoped to `{_id, tenantId, userId}`. 404 if not owned by caller. |
+| `CreateOrder` | `POST /api/lms/orders` | Converts the cart into a real order in-place: stamps `ORD-<objectid>` order number, flips status `cart → pending`, applies optional `{couponCode, paymentMethod, notes}`. Validates the coupon via `validateCouponForOrder` (active/not expired/not exhausted/meets min/meets course restriction), applies the discount, `$inc`s the coupon's `redemptionCount`, and emits `coupon.redeemed` + `order.created` events. 400s if the cart is empty. |
+| `RefundOrder` | `POST /api/lms/orders/{id}/refund` | Only `paid` orders may be refunded. Sets `status=refunded`, `refundedAt=now`, runs `Enrollments().UpdateMany({orderId}, {$set: {status: "refunded"}})`, decrements each affected course's `enrolledCount`. Emits `order.refunded`. |
+
+**Coupon handlers (4 total — 2 new, 2 replacing stubs, lines 3244–3501):**
+
+| Handler | Route | Behaviour |
+|---------|-------|-----------|
+| `ListCoupons` | `GET /api/lms/coupons` | Tenant-scoped list. Supports `?active=true|false`, `?code=<exact>`, `?limit=`, `?offset=`. |
+| `CreateCoupon` | `POST /api/lms/coupons` | Validates `code` (required), `discountType` (percent|fixed), `discountValue` (>0; ≤100 for percent). Upper-cases the code, defaults `IsActive=true`, `RedemptionCount=0`, `CourseIDs=[]`. Checks tenant-scoped code uniqueness → 409 on duplicate. Emits `coupon.created`. |
+| `ValidateCoupon` | `POST /api/lms/coupons/validate` | Body `{code, orderSubtotalCents, courseIds[]}`. Returns `{valid: true, coupon, discountCents, subtotalCents, totalCents}` on success, or `{valid: false, reason}` on failure. Same validation path as `CreateOrder` (reuses `validateCouponForOrder`). |
+| `DeleteCoupon` | `DELETE /api/lms/coupons/{id}` | Hard delete, tenant-scoped. 404 if not found. Emits `coupon.updated` with `action: "deleted"`. |
+
+**Instructor payout & earnings handlers (3 total — 2 replacing stubs, 1 new, lines 3526–3858):**
+
+| Handler | Route | Behaviour |
+|---------|-------|-----------|
+| `ListInstructorPayouts` | `GET /api/lms/instructor/payouts` | Lists payouts where `instructorId = ctx.UserID`. Supports `?status=`, `?limit=`, `?offset=`. |
+| `CreateInstructorPayout` | `POST /api/lms/instructor/payouts` | Body `{periodStart, periodEnd, commissionPct?, paymentMethod?, notes?}`. Finds instructor's courses (`Courses().Find({tenantId, instructorId})`), then finds all `paid` orders in the period whose `paidAt ∈ [periodStart, periodEnd]`. Sums each order item whose `referenceId` is in the instructor's course set → `grossCents`. `commissionCents = gross * commissionPct/100` (default 70%). `netCents = commissionCents - feeCents` (fee=0 for v1). Persists payout with `status=pending`, linked `orderIds[]`. Emits `instructor_payout.created`. 400s if instructor has no courses. |
+| `GetEarnings` | `GET /api/lms/instructor/earnings` | Aggregates: `totalGrossCents` + `totalNetCents` (sum across all paid orders' course items owned by the instructor, using `defaultCommissionPct`); `pendingPayoutCents` + `paidPayoutCents` + `totalPayoutCents` (sum across the instructor's payout records by status); `availablePayoutCents = totalNetCents - paidPayoutCents`; `byCourse[]` per-course breakdown `{courseId, title, grossCents, netCents, orderCount}`. |
+
+**Design decisions:**
+
+- **Cart = Order with status="cart".** Single collection (`lms_orders`), no separate cart schema. The cart→order transition is a status flip, not a copy. This avoids data duplication and keeps the cart's line items, coupon, and totals continuity into the order.
+- **Coupon discount is computed on `SubtotalCents`, not `TotalCents`.** Percent discount is capped at `MaxDiscountCents` (if set) and never exceeds the subtotal. Fixed discount is capped at the subtotal.
+- **Instructor commission is computed on gross `SubtotalCents` (pre-discount).** The platform absorbs the coupon cost; the instructor gets the full commission on the list price. This matches the `GrossCents`/`CommissionCents` model semantics. Switching to net-of-discount commission is a one-line change inside `CreateInstructorPayout` and `GetEarnings`.
+- **Per-user redemption limits are accepted by `validateCouponForOrder` but not yet enforced.** The signature is `(coupon, order, userID)` so the per-user count can be added later without breaking callers. Global `MaxRedemptions` and `MinOrderCents` are enforced today.
+- **Refund cancels enrollments via `UpdateMany({orderId})`.** This requires `Enrollment.OrderID` to be set when the enrollment is created from a paid order. The existing `EnrollCourse` handler does **not** set `OrderID` (it's an idempotent free-enroll path). When paid enrollments are wired up (typically in a payment-webhook handler), that handler should set `OrderID` so refunds can cascade correctly. For now, `RefundOrder` still marks the order as refunded and decrements `enrolledCount` — the `UpdateMany` is a no-op if no enrollments carry the order ID.
+
+### 3.2 `cmd/server/main.go` (route table updated, ~12 new routes)
+
+Added a new `// Cart` block (4 routes) before `// Orders & Coupons`, expanded
+`// Orders & Coupons` (4 → 6 routes incl. `GET /orders/{id}` and `POST
+/orders/{id}/refund`), expanded `// Coupons` (2 → 4 routes incl. `POST
+/coupons/validate` and `DELETE /coupons/{id}`), and expanded `// Instructor`
+(2 → 3 routes incl. `GET /instructor/earnings`).
+
+Critical: `POST /coupons/validate` is registered **before** `DELETE
+/coupons/{id}` so the static path wins over the `{id}` wildcard (otherwise
+gorilla/mux would route `/coupons/validate` to the `{id}` handler, which would
+fail `ObjectIDFromHex("validate")` and return a 400 instead of routing to the
+validate handler).
+
+---
+
+## 4. Verification
+
+### 4.1 Build
+
+```
+$ export PATH="/home/z/go/go/bin:$PATH"
+$ cd /home/z/my-project/repos/lastsaas/backend
+$ go build -o /tmp/lastsaas-server ./cmd/server/        # OK (no output)
+$ go vet ./internal/api/handlers/ 2>&1 | grep -v tenant_test.go
+(no output — clean; the only vet warnings are pre-existing in tenant_test.go)
+```
+
+### 4.2 Server restart
+
+```
+$ pkill -f lastsaas-server; sleep 2
+$ cd /home/z/my-project/repos/lastsaas/backend && (/tmp/lastsaas-server > /tmp/lastsaas-backend.log 2>&1 &)
+$ sleep 40
+$ tail /tmp/lastsaas-backend.log
+2026/07/30 03:20:08 INFO Starting LastSaaS mode=dev
+2026/07/30 03:20:33 INFO Connected to MongoDB
+2026/07/30 03:20:49 INFO Server listening addr=localhost:4290
+```
+
+### 4.3 End-to-end curl tests (15 endpoints, all passing)
+
+| # | Test | Expected | Actual |
+|---|------|----------|--------|
+| 1 | `GET /cart` (first call) | 200 + empty cart with `status:"cart"` | ✅ |
+| 2 | `POST /cart/items {courseId, quantity:1}` | 200 + 1 item, subtotal 4900 | ✅ |
+| 3 | `POST /cart/items {courseId}` (same course) | 200 + quantity=2, subtotal 9800 | ✅ |
+| 4 | `GET /cart` | 200 + persists quantity=2 | ✅ |
+| 5 | `DELETE /cart/items/{itemId}` | 200 + items=[], subtotal 0 | ✅ |
+| 6 | `DELETE /cart/items/{itemId}` (same id again) | 404 "Cart item not found" | ✅ |
+| 7 | `POST /cart/items {courseId:"deadbeef…"}` | 404 "Course not found" | ✅ |
+| 8 | `POST /cart/items {courseId:"not-a-hex"}` | 400 "Invalid course ID" | ✅ |
+| 9 | `POST /coupons {code:"save20", discountType:"percent", discountValue:20}` | 201 + code upper-cased to "SAVE20" | ✅ |
+| 10 | `POST /coupons {code:"SAVE20", …}` (duplicate) | 409 "A coupon with this code already exists" | ✅ |
+| 11 | `POST /coupons {code:"FLAT10", discountType:"fixed", discountValue:1000}` | 201 | ✅ |
+| 12 | `GET /coupons` | 200 + 2 coupons | ✅ |
+| 13 | `POST /coupons/validate {code:"save20", orderSubtotalCents:4900}` | 200 valid=true, discount=980, total=3920 | ✅ |
+| 14 | `POST /coupons/validate {code:"FLAT10", orderSubtotalCents:4900}` | 200 valid=true, discount=1000, total=3900 | ✅ |
+| 15 | `POST /coupons/validate {code:"DOESNOTEXIST"}` | 200 valid=false, reason="Coupon not found" | ✅ |
+| 16 | `POST /coupons {discountType:"invalid"}` | 400 "invalid discountType" | ✅ |
+| 17 | `POST /coupons {discountType:"percent", discountValue:150}` | 400 "percent discountValue cannot exceed 100" | ✅ |
+| 18 | `POST /orders {paymentMethod:"stripe", notes:"…"}` | 201 + `ORD-…` number, status:"pending", items carried over | ✅ |
+| 19 | `POST /orders` (empty cart) | 400 "Cart is empty" | ✅ |
+| 20 | `POST /orders {couponCode:"save20"}` (qty=2, subtotal 9800) | 201 + discount=1960, total=7840 | ✅ |
+| 21 | `GET /coupons?code=SAVE20` | 200 + redemptionCount=1 (incremented by order creation) | ✅ |
+| 22 | `GET /orders` | 200 + 2 orders, sorted by createdAt desc | ✅ |
+| 23 | `GET /orders?status=pending` | 200 + filtered | ✅ |
+| 24 | `GET /orders/{id}` | 200 + full order with items | ✅ |
+| 25 | `GET /orders/deadbeefdeadbeefdeadbeef` | 404 "Order not found" | ✅ |
+| 26 | `POST /orders/{id}/refund` (order still pending) | 400 "Only paid orders can be refunded" | ✅ |
+| 27 | `POST /orders/{id}/refund` (after marking order paid via direct DB update) | 200 + status:"refunded", refundedAt set | ✅ |
+| 28 | `POST /orders/{id}/refund` (already refunded) | 400 "Only paid orders can be refunded" | ✅ |
+| 29 | `DELETE /coupons/{id}` (FLAT10) | 200 "Coupon deleted" | ✅ |
+| 30 | `DELETE /coupons/deadbeefdeadbeefdeadbeef` | 404 "Coupon not found" | ✅ |
+| 31 | `DELETE /cart` (after re-adding an item) | 200 + items=[], subtotal 0 | ✅ |
+| 32 | `GET /instructor/earnings` (one paid order with subtotal 9800) | 200 + totalGross=9800, totalNet=6860 (70%), available=6860 | ✅ |
+| 33 | `POST /instructor/payouts {periodStart, periodEnd, paymentMethod:"paypal"}` | 201 + gross=9800, commission=6860, net=6860, status:"pending", orderIds=[paid order] | ✅ |
+| 34 | `GET /instructor/payouts` | 200 + 1 payout | ✅ |
+| 35 | `GET /instructor/earnings` (after payout) | 200 + pendingPayout=6860, totalPayout=6860, paidPayout=0, available=6860 | ✅ |
+| 36 | `POST /instructor/payouts {periodEnd < periodStart}` | 400 "periodEnd must be after periodStart" | ✅ |
+| 37 | `POST /instructor/payouts {}` | 400 "periodStart and periodEnd are required" | ✅ |
+| 38 | All 15 new endpoints hit with bad/missing input | 200/400/404 per expectations (see route table in §4.4) | ✅ |
+
+### 4.4 Route table — every new endpoint returns a sensible status
+
+```
+GET  /api/lms/cart                              -> 200
+POST /api/lms/cart/items                        -> 400  (empty body)
+DELETE /api/lms/cart                            -> 200
+DELETE /api/lms/cart/items/{itemId}             -> 404  (item not in cart)
+GET  /api/lms/orders                            -> 200
+POST /api/lms/orders                            -> 400  (empty cart)
+GET  /api/lms/orders/{id}                       -> 404  (no such order)
+POST /api/lms/orders/{id}/refund                -> 404  (no such order)
+GET  /api/lms/coupons                           -> 200
+POST /api/lms/coupons                           -> 400  (missing fields)
+POST /api/lms/coupons/validate                  -> 400  (missing code)
+DELETE /api/lms/coupons/{id}                    -> 404  (no such coupon)
+GET  /api/lms/instructor/payouts                -> 200
+POST /api/lms/instructor/payouts                -> 400  (missing fields)
+GET  /api/lms/instructor/earnings               -> 200
+```
+
+### 4.5 Backend log health
+
+```
+$ grep -c "ERROR" /tmp/lastsaas-backend.log    -> 0
+$ grep -c "panic\|goroutine" /tmp/lastsaas-backend.log    -> 0
+```
+
+Zero errors, zero panics across the entire test run.
+
+---
+
+## 5. Next actions / open items
+
+- **Set `Enrollment.OrderID` when paid enrollments are created.** The existing `EnrollCourse` handler is a free-enroll path that doesn't set `OrderID`. When a payment webhook is wired up (typically by flipping the order status to `paid` and creating enrollments from the paid order's items), that handler should set `OrderID` on each new enrollment so `RefundOrder`'s `Enrollments().UpdateMany({orderId})` cascade actually finds them. Today the refund still marks the order as refunded and decrements `enrolledCount`, but the per-student enrollment status won't flip without the `OrderID` link.
+- **Per-user coupon redemption limit (`MaxRedemptionsPerUser`).** `validateCouponForOrder` already accepts the `userID` parameter so this can be layered in later by counting the user's orders that carry `couponId == coupon.ID`. Currently a no-op.
+- **Tax computation.** `recomputeOrderTotals` carries `TaxCents` through to `TotalCents` but no handler sets it yet. When tax-inclusive pricing is needed, `CreateOrder` should look up the tenant's tax rate (likely from a `PaymentGatewayConfig` or a new `TaxConfig` collection) and stamp `TaxCents` before `recomputeOrderTotals` is called.
+- **Payment webhook handler.** `CreateOrder` leaves the order in `pending`. A subsequent payment webhook (Stripe/PayPal) should flip the status to `paid`, stamp `paidAt`, create enrollments from the order's course items (with `OrderID` set), and emit `order.paid` + `enrollment.created` for each. Once that exists, `RefundOrder` will work end-to-end without manual DB surgery.
+- **Platform fee in payouts.** `CreateInstructorPayout` currently sets `FeeCents=0`. When a platform fee schedule exists (likely a per-tenant setting in `PaymentGatewayConfig`), wire it into the `fee` variable in `CreateInstructorPayout`.
+- **Multi-tenant cross-tenant test.** The dev fallback always uses tenant `000000000000000000000001`, so cross-tenant isolation was verified by code inspection (every query filters by `tenantId: ctx.TenantID`) but not by runtime test. A second tenant + an authenticated request would close this gap.

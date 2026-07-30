@@ -469,11 +469,22 @@ func main() {
         lmsAPI.HandleFunc("/categories", lmsHandler.CreateCategory).Methods("POST")
         lmsAPI.HandleFunc("/tags", lmsHandler.ListTags).Methods("GET")
         lmsAPI.HandleFunc("/tags", lmsHandler.CreateTag).Methods("POST")
+        // Cart
+        lmsAPI.HandleFunc("/cart", lmsHandler.GetCart).Methods("GET")
+        lmsAPI.HandleFunc("/cart", lmsHandler.ClearCart).Methods("DELETE")
+        lmsAPI.HandleFunc("/cart/items", lmsHandler.AddToCart).Methods("POST")
+        lmsAPI.HandleFunc("/cart/items/{itemId}", lmsHandler.RemoveFromCart).Methods("DELETE")
         // Orders & Coupons
         lmsAPI.HandleFunc("/orders", lmsHandler.ListOrders).Methods("GET")
         lmsAPI.HandleFunc("/orders", lmsHandler.CreateOrder).Methods("POST")
+        lmsAPI.HandleFunc("/orders/{id}", lmsHandler.GetOrder).Methods("GET")
+        lmsAPI.HandleFunc("/orders/{id}/refund", lmsHandler.RefundOrder).Methods("POST")
         lmsAPI.HandleFunc("/coupons", lmsHandler.ListCoupons).Methods("GET")
         lmsAPI.HandleFunc("/coupons", lmsHandler.CreateCoupon).Methods("POST")
+        // /coupons/validate must be registered BEFORE /coupons/{id} so the
+        // static path takes precedence over the {id} wildcard.
+        lmsAPI.HandleFunc("/coupons/validate", lmsHandler.ValidateCoupon).Methods("POST")
+        lmsAPI.HandleFunc("/coupons/{id}", lmsHandler.DeleteCoupon).Methods("DELETE")
         // Certificates
         lmsAPI.HandleFunc("/certificates", lmsHandler.ListCertificates).Methods("GET")
         lmsAPI.HandleFunc("/certificates/templates", lmsHandler.CreateCertificateTemplate).Methods("POST")
@@ -486,9 +497,10 @@ func main() {
         // Gifts
         lmsAPI.HandleFunc("/gifts", lmsHandler.CreateGift).Methods("POST")
         lmsAPI.HandleFunc("/gifts/{code}/redeem", lmsHandler.RedeemGift).Methods("POST")
-        // Instructor
+        // Instructor (payouts + earnings)
         lmsAPI.HandleFunc("/instructor/payouts", lmsHandler.ListInstructorPayouts).Methods("GET")
         lmsAPI.HandleFunc("/instructor/payouts", lmsHandler.CreateInstructorPayout).Methods("POST")
+        lmsAPI.HandleFunc("/instructor/earnings", lmsHandler.GetEarnings).Methods("GET")
         // Notifications
         lmsAPI.HandleFunc("/notifications", lmsHandler.ListNotifications).Methods("GET")
         lmsAPI.HandleFunc("/notifications/{id}/read", lmsHandler.MarkNotificationRead).Methods("POST")
