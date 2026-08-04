@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 /**
- * Reverse proxy: /api/tailux/* → http://localhost:5173/*
+ * Reverse proxy: /api/tailux/* → http://127.0.0.1:5173/*
  *
  * This lets the tailux Vite dev server (running on port 5173) be reachable
  * from the public preview URL of the Next.js app.
@@ -14,7 +14,7 @@ import { NextRequest, NextResponse } from 'next/server';
  * through this proxy (/api/tailux/@vite/client, /api/tailux/src/main.tsx).
  */
 
-const TAILUX_ORIGIN = 'http://localhost:5173';
+const TAILUX_ORIGIN = 'http://127.0.0.1:5173';
 
 // Headers we should pass through from the upstream response
 const PASSTHROUGH_HEADERS = new Set([
@@ -105,7 +105,7 @@ export async function GET(
         error: 'tailux proxy failed',
         detail: err.message,
         target: url.toString(),
-        note: 'Is the tailux dev server running on http://localhost:5173? Run: cd /home/z/my-project/repos/tailux/tailux-main && npm run dev',
+        note: 'Is the tailux dev server running on http://127.0.0.1:5173? Run: cd /home/z/my-project/repos/tailux/tailux-main && npm run dev',
       },
       { status: 502 },
     );
