@@ -4,7 +4,7 @@ import { spawn } from 'child_process';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
-const BACKEND_BINARY = '/tmp/lastsaas-final';
+const BACKEND_BINARY = '/tmp/saas';
 const BACKEND_CWD = '/home/z/my-project/repos/lastsaas/backend';
 
 // Keep a reference to the backend process in module scope
