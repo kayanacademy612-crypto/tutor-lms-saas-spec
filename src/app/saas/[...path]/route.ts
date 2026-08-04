@@ -5,7 +5,8 @@ const FRONTEND = 'http://127.0.0.1:4280';
 
 async function proxy(req: NextRequest, params: Promise<{ path: string[] }>) {
   const { path } = await params;
-  const url = new URL('/' + path.join('/'), FRONTEND);
+  // Prepend /saas/ because Vite serves everything under that base
+  const url = new URL('/saas/' + path.join('/'), FRONTEND);
   url.search = req.nextUrl.search;
   
   const headers: Record<string, string> = {};
